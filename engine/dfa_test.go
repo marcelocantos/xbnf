@@ -146,6 +146,28 @@ func strQuant(min, max int) *grammar.Grammar {
 	}}
 }
 
+func TestDFALeafDelim(t *testing.T) {
+	t.Parallel()
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Delim{
+			Term: grammar.Ident{Name: "item"},
+			Sep:  grammar.String{Text: ","},
+		}},
+		grammar.Rule{Name: "item", Body: grammar.Leaf{Pattern: `[a-z]+`}},
+	}}
+	c, err := engine.Compile(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.IsDFA("item") {
+		t.Fatal("leaf item should be a DFA")
+	}
+	res := engine.Parse(g, "S", "one,two,three")
+	if !res.OK {
+		t.Fatalf("leaf delim: %s", res.Error)
+	}
+}
+
 func TestDFAQuantZeroToN(t *testing.T) {
 	t.Parallel()
 	g := strQuant(0, 2)

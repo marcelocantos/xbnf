@@ -427,6 +427,9 @@ func (d *dfa) hasCall() bool {
 			if tr.call != "" {
 				return true
 			}
+			if len(tr.lit) > 0 && tr.lit[0] == '/' {
+				return true
+			}
 		}
 	}
 	return false

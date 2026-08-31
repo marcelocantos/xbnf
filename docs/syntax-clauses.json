@@ -14,9 +14,9 @@
     "group": "Structure",
     "title": "Modifier #leaf",
     "syntax": "NAME #leaf -> term ;",
-    "blurb": "The match is one flat string in the tree, not a nested structure.",
+    "blurb": "The match is one flat string in the tree. Use #leaf when the body is structured; a token that is one pattern is /pat/ instead.",
     "slice": "core",
-    "grammar": "tok #leaf -> [A-Za-z]+ ;\n#wrap -> () ;\n",
+    "grammar": "tok #leaf -> { #wrap -> () ; [A-Za-z] [A-Za-z0-9]* ; } ;\n",
     "input": "Hello"
   },
   {
@@ -76,7 +76,7 @@
     "syntax": "a > b > c",
     "blurb": "> is looser-to-tighter. @ is this stack (the next tighter level).",
     "slice": "core",
-    "grammar": "expr -> @:op=\"+\" > num ;\nnum -> [0-9]+ ;\n#wrap -> () ;\n",
+    "grammar": "expr -> @:op=\"+\" > num ;\nnum -> /[0-9]+/ ;\n#wrap -> () ;\n",
     "input": "1+2+3"
   },
   {
@@ -146,8 +146,8 @@
     "syntax": "x{4}",
     "blurb": "Exactly n repetitions.",
     "slice": "core",
-    "grammar": "start -> [0-9]{4} ;\n#wrap -> () ;\n",
-    "input": "2026"
+    "grammar": "start -> \"a\"{4} ;\n#wrap -> () ;\n",
+    "input": "aaaa"
   },
   {
     "id": "quant-range",
@@ -166,7 +166,7 @@
     "syntax": "x:\",\"",
     "blurb": "x (\",\" x)*. Leading/trailing commas in the grammar syntax allow a separator before the first / after the last item.",
     "slice": "core",
-    "grammar": "start -> item:\",\" ;\nitem -> [a-z]+ ;\n#wrap -> () ;\n",
+    "grammar": "start -> item:\",\" ;\nitem -> /[a-z]+/ ;\n#wrap -> () ;\n",
     "input": "one,two,three"
   },
   {
@@ -176,7 +176,7 @@
     "syntax": "x:\",\"?",
     "blurb": "JSON-style: zero or more items, no trailing comma in the input.",
     "slice": "core",
-    "grammar": "start -> \"[\" item:\",\"? \"]\" ;\nitem -> [0-9]+ ;\n#wrap -> () ;\n",
+    "grammar": "start -> \"[\" item:\",\"? \"]\" ;\nitem -> /[0-9]+/ ;\n#wrap -> () ;\n",
     "input": "[1,2,3]"
   },
   {
@@ -186,7 +186,7 @@
     "syntax": "#assoc=left",
     "blurb": "Trails a sequence. Vocabulary: #prefer / #avoid, #assoc, #priority, #longest. The runner parses them and still matches.",
     "slice": "core",
-    "grammar": "expr -> @:op=(\"+\") #assoc=left > num ;\nnum -> [0-9]+ ;\n#wrap -> () ;\n",
+    "grammar": "expr -> @:op=(\"+\") #assoc=left > num ;\nnum -> /[0-9]+/ ;\n#wrap -> () ;\n",
     "input": "1+2"
   },
   {
@@ -206,7 +206,7 @@
     "syntax": "tok::kw_if",
     "blurb": "Run tok; succeed only if a longest-match alternative carries this label.",
     "slice": "core",
-    "grammar": "start -> tok::kw ;\ntok -> kw=\"if\" | ident=[a-z]+ ;\n#wrap -> () ;\n",
+    "grammar": "start -> tok::kw ;\ntok -> kw=\"if\" | ident=/[a-z]+/ ;\n#wrap -> () ;\n",
     "input": "if"
   },
   {
@@ -224,10 +224,10 @@
     "group": "Atoms",
     "title": "Character class",
     "syntax": "[a-z] [^\\n]",
-    "blurb": "One character. - is a range. ^ after [ negates.",
+    "blurb": "One character. - is a range. ^ after [ negates. A token of many of these is /[A-Za-z]+/, not [A-Za-z]+.",
     "slice": "core",
-    "grammar": "start -> [A-Za-z][A-Za-z0-9]* ;\n#wrap -> () ;\n",
-    "input": "Var2"
+    "grammar": "start -> [A-Za-z] ;\n#wrap -> () ;\n",
+    "input": "Q"
   },
   {
     "id": "escape",
@@ -236,17 +236,17 @@
     "syntax": "\\d \\s \\n",
     "blurb": "Backslash class. \\d digits, \\s space, \\n newline.",
     "slice": "core",
-    "grammar": "start -> \\d+ ;\n#wrap -> () ;\n",
-    "input": "007"
+    "grammar": "start -> \\d ;\n#wrap -> () ;\n",
+    "input": "7"
   },
   {
     "id": "leaf",
     "group": "Atoms",
     "title": "Leaf /pattern/",
     "syntax": "/pattern/",
-    "blurb": "Match and emit as one string. Not a second engine: collapse, not regex delegation. The sandbox compiles the pattern as RE2 anchored at the cursor.",
+    "blurb": "Match and emit as one string. The usual spelling of a token. Not a second engine: collapse, not regex delegation. The sandbox compiles the pattern as RE2 anchored at the cursor.",
     "slice": "core",
-    "grammar": "start -> /hello/ ;\n#wrap -> () ;\n",
+    "grammar": "start -> /[A-Za-z]+/ ;\n#wrap -> () ;\n",
     "input": "hello"
   },
   {
@@ -266,7 +266,7 @@
     "syntax": "%name",
     "blurb": "Match a previously captured string. Not executed in the first-slice runner.",
     "slice": "later",
-    "grammar": "start -> tag=[A-Z]+ %tag ;\n#wrap -> () ;\n",
+    "grammar": "start -> tag=/[A-Z]+/ %tag ;\n#wrap -> () ;\n",
     "input": "ABCABC"
   },
   {
@@ -306,7 +306,7 @@
     "syntax": "(?!term)",
     "blurb": "Zero-width: term must fail.",
     "slice": "core",
-    "grammar": "start -> (?!\"xx\") [a-z]+ ;\n#wrap -> () ;\n",
+    "grammar": "start -> (?!\"xx\") /[a-z]+/ ;\n#wrap -> () ;\n",
     "input": "xy"
   },
   {
@@ -316,7 +316,7 @@
     "syntax": "@",
     "blurb": "The next tighter stack level. Used as infix @:op=\"+\" or prefix/postfix.",
     "slice": "core",
-    "grammar": "expr -> op=\"-\" @ > num ;\nnum -> [0-9]+ ;\n#wrap -> () ;\n",
+    "grammar": "expr -> op=\"-\" @ > num ;\nnum -> /[0-9]+/ ;\n#wrap -> () ;\n",
     "input": "-9"
   },
   {

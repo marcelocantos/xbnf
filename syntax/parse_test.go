@@ -93,8 +93,12 @@ func TestParseCalc(t *testing.T) {
 		t.Fatalf("expr stack: %#v", expr.Body)
 	}
 	ident := rule(t, g, "IDENT")
-	if len(ident.Mods) != 1 || ident.Mods[0] != "leaf" {
-		t.Fatalf("IDENT mods: %v", ident.Mods)
+	leaf, ok := ident.Body.(grammar.Leaf)
+	if !ok {
+		t.Fatalf("IDENT body %T", ident.Body)
+	}
+	if leaf.Pattern != `[A-Za-z_][A-Za-z0-9_]*` {
+		t.Fatalf("IDENT pattern %q", leaf.Pattern)
 	}
 }
 

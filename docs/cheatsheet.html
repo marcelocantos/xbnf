@@ -419,10 +419,10 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
 
         <h3>Scope</h3>
         <div class="item" data-slice="core" data-q="scope { wrap local rules terminal }">
-          <p><code>{ decls term }</code> on a stack level or as a rule body: nested rules/pragmas plus a body.</p>
+          <p><code>{ decls term }</code> on a stack level or as a rule body: nested rules/pragmas plus a body. Wrap-off plus <code>#leaf</code> is for a terminal that is a small grammar, not one pattern.</p>
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">IDENT #leaf -&gt; { #wrap -&gt; () ;
-    [A-Za-z_] [A-Za-z0-9_]* ;
+<pre class="xbnf">NUMBER #leaf -&gt; { #wrap -&gt; () ;
+    [0-9]+ ("." [0-9]+)? ;
 } ;</pre></div>
           <p>IR: <span class="badge ir">Scope</span>.</p>
         </div>
@@ -436,9 +436,9 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
             <tr class="item" data-slice="core" data-q="ident rule ref"><td><code>name</code></td><td>rule reference</td><td><span class="badge ir">Ident</span></td></tr>
             <tr class="item" data-slice="core" data-q="ident :: label"><td><code>name::label</code></td><td>same, only if <code>label</code> wins</td><td><span class="badge ir">Ident</span></td></tr>
             <tr class="item" data-slice="core" data-q='string "let" backtick'><td><code>"let"</code> <code>'let'</code> <code>`let`</code></td><td>literal (backtick doubles <code>`</code> to escape)</td><td><span class="badge ir">String</span></td></tr>
-            <tr class="item" data-slice="core" data-q="character class [a-z] negated"><td><code>[a-z]</code> <code>[^\n]</code></td><td>class; <code>-</code> is a range</td><td><span class="badge ir">CharClass</span></td></tr>
+            <tr class="item" data-slice="core" data-q="character class [a-z] negated"><td><code>[a-z]</code> <code>[^\n]</code></td><td>one character; <code>-</code> is a range. Many of these: <code>/[a-z]+/</code>, not <code>[a-z]+</code></td><td><span class="badge ir">CharClass</span></td></tr>
             <tr class="item" data-slice="core" data-q="escape \d \s \n"><td><code>\d</code> <code>\s</code> <code>\n</code></td><td>backslash class (<code>\</code> + alphanum)</td><td><span class="badge ir">Escape</span></td></tr>
-            <tr class="item" data-slice="core" data-q="leaf /pattern/"><td><code>/pattern/</code></td><td>match, emit as one string</td><td><span class="badge ir">Leaf</span></td></tr>
+            <tr class="item" data-slice="core" data-q="leaf /pattern/ token"><td><code>/pattern/</code></td><td>match, emit as one string — usual spelling of a token</td><td><span class="badge ir">Leaf</span></td></tr>
             <tr class="item" data-slice="core" data-q=". any char"><td><code>.</code></td><td>any character</td><td><span class="badge ir">AnyChar</span></td></tr>
             <tr class="item" data-slice="core" data-q="%name default"><td><code>%name</code> <code>%name="EOF"</code></td><td>back-ref, optional default</td><td><span class="badge ir">Ref</span></td></tr>
             <tr class="item" data-slice="core" data-q="%%bind extref"><td><code>%%bind</code></td><td>external ref</td><td><span class="badge ir">ExtRef</span></td></tr>
@@ -463,7 +463,7 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
             </tr>
             <tr class="item" data-slice="core" data-q="#leaf tree or string">
               <td><code>#leaf</code></td>
-              <td>Whether a successful match is a tree or a string.</td>
+              <td>Whether a successful match is a tree or a string. Tokens that are one regex are <code>/pat/</code>; <code>#leaf</code> collapses a structured body.</td>
             </tr>
             <tr class="item" data-slice="core" data-q="regular dfa #lex lock">
               <td>Regular vs not</td>
@@ -525,12 +525,10 @@ NUMBER #leaf -&gt; { #wrap -&gt; () ;
       | IDENT ;</pre></div>
         </div>
 
-        <div class="panel item" data-ex-panel="ident" hidden data-slice="core" data-q="IDENT #leaf wrap off character class">
-          <p class="muted">Typical terminal: leaf collapse plus wrap-off scope.</p>
+        <div class="panel item" data-ex-panel="ident" hidden data-slice="core" data-q="IDENT /pattern/ leaf token">
+          <p class="muted">Typical token: a leaf pattern. <code>#leaf</code> is for a structured body that is not one regex (see NUMBER).</p>
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">IDENT #leaf -&gt; { #wrap -&gt; () ;
-    [A-Za-z_] [A-Za-z0-9_]* ;
-} ;</pre></div>
+<pre class="xbnf">IDENT -&gt; /[A-Za-z_][A-Za-z0-9_]*/ ;</pre></div>
         </div>
 
         <div class="panel item" data-ex-panel="python" hidden data-slice="later" data-q="@col python indent off-side">
