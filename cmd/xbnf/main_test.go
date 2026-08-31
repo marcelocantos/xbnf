@@ -64,6 +64,19 @@ func TestRunHelp(t *testing.T) {
 	}
 }
 
+func TestRunFromWbnf(t *testing.T) {
+	code, stdout, stderr := capture(t, []string{"from-wbnf", "../../fromwbnf/testdata/xml.wbnf"})
+	if code != 0 {
+		t.Fatalf("from-wbnf exit %d stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "#wrap") || !strings.Contains(stdout, "|>") {
+		t.Fatalf("from-wbnf output: %q", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("from-wbnf stderr: %q", stderr)
+	}
+}
+
 func TestRunNoArgs(t *testing.T) {
 	code, _, stderr := capture(t, nil)
 	if code != 2 {

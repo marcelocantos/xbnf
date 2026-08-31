@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package fromwbnf holds the meaning of an old .wbnf grammar: productions
-// and terms as written (macros not expanded, no cut-points). It is not a
-// parser engine. Conversion to xbnf source is a later step.
+// and terms as written (macros not expanded, no cut-points). Convert emits
+// equivalent xbnf source. It is not a parser engine.
 package fromwbnf
 
 // File is a parsed .wbnf grammar.

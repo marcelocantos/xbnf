@@ -16,6 +16,9 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && args[0] == "from-wbnf" {
+		return runFromWbnf(args[1:])
+	}
 	sandboxCmd := false
 	if len(args) > 0 && args[0] == "sandbox" {
 		sandboxCmd = true
@@ -30,7 +33,8 @@ func run(args []string) int {
 		fmt.Fprintf(out, "  xbnf -version\n")
 		fmt.Fprintf(out, "  xbnf -help-agent\n")
 		fmt.Fprintf(out, "  xbnf sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
-		fmt.Fprintf(out, "  xbnf -sandbox [-bind %s] [-port %d]\n\n", sandboxBindDefault, sandboxPortDefault)
+		fmt.Fprintf(out, "  xbnf -sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
+		fmt.Fprintf(out, "  xbnf from-wbnf file.wbnf\n\n")
 		fs.PrintDefaults()
 	}
 	showVersion := fs.Bool("version", false, "print version")
