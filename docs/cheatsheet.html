@@ -1,0 +1,747 @@
+<!--
+Copyright 2026 Marcelo Cantos
+SPDX-License-Identifier: Apache-2.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xbnf language cheat sheet</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe6;
+      --bg-2: #ebe4d4;
+      --ink: #1b1814;
+      --muted: #6b6358;
+      --line: #d5cbb8;
+      --accent: #a33b22;
+      --ok: #2c5e4a;
+      --later: #5c4d7a;
+      --code-bg: #e7dfcf;
+      --shadow: 0 0 0 1px var(--line);
+      --rail: 13.5rem;
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #141210;
+      --bg-2: #1c1915;
+      --ink: #ece6da;
+      --muted: #a3998c;
+      --line: #3b342c;
+      --accent: #e07a5f;
+      --ok: #7dba9a;
+      --later: #c2b3e0;
+      --code-bg: #241f1a;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    a { color: var(--accent); }
+    a:hover { text-decoration-thickness: 2px; }
+    code, kbd, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    kbd {
+      font-size: 0.78em;
+      border: 1px solid var(--line);
+      border-radius: 0.25rem;
+      padding: 0.05em 0.4em;
+      background: var(--bg-2);
+    }
+
+    .top {
+      position: sticky; top: 0; z-index: 5;
+      display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center;
+      padding: 0.7rem 1.1rem;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; gap: 0.7rem; align-items: baseline; text-decoration: none; color: inherit; }
+    .brand strong { font-size: 1.15rem; letter-spacing: -0.02em; }
+    .brand span { color: var(--muted); font-size: 0.9rem; }
+    .top-tools { margin-left: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    @media (min-width: 821px) {
+      .top-tools { flex-wrap: nowrap; }
+      #q { width: auto; flex: 1 1 10rem; max-width: 18rem; min-width: 8rem; }
+    }
+    #q {
+      width: min(22rem, 100%);
+      padding: 0.4rem 0.65rem;
+      border: 1px solid var(--line);
+      border-radius: 0.35rem;
+      background: var(--bg-2);
+      color: inherit;
+      font: inherit;
+    }
+    #q:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .seg { display: flex; flex: 0 0 auto; border: 1px solid var(--line); border-radius: 0.35rem; overflow: hidden; }
+    .seg button, .icon-btn {
+      border: 0; background: transparent; color: inherit; font: inherit;
+      padding: 0.35rem 0.7rem; cursor: pointer; white-space: nowrap;
+    }
+    .seg button + button { border-left: 1px solid var(--line); }
+    .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+    .icon-btn { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 0.35rem; padding: 0.35rem 0.55rem; }
+    #status { color: var(--muted); font-size: 0.85rem; }
+    #status:empty { display: none; }
+
+    .shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); gap: 0; }
+    nav.toc {
+      position: sticky; top: 3.4rem; align-self: start;
+      max-height: calc(100vh - 3.4rem); overflow: auto;
+      padding: 1rem 0.6rem 2rem 1.1rem;
+      border-right: 1px solid var(--line);
+      font-size: 0.9rem;
+    }
+    nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 0.18rem 0.4rem; border-radius: 0.25rem; white-space: nowrap; }
+    nav.toc a:hover, nav.toc a[aria-current="true"] { color: var(--ink); background: var(--bg-2); }
+    main { padding: 1.25rem 1.4rem 4rem; max-width: 58rem; }
+    h1 { font-size: 1.7rem; letter-spacing: -0.03em; margin: 0 0 0.4rem; }
+    h2 { font-size: 1.2rem; margin: 2rem 0 0.7rem; scroll-margin-top: 4rem; }
+    h3 { font-size: 1rem; margin: 1.3rem 0 0.45rem; }
+    .lead { font-size: 1.05rem; max-width: 46rem; }
+    .muted { color: var(--muted); }
+
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--bg-2);
+      padding: 0.7rem 0.9rem;
+      margin: 1rem 0;
+    }
+    .callout.later-box { border-left-color: var(--later); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    th, td { text-align: left; vertical-align: top; padding: 0.4rem 0.5rem 0.4rem 0; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr.item[hidden], section[hidden], .panel[hidden] { display: none !important; }
+
+    .badge {
+      display: inline-block; font-size: 0.72rem; font-weight: 650;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 0.05rem 0.4rem; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted);
+    }
+    .badge.later { color: var(--later); border-color: color-mix(in srgb, var(--later) 50%, var(--line)); }
+    .badge.ir { color: var(--ok); }
+
+    pre {
+      margin: 0.5rem 0 0.8rem;
+      padding: 0.8rem 0.9rem;
+      background: var(--code-bg);
+      border-radius: 0.4rem;
+      overflow: auto;
+      font: 0.86rem/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      position: relative;
+    }
+    .code-wrap { position: relative; scroll-margin-top: 4.5rem; }
+    .copy {
+      position: absolute; top: 0.35rem; right: 0.35rem; z-index: 2;
+      font: 0.72rem/1 ui-sans-serif, system-ui, sans-serif;
+      padding: 0.25rem 0.45rem; border-radius: 0.3rem;
+      border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer;
+    }
+    .tok-com { color: var(--muted); }
+    .tok-str { color: var(--ok); }
+    .tok-hash { color: var(--accent); }
+    .tok-op { color: var(--later); }
+
+    .layers { display: grid; gap: 0.35rem; margin: 0.8rem 0 1rem; }
+    .layer {
+      display: grid; grid-template-columns: 2.2rem 1fr auto;
+      gap: 0.8rem; align-items: baseline;
+      padding: 0.45rem 0.7rem; background: var(--bg-2); border-radius: 0.35rem;
+    }
+    .layer b { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--accent); }
+
+    .tabs { display: flex; gap: 0.3rem; flex-wrap: wrap; margin: 0.6rem 0 0.4rem; }
+    .tabs button {
+      border: 1px solid var(--line); background: transparent; color: inherit;
+      font: inherit; padding: 0.3rem 0.65rem; border-radius: 999px; cursor: pointer;
+    }
+    .tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+    .empty { display: none; padding: 1.2rem; color: var(--muted); }
+    body.is-empty .empty { display: block; }
+    body.is-empty main section { display: none; }
+
+    @media (max-width: 820px) {
+      .shell { grid-template-columns: minmax(0, 1fr); }
+      .top, nav.toc { max-width: 100vw; }
+      nav.toc {
+        position: static; max-height: none; border-right: 0;
+        border-bottom: 1px solid var(--line);
+        display: flex; flex-wrap: wrap; gap: 0.15rem 0.2rem;
+        padding: 0.6rem 1rem; width: 100%;
+      }
+      nav.toc a { padding: 0.2rem 0.5rem; }
+      .top-tools { margin-left: 0; width: 100%; }
+      #q { width: 100%; }
+      main { padding: 1rem 1rem 3rem; min-width: 0; overflow-x: auto; }
+      td, th { overflow-wrap: anywhere; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#top">
+      <strong>xbnf</strong>
+      <span>language cheat sheet</span>
+    </a>
+    <div class="top-tools">
+      <input id="q" type="search" placeholder="Search constructs  /" aria-label="Search" autocomplete="off">
+      <div class="seg" role="group" aria-label="Slice">
+        <button type="button" data-slice="all" aria-pressed="true">All</button>
+        <button type="button" data-slice="core">First slice</button>
+        <button type="button" data-slice="later">Later</button>
+      </div>
+      <button type="button" class="icon-btn" id="theme" aria-label="Toggle colour theme">Theme</button>
+      <span id="status" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <div class="shell">
+    <nav class="toc" aria-label="On this page">
+      <a href="#what">What it is</a>
+      <a href="#sigils">Sigils</a>
+      <a href="#shape">File shape</a>
+      <a href="#rules">Rules</a>
+      <a href="#pragmas">Pragmas</a>
+      <a href="#layers">Term layers</a>
+      <a href="#combinators">Combinators</a>
+      <a href="#atoms">Atoms</a>
+      <a href="#whitespace">Wrap, leaf, lex</a>
+      <a href="#ambiguity">Ambiguity</a>
+      <a href="#examples">Examples</a>
+      <a href="#slice">First slice</a>
+    </nav>
+
+    <main id="top">
+      <h1>xbnf</h1>
+      <p class="lead">Scannerless CFG notation. Regex-shaped fragments and recursive rules are the same language. There is no lexer. <code>|</code> is unordered. An unresolved ambiguity is a compile error.</p>
+      <p class="muted">Syntax: <a href="xbnf.xbnf"><code>docs/xbnf.xbnf</code></a>. Semantics: <a href="plan.md"><code>docs/plan.md</code></a>. IR types are in package <code>grammar</code>.</p>
+
+      <div class="callout item" data-slice="core" data-q="wbnf peg ordered choice not compatible">
+        New product, not a wbnf upgrade. wbnf is a PEG backtracker with ordered choice. xbnf does not keep that.
+      </div>
+
+      <p class="empty">No matches. Clear search or switch slice.</p>
+
+      <section id="what">
+        <h2>What it is</h2>
+        <table>
+          <thead><tr><th>Idea</th><th>Consequence</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q="scannerless no lexer terminals">
+              <td>Scannerless</td>
+              <td>String literals, classes, and rule refs all match against the input. No token stream.</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="unordered alternation compile error">
+              <td>Unordered <code>|</code></td>
+              <td>Source order has no meaning. A test that depends on alternative order is wrong.</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="gll dfa regular fragment">
+              <td>GLL + layered DFA</td>
+              <td>General CFG (including left recursion) is GLL. Regular rule bodies compile to character-class DFAs.</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="self host eats own cooking">
+              <td>Self-host</td>
+              <td>The engine must parse <code>xbnf.xbnf</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="sigils">
+        <h2>Sigils</h2>
+        <table>
+          <thead><tr><th>Token</th><th>Meaning</th><th>IR</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q=". any character dot"><td><code>.</code></td><td>any character</td><td><span class="badge ir">AnyChar</span></td></tr>
+            <tr class="item" data-slice="core" data-q="# pragma directive modifier"><td><code>#name</code></td><td>pragma, directive, or rule modifier</td><td>—</td></tr>
+            <tr class="item" data-slice="core" data-q="@ stack self ref"><td><code>@</code></td><td>stack self-ref, or start of <code>@col</code></td><td><span class="badge ir">Self</span></td></tr>
+            <tr class="item" data-slice="core" data-q="% back-reference capture"><td><code>%name</code></td><td>back-reference to a named capture</td><td><span class="badge ir">Ref</span></td></tr>
+            <tr class="item" data-slice="core" data-q="%% external reference"><td><code>%%name</code></td><td>external reference</td><td><span class="badge ir">ExtRef</span></td></tr>
+            <tr class="item" data-slice="later" data-q="%! macro call"><td><code>%!name(...)</code></td><td>macro call <span class="badge later">later</span></td><td><span class="badge ir">MacroCall</span></td></tr>
+            <tr class="item" data-slice="core" data-q=":: label filter tok"><td><code>::</code></td><td>label filter: <code>tok::kw_if</code></td><td><span class="badge ir">Ident.Label</span></td></tr>
+            <tr class="item" data-slice="core" data-q="> stack precedence"><td><code>&gt;</code></td><td>precedence-stack separator</td><td><span class="badge ir">Stack</span></td></tr>
+            <tr class="item" data-slice="core" data-q="| alternation"><td><code>|</code></td><td>unordered alternation</td><td><span class="badge ir">Alt</span></td></tr>
+            <tr class="item" data-slice="core" data-q=": delimited repetition comma"><td><code>:</code></td><td>delimited repetition, <code>x:","</code></td><td><span class="badge ir">Delim</span></td></tr>
+            <tr class="item" data-slice="core" data-q="/pat/ leaf collapse regex"><td><code>/pat/</code></td><td>leaf collapse, not a second matching engine</td><td><span class="badge ir">Leaf</span></td></tr>
+          </tbody>
+        </table>
+        <p class="muted item" data-slice="core" data-q="gone wbnf <: :> /{}/">Gone from wbnf: <code>.</code> as pragma prefix, <code>&lt;:</code> / <code>:&gt;</code> associativity, <code>/{…}/</code> regex holes.</p>
+      </section>
+
+      <section id="shape">
+        <h2>File shape</h2>
+        <div class="item" data-slice="core" data-q="grammar stmt rule pragma comment">
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">stmt+
+stmt  = COMMENT | rule | pragma
+rule  = NAME mods* "-&gt;" term ";"</pre></div>
+          <p>Comments: <code>// line</code> and <code>/* block */</code>. They are syntax, not IR.</p>
+        </div>
+      </section>
+
+      <section id="rules">
+        <h2>Rules and modifiers</h2>
+        <div class="item" data-slice="core" data-q="rule #leaf #lex modifier">
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">IDENT #leaf #lex -&gt; term ;</pre></div>
+        </div>
+        <table>
+          <thead><tr><th>Modifier</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q="#leaf flat string ast">
+              <td><code>#leaf</code></td>
+              <td>The match is one flat string in the AST. IR: <span class="badge ir">Rule.Mods</span></td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="#lex regularity lock dfa">
+              <td><code>#lex</code></td>
+              <td>Strictness lock: this rule must stay regular. Not the DFA switch — regularity is detected; <code>#lex</code> makes drift a compile error.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="item" data-slice="core" data-q="tok::label longest match">
+          <code>tok::label</code> means: run <code>tok</code>, take the winning labelled alternative (longest match, priority on ties), succeed only if that winner is <code>label</code>. There is no lexer mode.
+        </p>
+      </section>
+
+      <section id="pragmas">
+        <h2>Pragmas</h2>
+        <table>
+          <thead><tr><th>Form</th><th>Role</th><th>IR</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q="#wrap whitespace scoped">
+              <td><code>#wrap -&gt; term ;</code></td>
+              <td>Whitespace inserted between adjacent terminals. Scoped. Replaces wbnf <code>.wrapRE</code>.</td>
+              <td><span class="badge ir">Wrap</span></td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="#import path">
+              <td><code>#import "path" ;</code></td>
+              <td>Include another grammar.</td>
+              <td><span class="badge ir">Import</span></td>
+            </tr>
+            <tr class="item" data-slice="later" data-q="#macro expansion arrai">
+              <td><code>#macro name(args) { term }</code></td>
+              <td>Expansion. <span class="badge later">later</span> (arrai uses this).</td>
+              <td><span class="badge ir">Macro</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="item" data-slice="core" data-q="#wrap empty suppress terminal">
+          <p>A nested <code>{ #wrap -&gt; () ; … }</code> turns wrap off inside that region — how character-level terminals are written. Default wrap in <code>xbnf.xbnf</code>:</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">#wrap -&gt; (\s | COMMENT)* ;</pre></div>
+        </div>
+      </section>
+
+      <section id="layers">
+        <h2>Term layers</h2>
+        <p class="item" data-slice="core" data-q="precedence stack alt seq atom tightest">Tightest last. <code>(term)</code> groups and is not an IR node. <code>()</code> is empty.</p>
+        <div class="layers item" data-slice="core" data-q="L1 L2 L3 L4 stack alt seq named">
+          <div class="layer"><b>L1</b> <span><code>a &gt; b &gt; c</code> stack</span> <span class="badge ir">Stack</span></div>
+          <div class="layer"><b>L2</b> <span><code>a | b | c</code> unordered alt</span> <span class="badge ir">Alt</span></div>
+          <div class="layer"><b>L3</b> <span><code>a b c</code> sequence, trailing <code>#</code> directives</span> <span class="badge ir">Seq</span></div>
+          <div class="layer"><b>L4</b> <span>named atom with quantifiers</span> <span class="badge ir">Named Quant</span></div>
+        </div>
+      </section>
+
+      <section id="combinators">
+        <h2>Combinators</h2>
+
+        <h3>Sequence, alt, named</h3>
+        <div class="item" data-slice="core" data-q="sequence juxtaposition named capture">
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">member -&gt; STR ":" value ;
+value  -&gt; object | array | STR | "null" ;
+alias=IDENT
+op="+"</pre></div>
+        </div>
+
+        <h3>Quantifiers</h3>
+        <table>
+          <thead><tr><th>Syntax</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q="optional ?"><td><code>x?</code></td><td>0 or 1</td></tr>
+            <tr class="item" data-slice="core" data-q="star *"><td><code>x*</code></td><td>0 or more</td></tr>
+            <tr class="item" data-slice="core" data-q="plus +"><td><code>x+</code></td><td>1 or more</td></tr>
+            <tr class="item" data-slice="core" data-q="{4} exact"><td><code>x{4}</code></td><td>exactly 4</td></tr>
+            <tr class="item" data-slice="core" data-q="{1,3} range"><td><code>x{1,3}</code></td><td>1 to 3</td></tr>
+            <tr class="item" data-slice="core" data-q="{1,} min"><td><code>x{1,}</code></td><td>1 or more</td></tr>
+            <tr class="item" data-slice="core" data-q="{,3} max"><td><code>x{,3}</code></td><td>0 to 3</td></tr>
+          </tbody>
+        </table>
+        <p class="muted item" data-slice="core" data-q="quant unbounded ir">IR: <span class="badge ir">Quant</span> with <code>Max = Unbounded</code> (−1) when there is no upper bound.</p>
+
+        <h3>Delimited repetition</h3>
+        <div class="item" data-slice="core" data-q='delimited x:"," leading trailing comma'>
+          <p><code>x</code> separated by a delimiter. Leading/trailing commas in the <em>grammar syntax</em> allow a separator before the first / after the last item.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">x:","         // x ("," x)*
+x:,","        // optional leading ","
+x:",",        // optional trailing ","
+x:,",",       // both
+(member:","?)?   // JSON-style optional list, no trailing comma</pre></div>
+          <p>IR: <span class="badge ir">Delim</span> with <code>Leading</code> / <code>Trailing</code>. A following <code>?</code> is a separate <span class="badge ir">Quant</span>.</p>
+        </div>
+
+        <h3>Directives</h3>
+        <div class="item" data-slice="core" data-q="#assoc #prefer #avoid #priority #longest">
+          <p>Trail a sequence: <code>#name</code> or <code>#name=value</code>.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">@:op=("+" | "-")  #assoc=left</pre></div>
+          <p>Vocabulary: <code>#prefer</code> / <code>#avoid</code>, <code>#assoc=left|right|none</code>, <code>#priority</code>, <code>#longest</code>. <code>#longest</code> is the default for regular-fragment rules. An unnecessary disambiguator is a warning. IR: <span class="badge ir">Directive</span> on <span class="badge ir">Seq</span>.</p>
+        </div>
+
+        <h3>Stack</h3>
+        <div class="item" data-slice="core" data-q="stack precedence @ self left recursion">
+          <p><code>&gt;</code> is looser-to-tighter. <code>@</code> is this stack (next tighter level, or the same level as infix/postfix). Left recursion is native.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">expr -&gt; @:op=("+" | "-")  #assoc=left
+      &gt; @:op=("*" | "/" | "%")  #assoc=left
+      &gt; op=("-" | "!") @
+      &gt; @ "(" (expr:","?)? ")"
+      | NUMBER
+      | IDENT ;</pre></div>
+          <p><code>@:op="+"</code> is the idiom “infix <code>+</code> at this level”, operator captured as <code>op</code>.</p>
+        </div>
+
+        <h3>Scope</h3>
+        <div class="item" data-slice="core" data-q="scope { wrap local rules terminal }">
+          <p><code>{ decls term }</code> on a stack level or as a rule body: nested rules/pragmas plus a body.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">IDENT #leaf -&gt; { #wrap -&gt; () ;
+    [A-Za-z_] [A-Za-z0-9_]* ;
+} ;</pre></div>
+          <p>IR: <span class="badge ir">Scope</span>.</p>
+        </div>
+      </section>
+
+      <section id="atoms">
+        <h2>Atoms</h2>
+        <table>
+          <thead><tr><th>Syntax</th><th>Meaning</th><th>IR</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q="ident rule ref"><td><code>name</code></td><td>rule reference</td><td><span class="badge ir">Ident</span></td></tr>
+            <tr class="item" data-slice="core" data-q="ident :: label"><td><code>name::label</code></td><td>same, only if <code>label</code> wins</td><td><span class="badge ir">Ident</span></td></tr>
+            <tr class="item" data-slice="core" data-q='string "let" backtick'><td><code>"let"</code> <code>'let'</code> <code>`let`</code></td><td>literal (backtick doubles <code>`</code> to escape)</td><td><span class="badge ir">String</span></td></tr>
+            <tr class="item" data-slice="core" data-q="character class [a-z] negated"><td><code>[a-z]</code> <code>[^\n]</code></td><td>class; <code>-</code> is a range</td><td><span class="badge ir">CharClass</span></td></tr>
+            <tr class="item" data-slice="core" data-q="escape \d \s \n"><td><code>\d</code> <code>\s</code> <code>\n</code></td><td>backslash class (<code>\</code> + alphanum)</td><td><span class="badge ir">Escape</span></td></tr>
+            <tr class="item" data-slice="core" data-q="leaf /pattern/"><td><code>/pattern/</code></td><td>match, emit as one string</td><td><span class="badge ir">Leaf</span></td></tr>
+            <tr class="item" data-slice="core" data-q=". any char"><td><code>.</code></td><td>any character</td><td><span class="badge ir">AnyChar</span></td></tr>
+            <tr class="item" data-slice="core" data-q="%name default"><td><code>%name</code> <code>%name="EOF"</code></td><td>back-ref, optional default</td><td><span class="badge ir">Ref</span></td></tr>
+            <tr class="item" data-slice="core" data-q="%%bind extref"><td><code>%%bind</code></td><td>external ref</td><td><span class="badge ir">ExtRef</span></td></tr>
+            <tr class="item" data-slice="later" data-q="%! macro call"><td><code>%!patternterms(expr)</code></td><td>macro call <span class="badge later">later</span></td><td><span class="badge ir">MacroCall</span></td></tr>
+            <tr class="item" data-slice="core" data-q="lookahead (?= (?!"><td><code>(?=term)</code> <code>(?!term)</code></td><td>zero-width lookahead</td><td><span class="badge ir">Lookahead</span> / <span class="badge ir">NegLookahead</span></td></tr>
+            <tr class="item" data-slice="core" data-q="@ self stack"><td><code>@</code></td><td>stack self-ref</td><td><span class="badge ir">Self</span></td></tr>
+            <tr class="item" data-slice="later" data-q="@col @line positional python"><td><code>@col</code> <code>@col(=0)</code> <code>@col(&gt;0)</code></td><td>positional predicate <span class="badge later">later</span></td><td><span class="badge ir">PosProp</span></td></tr>
+            <tr class="item" data-slice="core" data-q="grouping parentheses"><td><code>(term)</code></td><td>grouping — nested term, no node</td><td>—</td></tr>
+            <tr class="item" data-slice="core" data-q="empty ()"><td><code>()</code></td><td>empty</td><td><span class="badge ir">Empty</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="whitespace">
+        <h2>Wrap, leaf, regularity</h2>
+        <table>
+          <thead><tr><th>Knob</th><th>Orthogonal job</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q="#wrap between terminals">
+              <td><code>#wrap</code></td>
+              <td>What may appear <em>between</em> terminals (spaces, comments, nothing).</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="#leaf tree or string">
+              <td><code>#leaf</code></td>
+              <td>Whether a successful match is a tree or a string.</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="regular dfa #lex lock">
+              <td>Regular vs not</td>
+              <td>A property of the rule body. Regular rules become DFAs. <code>#lex</code> only locks that property.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="item" data-slice="core" data-q="NUMBER terminal wrap off">
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">NUMBER #leaf -&gt; { #wrap -&gt; () ;
+    [0-9]+ ("." [0-9]+)? ;
+} ;</pre></div>
+          <p>Inside the braces, wrap is empty, so <code>"."</code> and digits concatenate with no injected space. Outside, <code>#wrap -&gt; \s*</code> still applies <em>around</em> a <code>NUMBER</code> reference.</p>
+        </div>
+      </section>
+
+      <section id="ambiguity">
+        <h2>Ambiguity policy</h2>
+        <div class="item" data-slice="core" data-q="compile error deterministic disambiguator">
+          <p>A choice must be provably deterministic (bounded lookahead at compile time) or covered by an explicit <code>#</code> disambiguator. Otherwise: compile error. <code>|</code> is a set, not try-in-order.</p>
+        </div>
+      </section>
+
+      <section id="examples">
+        <h2>Examples</h2>
+        <div class="tabs" role="tablist" aria-label="Worked examples">
+          <button type="button" role="tab" aria-selected="true" data-ex="json">JSON</button>
+          <button type="button" role="tab" aria-selected="false" data-ex="calc">calc stack</button>
+          <button type="button" role="tab" aria-selected="false" data-ex="ident">IDENT terminal</button>
+          <button type="button" role="tab" aria-selected="false" data-ex="python" data-slice-tab="later">@col <span class="badge later">later</span></button>
+        </div>
+
+        <div class="panel item" data-ex-panel="json" data-slice="core" data-q="json object array member wrap">
+          <p class="muted">First-slice complete grammar. From <a href="examples/json.xbnf"><code>docs/examples/json.xbnf</code></a>.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">json   -&gt; value ;
+value  -&gt; object | array | STR | NUMBER | "true" | "false" | "null" ;
+object -&gt; "{" (member:","?)? "}" ;
+member -&gt; STR ":" value ;
+array  -&gt; "[" (value:","?)? "]" ;
+
+NUMBER #leaf -&gt; { #wrap -&gt; () ;
+    "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
+} ;
+
+#wrap -&gt; \s* ;</pre></div>
+        </div>
+
+        <div class="panel item" data-ex-panel="calc" hidden data-slice="core" data-q="calc expr assoc left recursion">
+          <p class="muted">Precedence stack. From <a href="examples/calc.xbnf"><code>docs/examples/calc.xbnf</code></a>.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">expr -&gt; "let" IDENT "=" @ ";" @
+      &gt; @:op="?" @:op=":"
+      &gt; @:op=("+" | "-")    #assoc=left
+      &gt; @:op=("*" | "/" | "%")  #assoc=left
+      &gt; op=("-" | "!" | "~") @
+      &gt; @ "(" (expr:","?)? ")"
+      | NUMBER
+      | IDENT ;</pre></div>
+        </div>
+
+        <div class="panel item" data-ex-panel="ident" hidden data-slice="core" data-q="IDENT #leaf wrap off character class">
+          <p class="muted">Typical terminal: leaf collapse plus wrap-off scope.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">IDENT #leaf -&gt; { #wrap -&gt; () ;
+    [A-Za-z_] [A-Za-z0-9_]* ;
+} ;</pre></div>
+        </div>
+
+        <div class="panel item" data-ex-panel="python" hidden data-slice="later" data-q="@col python indent off-side">
+          <p class="muted">Designed, not first slice. From <a href="examples/python-subset.xbnf"><code>docs/examples/python-subset.xbnf</code></a>.</p>
+          <div class="code-wrap"><button type="button" class="copy">Copy</button>
+<pre class="xbnf">file  -&gt; (stmt @col(=0))* ;
+block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
+        </div>
+      </section>
+
+      <section id="slice">
+        <h2>First engine slice vs later</h2>
+        <table>
+          <thead><tr><th>In the first slice (through self-host)</th><th>Designed, not first slice</th></tr></thead>
+          <tbody>
+            <tr class="item" data-slice="core" data-q="gll left recursion">
+              <td>GLL for the general CFG, including left recursion</td>
+              <td class="item" data-slice="later">@col / @line (python-subset)</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="dfa regular">
+              <td>DFA for regular fragments</td>
+              <td class="item" data-slice="later">#macro expansion (arrai)</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="#assoc #prefer #longest">
+              <td>Unordered <code>|</code> plus <code>#assoc</code> / <code>#prefer</code> / <code>#longest</code> / <code>#priority</code></td>
+              <td class="item" data-slice="later">Algebraic grammar composition (<code>+</code>, <code>|=</code>)</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="#wrap #leaf #lex ::">
+              <td><code>#wrap</code>, <code>#leaf</code>, <code>#lex</code>, <code>::</code> labels</td>
+              <td class="item" data-slice="later">Relation-valued attributes; generated Go types</td>
+            </tr>
+            <tr class="item" data-slice="core" data-q="self-host json calc xbnf.xbnf T7">
+              <td>Self-host gate: <code>xbnf.xbnf</code>, <code>json.xbnf</code>, <code>calc.xbnf</code></td>
+              <td class="item" data-slice="later">PEG / <code>.wbnf</code> compatibility — never</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="callout later-box item" data-slice="later" data-q="residue python arrai T7">
+          python-subset and arrai are residue until those features exist. They are not the self-host gate.
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const $ = (s, r) => (r || document).querySelector(s);
+      const $$ = (s, r) => Array.prototype.slice.call((r || document).querySelectorAll(s));
+
+      const html = document.documentElement;
+      const q = $("#q");
+      const status = $("#status");
+      let slice = "all";
+
+      const saved = localStorage.getItem("xbnf-theme");
+      if (saved) html.setAttribute("data-theme", saved);
+      else if (matchMedia("(prefers-color-scheme: dark)").matches) html.setAttribute("data-theme", "dark");
+
+      $("#theme").addEventListener("click", function () {
+        const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        html.setAttribute("data-theme", next);
+        localStorage.setItem("xbnf-theme", next);
+      });
+
+      function highlight(src) {
+        let i = 0, out = "";
+        const esc = (s) => s.replace(/[&<>]/g, function (c) {
+          return c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;";
+        });
+        const span = (cls, s) => '<span class="' + cls + '">' + esc(s) + "</span>";
+        while (i < src.length) {
+          if (src.startsWith("//", i)) {
+            const j = src.indexOf("\n", i);
+            const end = j < 0 ? src.length : j;
+            out += span("tok-com", src.slice(i, end));
+            i = end;
+            continue;
+          }
+          const ch = src[i];
+          if (ch === '"' || ch === "'" || ch === "`") {
+            let j = i + 1;
+            while (j < src.length) {
+              if (src[j] === "\\" ) { j += 2; continue; }
+              if (ch === "`" && src.startsWith("``", j)) { j += 2; continue; }
+              if (src[j] === ch) { j++; break; }
+              j++;
+            }
+            out += span("tok-str", src.slice(i, j));
+            i = j;
+            continue;
+          }
+          if (ch === "#" && /[A-Za-z_]/.test(src[i + 1] || "")) {
+            let j = i + 1;
+            while (/[A-Za-z0-9_]/.test(src[j] || "")) j++;
+            out += span("tok-hash", src.slice(i, j));
+            i = j;
+            continue;
+          }
+          if ("|->".indexOf(ch) >= 0) {
+            out += span("tok-op", ch);
+            i++;
+            continue;
+          }
+          out += esc(ch);
+          i++;
+        }
+        return out;
+      }
+
+      $$("pre.xbnf").forEach(function (pre) {
+        pre.innerHTML = highlight(pre.textContent.replace(/\n$/, ""));
+      });
+
+      function apply() {
+        const query = q.value.trim().toLowerCase();
+        let shown = 0, total = 0;
+        $$(".item").forEach(function (el) {
+          total++;
+          const s = el.getAttribute("data-slice") || "core";
+          const blob = ((el.getAttribute("data-q") || "") + " " + el.textContent).toLowerCase();
+          const okSlice = slice === "all" || s === slice;
+          const okQ = !query || blob.indexOf(query) >= 0;
+          const vis = okSlice && okQ;
+          el.hidden = !vis;
+          if (vis) shown++;
+        });
+        $$("section").forEach(function (sec) {
+          const any = $$(".item", sec).some(function (el) { return !el.hidden; });
+          sec.hidden = !any;
+        });
+        const laterTab = $('.tabs button[data-ex="python"]');
+        if (laterTab) {
+          laterTab.hidden = slice === "core";
+          if (slice === "core" && laterTab.getAttribute("aria-selected") === "true") {
+            const jsonTab = $('.tabs button[data-ex="json"]');
+            if (jsonTab) jsonTab.click();
+          }
+        }
+        document.body.classList.toggle("is-empty", shown === 0);
+        status.textContent = query || slice !== "all" ? shown + " shown" : "";
+      }
+
+      q.addEventListener("input", apply);
+      $$(".seg button[data-slice]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          slice = btn.getAttribute("data-slice");
+          $$(".seg button[data-slice]").forEach(function (b) {
+            b.setAttribute("aria-pressed", String(b === btn));
+          });
+          apply();
+        });
+      });
+
+      $$(".tabs button[data-ex]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          const id = btn.getAttribute("data-ex");
+          $$(".tabs button[data-ex]").forEach(function (b) {
+            b.setAttribute("aria-selected", String(b === btn));
+          });
+          $$("[data-ex-panel]").forEach(function (p) {
+            p.hidden = p.getAttribute("data-ex-panel") !== id;
+          });
+        });
+      });
+
+      $$(".copy").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          const pre = btn.parentElement.querySelector("pre");
+          const text = pre.textContent;
+          const done = function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1200); };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () {
+              const r = document.createRange();
+              r.selectNodeContents(pre);
+              const sel = getSelection();
+              sel.removeAllRanges();
+              sel.addRange(r);
+            });
+          } else {
+            done();
+          }
+        });
+      });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "/" && document.activeElement !== q && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          q.focus();
+          q.select();
+        }
+        if (e.key === "Escape" && document.activeElement === q) {
+          q.value = "";
+          apply();
+          q.blur();
+        }
+      });
+
+      const links = $$("nav.toc a");
+      const map = links.map(function (a) {
+        return { a: a, el: document.querySelector(a.getAttribute("href")) };
+      }).filter(function (x) { return x.el; });
+      if ("IntersectionObserver" in window) {
+        const io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (en) {
+            if (!en.isIntersecting) return;
+            links.forEach(function (a) { a.removeAttribute("aria-current"); });
+            const hit = map.find(function (x) { return x.el === en.target; });
+            if (hit) hit.a.setAttribute("aria-current", "true");
+          });
+        }, { rootMargin: "-20% 0px -70% 0px", threshold: 0 });
+        map.forEach(function (x) { io.observe(x.el); });
+      }
+
+      apply();
+    })();
+  </script>
+</body>
+</html>

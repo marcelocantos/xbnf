@@ -19,3 +19,4 @@ docs/targets.md
 node_modules/
 __pycache__/
 *.log
+.playwright-mcp/

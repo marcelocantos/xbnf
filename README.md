@@ -7,11 +7,12 @@ xbnf succeeds [wbnf](https://github.com/arr-ai/wbnf) as a new product, not
 a compatible upgrade. Alternation is unordered. Ambiguity is a compile
 error unless the grammar says how to resolve it.
 
-**Status:** language spec and implementation plan. The engine is not
-written yet.
+**Status:** language spec, IR types, and a local sandbox for the cheat sheet.
+The parse engine is not written yet.
 
 ## Spec
 
+- [`docs/cheatsheet.html`](docs/cheatsheet.html) — interactive language cheat sheet
 - [`docs/xbnf.xbnf`](docs/xbnf.xbnf) — the language, defined in itself
 - [`docs/examples/`](docs/examples/) — JSON, calc, and larger sketches
 - [`docs/plan.md`](docs/plan.md) — locked decisions and work graph
@@ -29,6 +30,7 @@ make vet
 ```sh
 xbnf --version
 xbnf --help-agent
+xbnf sandbox          # http://127.0.0.1:7373/docs/cheatsheet.html
 ```
 
 ## License

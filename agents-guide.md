@@ -10,14 +10,15 @@ they declare a disambiguator (`#prefer`, `#avoid`, `#assoc`, `#priority`,
 
 ## Status
 
-The engine is not implemented. The CLI currently supports `--version`,
-`--help`, and `--help-agent` only. Do not invent a parse API or a
-`.xbnf` runner.
+The engine is not implemented. The CLI supports `--version`, `--help`,
+`--help-agent`, and `sandbox` (also `-sandbox`) to host the language cheat
+sheet. Do not invent a parse API or a `.xbnf` runner.
 
 ## Spec and plan
 
 | File | Role |
 |---|---|
+| `docs/cheatsheet.html` | Interactive language cheat sheet |
 | `docs/xbnf.xbnf` | Language, defined in itself |
 | `docs/examples/*.xbnf` | Example grammars; `@col` and macros are later |
 | `docs/plan.md` | Locked decisions and work graph |

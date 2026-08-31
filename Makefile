@@ -6,7 +6,7 @@ export GOWORK := off
 
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all build test vet clean smoke bullseye
+.PHONY: all build test vet clean smoke sandbox bullseye
 
 all: build
 
@@ -27,6 +27,10 @@ clean:
 smoke: build
 	bin/xbnf --version
 	bin/xbnf --help-agent >/dev/null
+	bin/xbnf sandbox -h >/dev/null
+
+sandbox: build
+	bin/xbnf sandbox
 
 # Standing invariants hook read by /cv (bullseye_convergence).
 bullseye:

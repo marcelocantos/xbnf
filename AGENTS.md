@@ -38,8 +38,9 @@ engine/       GLL + DFA
 ast/          committed parse tree
 ```
 
-Today: CLI stub (`--version`, `--help`, `--help-agent`) plus package `grammar`
-(IR types, no parser). Spec and plan under `docs/`.
+Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`) plus package
+`grammar` (IR types, no parser). Spec, plan, and cheat sheet under `docs/`.
+`xbnf sandbox` hosts the cheat sheet; it does not parse.
 
 Locked decisions, work graph, and non-goals: [`docs/plan.md`](docs/plan.md).
 Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).

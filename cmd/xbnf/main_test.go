@@ -7,10 +7,13 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/marcelocantos/xbnf"
 )
+
+var captureMu sync.Mutex
 
 func TestRunVersion(t *testing.T) {
 	code, stdout, stderr := capture(t, []string{"-version"})
@@ -73,6 +76,8 @@ func TestRunNoArgs(t *testing.T) {
 
 func capture(t *testing.T, args []string) (int, string, string) {
 	t.Helper()
+	captureMu.Lock()
+	defer captureMu.Unlock()
 	oldOut, oldErr := os.Stdout, os.Stderr
 	outR, outW, err := os.Pipe()
 	if err != nil {

@@ -16,10 +16,28 @@ func main() {
 }
 
 func run(args []string) int {
+	sandboxCmd := false
+	if len(args) > 0 && args[0] == "sandbox" {
+		sandboxCmd = true
+		args = args[1:]
+	}
+
 	fs := flag.NewFlagSet("xbnf", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = func() {
+		out := fs.Output()
+		fmt.Fprintf(out, "Usage of xbnf:\n")
+		fmt.Fprintf(out, "  xbnf -version\n")
+		fmt.Fprintf(out, "  xbnf -help-agent\n")
+		fmt.Fprintf(out, "  xbnf sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
+		fmt.Fprintf(out, "  xbnf -sandbox [-bind %s] [-port %d]\n\n", sandboxBindDefault, sandboxPortDefault)
+		fs.PrintDefaults()
+	}
 	showVersion := fs.Bool("version", false, "print version")
 	helpAgent := fs.Bool("help-agent", false, "print CLI help and the agent guide")
+	sandboxFlag := fs.Bool("sandbox", false, "host the language sandbox")
+	bind := fs.String("bind", sandboxBindDefault, "sandbox listen address")
+	port := fs.Int("port", sandboxPortDefault, "sandbox listen port")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -36,6 +54,13 @@ func run(args []string) int {
 		fmt.Fprint(os.Stdout, "\n")
 		fmt.Fprint(os.Stdout, xbnf.AgentGuide)
 		return 0
+	}
+	if sandboxCmd || *sandboxFlag {
+		if fs.NArg() != 0 {
+			fmt.Fprintln(os.Stderr, "xbnf sandbox: unexpected argument")
+			return 2
+		}
+		return runSandbox(*bind, *port)
 	}
 	if fs.NArg() == 0 {
 		fs.Usage()
