@@ -35,14 +35,17 @@ cmd/xbnf/     CLI
 grammar/      IR (Rule, Term) — exists
 syntax/       bootstrap parser: xbnf source → IR — exists
 engine/       GLL + DFA terminal layer — exists
+fromwbnf/     parse old .wbnf into an IR of meaning — exists
 ast/          committed parse tree
 ```
 
 Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`) plus packages
-`grammar` (IR), `syntax` (bootstrap parser), and `engine` (GLL with a DFA
-fast path for regular-fragment rules). `xbnf sandbox` hosts the cheat sheet
-and syntax reference; `POST /run` matches editable examples. Compile-time
-disambiguation (T6), self-host (T7), and `xbnf parse` (T8) are not this slice.
+`grammar` (IR), `syntax` (bootstrap parser), `engine` (GLL with a DFA
+fast path for regular-fragment rules), and `fromwbnf` (parse `.wbnf` into
+productions/terms/pragmas/macros; not a runner). `xbnf sandbox` hosts the
+cheat sheet and syntax reference; `POST /run` matches editable examples.
+Compile-time disambiguation (T6), self-host (T7), `xbnf parse` (T8), and
+wbnf-to-xbnf conversion (T13) are not this slice.
 
 Locked decisions, work graph, and non-goals: [`docs/plan.md`](docs/plan.md).
 Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).

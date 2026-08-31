@@ -15,7 +15,8 @@ The engine is GLL with a DFA terminal layer for regular-fragment rules.
 The CLI supports `--version`, `--help`, `--help-agent`, and `sandbox`
 (also `-sandbox`) to host the cheat sheet and a syntax reference.
 Sandbox `POST /run` parses xbnf with the bootstrap parser and matches
-input with that engine. Do not add a file-based `parse` CLI until T8.
+input with that engine. `fromwbnf` parses old `.wbnf` into an IR of
+meaning; it is not a runner. Do not add a file-based `parse` CLI until T8.
 Compile-time disambiguation (T6) and self-host (T7) are still open.
 
 ## Spec and plan
@@ -33,7 +34,9 @@ Compile-time disambiguation (T6) and self-host (T7) are still open.
 
 [wbnf](https://github.com/arr-ai/wbnf) is a PEG backtracker. xbnf does not
 preserve its ordered-choice semantics and is not a drop-in replacement.
-Do not add compatibility shims.
+Do not add compatibility shims. `fromwbnf.Parse` reads `.wbnf` into an IR of
+what the grammar meant (macros kept, no cut-points, not executed). Conversion
+of that IR to xbnf source is a later step.
 
 ## If you are implementing
 

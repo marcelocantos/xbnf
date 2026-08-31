@@ -1,0 +1,61 @@
+// Non-terminals
+grammar -> stmt+;
+stmt    -> COMMENT | prod | pragma;
+prod    -> IDENT "->" term+ ";";
+term    -> (@ ("{" grammar "}")? ):op=">"
+         > @:op="|"
+         > @+
+         > named quant*;
+named   -> (IDENT op="=")? atom;
+quant   -> op=[?*+]
+         | "{" min=INT? "," max=INT? "}"
+         | op=/{<:|:>?} opt_leading=","? named opt_trailing=","?;
+atom    -> IDENT
+         | STR
+         | RE
+         | macrocall
+         | ExtRef=("%%" IDENT)
+         | REF
+         | "(?=" lookahead=term ")"
+         | "(" term ")"
+         | "(" ")";
+
+macrocall   -> "%!" name=IDENT "(" term:","? ")";
+REF         -> "%" IDENT ("=" default=STR)?;
+
+// Terminals
+COMMENT -> /{ //.*$
+            | (?s: /\* (?: [^*] | \*+[^*/] ) \*/ )
+            };
+IDENT   -> /{@|\.?[A-Za-z_]\w*};
+INT     -> \d+;
+STR     -> /{ " (?: \\. | [^\\"] )* "
+            | ' (?: \\. | [^\\'] )* '
+            | ` (?: ``  | [^`]   )* `
+            };
+RE      -> /{
+             /{
+               (?:
+                 \\.
+                 | { (?: (?: \d+(?:,\d*)? | ,\d+ ) \} )?
+                 | \[ (?: \\. | \[:^?[a-z]+:\] | [^\]] )+ ]
+                 | [^\\{\}]
+               )*
+             \}
+           | (?:
+               (?:
+                 \[ (?: \\. | \[:^?[a-z]+:\] | [^\]] )+ ]
+               | \\[pP](?:[a-z]|\{[a-zA-Z_]+\})
+               | \\[a-zA-Z]
+               | [.^$]
+               )(?: (?:[+*?]|\{\d+,?\d?\}) \?? )?
+             )+
+           };
+
+// Special
+pragma  -> import | macrodef {
+                import   -> ".import" path=((".."|"."|[a-zA-Z0-9.:]+):,"/") ";"?;
+                macrodef -> ".macro" name=IDENT "(" args=IDENT:","? ")" "{" term "}" ";"?;
+            };
+
+.wrapRE -> /{\s*()\s*};
