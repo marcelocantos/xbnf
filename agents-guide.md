@@ -10,15 +10,18 @@ they declare a disambiguator (`#prefer`, `#avoid`, `#assoc`, `#priority`,
 
 ## Status
 
-The engine is not implemented. The CLI supports `--version`, `--help`,
-`--help-agent`, and `sandbox` (also `-sandbox`) to host the language cheat
-sheet. Do not invent a parse API or a `.xbnf` runner.
+The GLL engine is not implemented. The CLI supports `--version`, `--help`,
+`--help-agent`, and `sandbox` (also `-sandbox`) to host the cheat sheet and
+a syntax reference. Sandbox `POST /run` parses xbnf with the bootstrap
+parser and matches input with a longest-match IR interpreter. Do not add a
+file-based `parse` CLI until T8.
 
 ## Spec and plan
 
 | File | Role |
 |---|---|
 | `docs/cheatsheet.html` | Interactive language cheat sheet |
+| `docs/syntax.html` | Syntax reference with runnable examples |
 | `docs/xbnf.xbnf` | Language, defined in itself |
 | `docs/examples/*.xbnf` | Example grammars; `@col` and macros are later |
 | `docs/plan.md` | Locked decisions and work graph |

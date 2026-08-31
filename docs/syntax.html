@@ -1,0 +1,263 @@
+<!--
+Copyright 2026 Marcelo Cantos
+SPDX-License-Identifier: Apache-2.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xbnf syntax reference</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe6; --bg-2: #ebe4d4; --ink: #1b1814; --muted: #6b6358;
+      --line: #d5cbb8; --accent: #a33b22; --ok: #2c5e4a; --later: #5c4d7a;
+      --code-bg: #e7dfcf; --rail: 15rem; --fail: #8b2e1f;
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #141210; --bg-2: #1c1915; --ink: #ece6da; --muted: #a3998c;
+      --line: #3b342c; --accent: #e07a5f; --ok: #7dba9a; --later: #c2b3e0;
+      --code-bg: #241f1a; --fail: #e07a5f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    a { color: var(--accent); }
+    code, textarea, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .top {
+      position: sticky; top: 0; z-index: 5;
+      display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center;
+      padding: 0.7rem 1.1rem;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; gap: 0.7rem; align-items: baseline; text-decoration: none; color: inherit; }
+    .brand strong { font-size: 1.15rem; }
+    .brand span { color: var(--muted); font-size: 0.9rem; }
+    nav.pages { display: flex; gap: 0.8rem; font-size: 0.9rem; }
+    .top-tools { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
+    #q {
+      width: min(16rem, 100%); padding: 0.4rem 0.65rem;
+      border: 1px solid var(--line); border-radius: 0.35rem;
+      background: var(--bg-2); color: inherit; font: inherit;
+    }
+    .icon-btn {
+      border: 1px solid var(--line); border-radius: 0.35rem;
+      background: transparent; color: inherit; font: inherit;
+      padding: 0.35rem 0.55rem; cursor: pointer;
+    }
+    .shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); }
+    nav.toc {
+      position: sticky; top: 3.4rem; align-self: start;
+      max-height: calc(100vh - 3.4rem); overflow: auto;
+      padding: 1rem 0.6rem 2rem 1.1rem;
+      border-right: 1px solid var(--line); font-size: 0.88rem;
+    }
+    nav.toc h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.8rem 0 0.3rem; }
+    nav.toc a { display: block; color: var(--muted); text-decoration: none; padding: 0.18rem 0.4rem; border-radius: 0.25rem; }
+    nav.toc a:hover, nav.toc a[aria-current="true"] { color: var(--ink); background: var(--bg-2); }
+    nav.toc a .later { color: var(--later); font-size: 0.7rem; margin-left: 0.3rem; }
+    main { padding: 1.25rem 1.4rem 4rem; max-width: 46rem; }
+    h1 { font-size: 1.5rem; letter-spacing: -0.03em; margin: 0 0 0.4rem; }
+    .lead { color: var(--muted); }
+    .syntax {
+      background: var(--code-bg); padding: 0.6rem 0.8rem; border-radius: 0.35rem;
+      margin: 0.8rem 0; overflow: auto;
+    }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.8rem 0 0.3rem; }
+    textarea {
+      width: 100%; min-height: 7rem; padding: 0.6rem 0.7rem;
+      border: 1px solid var(--line); border-radius: 0.35rem;
+      background: var(--code-bg); color: inherit; resize: vertical;
+    }
+    #input { min-height: 3.2rem; }
+    .row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.7rem; }
+    #run {
+      background: var(--ink); color: var(--bg); border: 0;
+      padding: 0.4rem 0.9rem; border-radius: 0.35rem; font: inherit; cursor: pointer;
+    }
+    #run:disabled { opacity: 0.5; }
+    .hint { color: var(--muted); font-size: 0.85rem; }
+    #out {
+      margin-top: 0.8rem; padding: 0.8rem 0.9rem; border-radius: 0.35rem;
+      background: var(--bg-2); white-space: pre-wrap; font-size: 0.85rem;
+      min-height: 4rem;
+    }
+    #out.ok { border-left: 3px solid var(--ok); }
+    #out.fail { border-left: 3px solid var(--fail); }
+    .badge {
+      display: inline-block; font-size: 0.72rem; font-weight: 650;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 0.05rem 0.4rem; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--later);
+    }
+    @media (max-width: 820px) {
+      .shell { grid-template-columns: minmax(0, 1fr); }
+      nav.toc {
+        position: static; max-height: none; border-right: 0;
+        border-bottom: 1px solid var(--line);
+        display: flex; flex-wrap: wrap; gap: 0.15rem; max-width: 100vw;
+      }
+      nav.toc h2 { width: 100%; }
+      main { padding: 1rem; }
+      .top-tools { width: 100%; }
+      #q { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="index.html"><strong>xbnf</strong><span>sandbox</span></a>
+    <nav class="pages">
+      <a href="cheatsheet.html">Cheat sheet</a>
+      <a href="syntax.html" aria-current="page">Syntax</a>
+    </nav>
+    <div class="top-tools">
+      <input id="q" type="search" placeholder="Filter clauses  /" aria-label="Filter clauses" autocomplete="off">
+      <button type="button" class="icon-btn" id="theme">Theme</button>
+    </div>
+  </header>
+  <div class="shell">
+    <nav class="toc" id="toc" aria-label="Clauses"></nav>
+    <main>
+      <h1 id="title">Syntax reference</h1>
+      <p class="lead" id="blurb">Pick a clause. Edit the grammar and input, then Run.</p>
+      <p><code class="syntax" id="syntax"></code></p>
+      <p id="slice-note" hidden><span class="badge">later</span> First-slice runner will skip this construct by name.</p>
+      <label for="grammar">Grammar</label>
+      <textarea id="grammar" spellcheck="false"></textarea>
+      <label for="input">Input</label>
+      <textarea id="input" spellcheck="false"></textarea>
+      <div class="row">
+        <button type="button" id="run">Run</button>
+        <span class="hint">Ctrl/⌘ Enter</span>
+      </div>
+      <pre id="out">Load a clause, then Run.</pre>
+    </main>
+  </div>
+  <script>
+    (function () {
+      const $ = (s) => document.querySelector(s);
+      const html = document.documentElement;
+      const saved = localStorage.getItem("xbnf-theme");
+      if (saved) html.setAttribute("data-theme", saved);
+      else if (matchMedia("(prefers-color-scheme: dark)").matches) html.setAttribute("data-theme", "dark");
+      $("#theme").addEventListener("click", function () {
+        const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        html.setAttribute("data-theme", next);
+        localStorage.setItem("xbnf-theme", next);
+      });
+
+      let clauses = [];
+      let current = null;
+
+      function renderToc(filter) {
+        const q = (filter || "").toLowerCase();
+        const toc = $("#toc");
+        toc.innerHTML = "";
+        let group = "";
+        clauses.forEach(function (c) {
+          const blob = (c.id + " " + c.title + " " + c.syntax + " " + c.blurb).toLowerCase();
+          if (q && blob.indexOf(q) < 0) return;
+          if (c.group !== group) {
+            group = c.group;
+            const h = document.createElement("h2");
+            h.textContent = group;
+            toc.appendChild(h);
+          }
+          const a = document.createElement("a");
+          a.href = "#" + c.id;
+          a.textContent = c.title;
+          if (c.slice === "later") {
+            const s = document.createElement("span");
+            s.className = "later";
+            s.textContent = "later";
+            a.appendChild(s);
+          }
+          if (current && current.id === c.id) a.setAttribute("aria-current", "true");
+          toc.appendChild(a);
+        });
+      }
+
+      function show(c) {
+        current = c;
+        location.hash = c.id;
+        $("#title").textContent = c.title;
+        $("#blurb").textContent = c.blurb;
+        $("#syntax").textContent = c.syntax;
+        $("#grammar").value = c.grammar;
+        $("#input").value = c.input;
+        $("#slice-note").hidden = c.slice !== "later";
+        $("#out").textContent = "Ready. Run to match input against the grammar.";
+        $("#out").className = "";
+        renderToc($("#q").value);
+      }
+
+      async function run() {
+        const btn = $("#run");
+        btn.disabled = true;
+        $("#out").textContent = "Running…";
+        $("#out").className = "";
+        try {
+          const res = await fetch("/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              grammar: $("#grammar").value,
+              input: $("#input").value,
+              start: current && current.start || ""
+            })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            $("#out").className = "ok";
+            $("#out").textContent = "match\n" + JSON.stringify(data.tree, null, 2);
+          } else {
+            $("#out").className = "fail";
+            $("#out").textContent = data.error || "failed";
+          }
+        } catch (e) {
+          $("#out").className = "fail";
+          $("#out").textContent = String(e);
+        }
+        btn.disabled = false;
+      }
+
+      $("#run").addEventListener("click", run);
+      document.addEventListener("keydown", function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          e.preventDefault();
+          run();
+        }
+        if (e.key === "/" && document.activeElement.tagName !== "TEXTAREA" && document.activeElement !== $("#q")) {
+          e.preventDefault();
+          $("#q").focus();
+        }
+      });
+      $("#q").addEventListener("input", function () { renderToc($("#q").value); });
+      window.addEventListener("hashchange", function () {
+        const id = location.hash.slice(1);
+        const c = clauses.find(function (x) { return x.id === id; });
+        if (c) show(c);
+      });
+
+      fetch("syntax-clauses.json")
+        .then(function (r) { return r.json(); })
+        .then(function (cs) {
+          clauses = cs;
+          const id = location.hash.slice(1);
+          const c = clauses.find(function (x) { return x.id === id; }) || clauses[0];
+          show(c);
+        })
+        .catch(function (e) {
+          $("#out").textContent = "Failed to load clauses: " + e;
+        });
+    })();
+  </script>
+</body>
+</html>

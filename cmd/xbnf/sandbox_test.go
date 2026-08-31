@@ -71,8 +71,8 @@ func TestSandboxServesCheatSheet(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET / (follow redirect) status: %d", res.StatusCode)
 	}
-	if !strings.Contains(body, "xbnf language cheat sheet") {
-		t.Fatalf("GET / missing cheat sheet title")
+	if !strings.Contains(body, "Syntax reference") {
+		t.Fatalf("GET / missing hub: %q", body)
 	}
 
 	res, body = sandboxGet(t, base+"/docs/cheatsheet.html")
@@ -115,7 +115,7 @@ func TestSandboxRedirectAndSpec(t *testing.T) {
 		t.Fatalf("GET / status: %d", res.StatusCode)
 	}
 	loc := res.Header.Get("Location")
-	if loc != "/docs/cheatsheet.html" {
+	if loc != "/docs/index.html" {
 		t.Fatalf("GET / Location: %q", loc)
 	}
 
@@ -152,8 +152,39 @@ func TestSandboxURLLoopback(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := sandboxURL(addr)
-	if got != "http://127.0.0.1:7373/docs/cheatsheet.html" {
+	if got != "http://127.0.0.1:7373/docs/index.html" {
 		t.Fatalf("sandboxURL: %q", got)
+	}
+}
+
+func TestSandboxSyntaxPage(t *testing.T) {
+	t.Parallel()
+	base := startSandbox(t)
+	res, body := sandboxGet(t, base+"/docs/syntax.html")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("syntax status: %d", res.StatusCode)
+	}
+	if !strings.Contains(body, "Syntax reference") || !strings.Contains(body, "/run") {
+		t.Fatalf("syntax page missing runner: %q", body[:min(200, len(body))])
+	}
+	res, body = sandboxGet(t, base+"/docs/syntax-clauses.json")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("clauses status: %d", res.StatusCode)
+	}
+	if !strings.Contains(body, `"id": "rule"`) {
+		t.Fatalf("clauses missing rule: %s", body[:min(120, len(body))])
+	}
+}
+
+func TestSandboxRun(t *testing.T) {
+	t.Parallel()
+	base := startSandbox(t)
+	body, err := jsonPOST(t, base+"/run", `{"grammar":"start -> \"hi\" ;\n","input":"hi"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("run: %s", body)
 	}
 }
 
@@ -168,6 +199,27 @@ func startSandbox(t *testing.T) string {
 	t.Cleanup(func() { _ = srv.Close() })
 	return "http://" + ln.Addr().String()
 }
+
+func jsonPOST(t *testing.T, url, raw string) (string, error) {
+	t.Helper()
+	res, err := http.Post(url, "application/json", strings.NewReader(raw))
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode != http.StatusOK {
+		return "", errString("status " + res.Status)
+	}
+	return string(b), nil
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
 
 func sandboxGet(t *testing.T, url string) (*http.Response, string) {
 	t.Helper()

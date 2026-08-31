@@ -1,0 +1,352 @@
+[
+  {
+    "id": "rule",
+    "group": "Structure",
+    "title": "Rule",
+    "syntax": "NAME -> term ;",
+    "blurb": "A named production. The first rule is the start symbol unless Run is told otherwise.",
+    "slice": "core",
+    "grammar": "start -> \"hi\" ;\n",
+    "input": "hi"
+  },
+  {
+    "id": "mod-leaf",
+    "group": "Structure",
+    "title": "Modifier #leaf",
+    "syntax": "NAME #leaf -> term ;",
+    "blurb": "The match is one flat string in the tree, not a nested structure.",
+    "slice": "core",
+    "grammar": "tok #leaf -> [A-Za-z]+ ;\n#wrap -> () ;\n",
+    "input": "Hello"
+  },
+  {
+    "id": "mod-lex",
+    "group": "Structure",
+    "title": "Modifier #lex",
+    "syntax": "NAME #lex -> term ;",
+    "blurb": "Strictness lock: this rule must stay regular. The sandbox still matches it; the compiler (T5) rejects drift.",
+    "slice": "core",
+    "grammar": "tok #lex #leaf -> [0-9]+ ;\n#wrap -> () ;\n",
+    "input": "42"
+  },
+  {
+    "id": "pragma-wrap",
+    "group": "Structure",
+    "title": "Pragma #wrap",
+    "syntax": "#wrap -> term ;",
+    "blurb": "Whitespace inserted between terminals. Default in xbnf.xbnf is (\\s | COMMENT)*.",
+    "slice": "core",
+    "grammar": "start -> \"a\" \"b\" ;\n#wrap -> \\s* ;\n",
+    "input": "a   b"
+  },
+  {
+    "id": "pragma-wrap-off",
+    "group": "Structure",
+    "title": "Scoped wrap-off",
+    "syntax": "{ #wrap -> () ; term }",
+    "blurb": "Empty wrap concatenates characters with no injected space. How terminals are written.",
+    "slice": "core",
+    "grammar": "start -> { #wrap -> () ; \"a\" \"b\" ; } ;\n#wrap -> \\s* ;\n",
+    "input": "ab"
+  },
+  {
+    "id": "pragma-import",
+    "group": "Structure",
+    "title": "Pragma #import",
+    "syntax": "#import \"path\" ;",
+    "blurb": "Include another grammar. Parsed into IR; the first-slice runner does not load the file.",
+    "slice": "later",
+    "grammar": "#import \"lib/json.xbnf\" ;\nstart -> \"ok\" ;\n",
+    "input": "ok"
+  },
+  {
+    "id": "pragma-macro",
+    "group": "Structure",
+    "title": "Pragma #macro",
+    "syntax": "#macro name(args) { term }",
+    "blurb": "Macro definition. Expansion is not first slice.",
+    "slice": "later",
+    "grammar": "#macro hi() { \"hi\" } ;\nstart -> %!hi() ;\n",
+    "input": "hi"
+  },
+  {
+    "id": "stack",
+    "group": "Combinators",
+    "title": "Precedence stack",
+    "syntax": "a > b > c",
+    "blurb": "> is looser-to-tighter. @ is this stack (the next tighter level).",
+    "slice": "core",
+    "grammar": "expr -> @:op=\"+\" > num ;\nnum -> [0-9]+ ;\n#wrap -> () ;\n",
+    "input": "1+2+3"
+  },
+  {
+    "id": "alt",
+    "group": "Combinators",
+    "title": "Unordered alternation",
+    "syntax": "a | b | c",
+    "blurb": "Source order has no meaning. The sandbox runner takes the longest successful alternative.",
+    "slice": "core",
+    "grammar": "start -> \"true\" | \"false\" | \"null\" ;\n",
+    "input": "false"
+  },
+  {
+    "id": "seq",
+    "group": "Combinators",
+    "title": "Sequence",
+    "syntax": "a b c",
+    "blurb": "Juxtaposition. Wrap is skipped between terminals.",
+    "slice": "core",
+    "grammar": "start -> \"{\" \"}\" ;\n#wrap -> \\s* ;\n",
+    "input": "{ }"
+  },
+  {
+    "id": "named",
+    "group": "Combinators",
+    "title": "Named capture",
+    "syntax": "name=term",
+    "blurb": "Tags the match. Also used as @:op=\"+\" to name a stack operator.",
+    "slice": "core",
+    "grammar": "start -> who=\"hi\" ;\n",
+    "input": "hi"
+  },
+  {
+    "id": "quant-q",
+    "group": "Combinators",
+    "title": "Optional",
+    "syntax": "x?",
+    "blurb": "Zero or one.",
+    "slice": "core",
+    "grammar": "start -> \"a\"? \"b\" ;\n#wrap -> () ;\n",
+    "input": "b"
+  },
+  {
+    "id": "quant-star",
+    "group": "Combinators",
+    "title": "Zero or more",
+    "syntax": "x*",
+    "blurb": "Zero or more greedy repetitions.",
+    "slice": "core",
+    "grammar": "start -> \"a\"* ;\n#wrap -> () ;\n",
+    "input": "aaa"
+  },
+  {
+    "id": "quant-plus",
+    "group": "Combinators",
+    "title": "One or more",
+    "syntax": "x+",
+    "blurb": "One or more greedy repetitions.",
+    "slice": "core",
+    "grammar": "start -> \"a\"+ ;\n#wrap -> () ;\n",
+    "input": "aa"
+  },
+  {
+    "id": "quant-exact",
+    "group": "Combinators",
+    "title": "Exact count",
+    "syntax": "x{4}",
+    "blurb": "Exactly n repetitions.",
+    "slice": "core",
+    "grammar": "start -> [0-9]{4} ;\n#wrap -> () ;\n",
+    "input": "2026"
+  },
+  {
+    "id": "quant-range",
+    "group": "Combinators",
+    "title": "Count range",
+    "syntax": "x{1,3}",
+    "blurb": "Inclusive min and max. Open ends: {1,} and {,3}.",
+    "slice": "core",
+    "grammar": "start -> \"a\"{1,3} ;\n#wrap -> () ;\n",
+    "input": "aa"
+  },
+  {
+    "id": "delim",
+    "group": "Combinators",
+    "title": "Delimited repetition",
+    "syntax": "x:\",\"",
+    "blurb": "x (\",\" x)*. Leading/trailing commas in the grammar syntax allow a separator before the first / after the last item.",
+    "slice": "core",
+    "grammar": "start -> item:\",\" ;\nitem -> [a-z]+ ;\n#wrap -> () ;\n",
+    "input": "one,two,three"
+  },
+  {
+    "id": "delim-trailing",
+    "group": "Combinators",
+    "title": "Optional delimited list",
+    "syntax": "(x:\",\"?)?",
+    "blurb": "JSON-style: zero or more items, no trailing comma in the input.",
+    "slice": "core",
+    "grammar": "start -> \"[\" (item:\",\"?)? \"]\" ;\nitem -> [0-9]+ ;\n#wrap -> () ;\n",
+    "input": "[1,2,3]"
+  },
+  {
+    "id": "directive",
+    "group": "Combinators",
+    "title": "Directive",
+    "syntax": "#assoc=left",
+    "blurb": "Trails a sequence. Vocabulary: #prefer / #avoid, #assoc, #priority, #longest. The runner parses them and still matches.",
+    "slice": "core",
+    "grammar": "expr -> @:op=(\"+\") #assoc=left > num ;\nnum -> [0-9]+ ;\n#wrap -> () ;\n",
+    "input": "1+2"
+  },
+  {
+    "id": "ident",
+    "group": "Atoms",
+    "title": "Rule reference",
+    "syntax": "name",
+    "blurb": "Invokes another rule.",
+    "slice": "core",
+    "grammar": "start -> other ;\nother -> \"ok\" ;\n",
+    "input": "ok"
+  },
+  {
+    "id": "ident-label",
+    "group": "Atoms",
+    "title": "Label filter",
+    "syntax": "tok::kw_if",
+    "blurb": "Run tok; succeed only if the winning labelled alternative is kw_if. First-slice runner reports this as not executed.",
+    "slice": "later",
+    "grammar": "start -> tok::kw ;\ntok -> kw=\"if\" | ident=[a-z]+ ;\n#wrap -> () ;\n",
+    "input": "if"
+  },
+  {
+    "id": "string",
+    "group": "Atoms",
+    "title": "String literal",
+    "syntax": "\"let\" 'let' `let`",
+    "blurb": "Exact text. Backtick doubles ` to escape.",
+    "slice": "core",
+    "grammar": "start -> \"let\" ;\n",
+    "input": "let"
+  },
+  {
+    "id": "charclass",
+    "group": "Atoms",
+    "title": "Character class",
+    "syntax": "[a-z] [^\\n]",
+    "blurb": "One character. - is a range. ^ after [ negates.",
+    "slice": "core",
+    "grammar": "start -> [A-Za-z][A-Za-z0-9]* ;\n#wrap -> () ;\n",
+    "input": "Var2"
+  },
+  {
+    "id": "escape",
+    "group": "Atoms",
+    "title": "Escape",
+    "syntax": "\\d \\s \\n",
+    "blurb": "Backslash class. \\d digits, \\s space, \\n newline.",
+    "slice": "core",
+    "grammar": "start -> \\d+ ;\n#wrap -> () ;\n",
+    "input": "007"
+  },
+  {
+    "id": "leaf",
+    "group": "Atoms",
+    "title": "Leaf /pattern/",
+    "syntax": "/pattern/",
+    "blurb": "Match and emit as one string. Not a second engine: collapse, not regex delegation. The sandbox compiles the pattern as RE2 anchored at the cursor.",
+    "slice": "core",
+    "grammar": "start -> /hello/ ;\n#wrap -> () ;\n",
+    "input": "hello"
+  },
+  {
+    "id": "anychar",
+    "group": "Atoms",
+    "title": "Any character",
+    "syntax": ".",
+    "blurb": "One character. . is not a pragma sigil.",
+    "slice": "core",
+    "grammar": "start -> \"x\" . \"y\" ;\n#wrap -> () ;\n",
+    "input": "x!y"
+  },
+  {
+    "id": "ref",
+    "group": "Atoms",
+    "title": "Back-reference",
+    "syntax": "%name",
+    "blurb": "Match a previously captured string. Not executed in the first-slice runner.",
+    "slice": "later",
+    "grammar": "start -> tag=[A-Z]+ %tag ;\n#wrap -> () ;\n",
+    "input": "ABCABC"
+  },
+  {
+    "id": "extref",
+    "group": "Atoms",
+    "title": "External reference",
+    "syntax": "%%name",
+    "blurb": "Host-provided matcher. Not executed in the first-slice runner.",
+    "slice": "later",
+    "grammar": "start -> %%bind ;\n",
+    "input": "x"
+  },
+  {
+    "id": "macro-call",
+    "group": "Atoms",
+    "title": "Macro call",
+    "syntax": "%!name(args)",
+    "blurb": "Expansion is not first slice.",
+    "slice": "later",
+    "grammar": "#macro hi() { \"hi\" } ;\nstart -> %!hi() ;\n",
+    "input": "hi"
+  },
+  {
+    "id": "lookahead",
+    "group": "Atoms",
+    "title": "Positive lookahead",
+    "syntax": "(?=term)",
+    "blurb": "Zero-width: term must match, input is not consumed.",
+    "slice": "core",
+    "grammar": "start -> (?=\"ab\") \"a\" \"b\" ;\n#wrap -> () ;\n",
+    "input": "ab"
+  },
+  {
+    "id": "neg-lookahead",
+    "group": "Atoms",
+    "title": "Negative lookahead",
+    "syntax": "(?!term)",
+    "blurb": "Zero-width: term must fail.",
+    "slice": "core",
+    "grammar": "start -> (?!\"xx\") [a-z]+ ;\n#wrap -> () ;\n",
+    "input": "xy"
+  },
+  {
+    "id": "self",
+    "group": "Atoms",
+    "title": "Stack self-ref",
+    "syntax": "@",
+    "blurb": "The next tighter stack level. Used as infix @:op=\"+\" or prefix/postfix.",
+    "slice": "core",
+    "grammar": "expr -> op=\"-\" @ > num ;\nnum -> [0-9]+ ;\n#wrap -> () ;\n",
+    "input": "-9"
+  },
+  {
+    "id": "posprop",
+    "group": "Atoms",
+    "title": "Positional @col",
+    "syntax": "@col  @col(=0)",
+    "blurb": "Column/line predicates. Designed, not first slice.",
+    "slice": "later",
+    "grammar": "start -> stmt @col(=0) ;\nstmt -> \"pass\" ;\n#wrap -> () ;\n",
+    "input": "pass"
+  },
+  {
+    "id": "group",
+    "group": "Atoms",
+    "title": "Grouping",
+    "syntax": "(term)",
+    "blurb": "Parentheses only. Not an IR node.",
+    "slice": "core",
+    "grammar": "start -> (\"a\" | \"b\") \"c\" ;\n#wrap -> () ;\n",
+    "input": "bc"
+  },
+  {
+    "id": "empty",
+    "group": "Atoms",
+    "title": "Empty",
+    "syntax": "()",
+    "blurb": "Matches nothing.",
+    "slice": "core",
+    "grammar": "start -> \"[\" () \"]\" ;\n#wrap -> () ;\n",
+    "input": "[]"
+  }
+]

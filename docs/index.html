@@ -1,0 +1,61 @@
+<!--
+Copyright 2026 Marcelo Cantos
+SPDX-License-Identifier: Apache-2.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xbnf sandbox</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe6; --bg-2: #ebe4d4; --ink: #1b1814; --muted: #6b6358;
+      --line: #d5cbb8; --accent: #a33b22; --card: #fffdf8;
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #141210; --bg-2: #1c1915; --ink: #ece6da; --muted: #a3998c;
+      --line: #3b342c; --accent: #e07a5f; --card: #1c1915;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 1.25rem 3rem; }
+    h1 { font-size: 1.5rem; letter-spacing: -0.03em; margin: 0 0 0.4rem; }
+    p { color: var(--muted); }
+    ul { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; gap: 0.75rem; }
+    a.card {
+      display: block; text-decoration: none; color: inherit;
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 0.5rem; padding: 1rem 1.1rem;
+    }
+    a.card:hover { border-color: var(--accent); }
+    a.card strong { display: block; color: var(--accent); margin-bottom: 0.25rem; }
+    a.card span { display: block; color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>xbnf sandbox</h1>
+    <p>Local language lab. The parse engine is a longest-match interpreter of the IR, not GLL yet.</p>
+    <ul>
+      <li>
+        <a class="card" href="cheatsheet.html">
+          <strong>Cheat sheet</strong>
+          <span>Sigils, wrap/leaf/lex, first slice vs later, worked JSON and calc.</span>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="syntax.html">
+          <strong>Syntax reference</strong>
+          <span>Every clause with an editable grammar and input. Run it here.</span>
+        </a>
+      </li>
+    </ul>
+  </main>
+</body>
+</html>

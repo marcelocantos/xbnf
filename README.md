@@ -13,6 +13,7 @@ The parse engine is not written yet.
 ## Spec
 
 - [`docs/cheatsheet.html`](docs/cheatsheet.html) — interactive language cheat sheet
+- [`docs/syntax.html`](docs/syntax.html) — full syntax reference with runnable examples
 - [`docs/xbnf.xbnf`](docs/xbnf.xbnf) — the language, defined in itself
 - [`docs/examples/`](docs/examples/) — JSON, calc, and larger sketches
 - [`docs/plan.md`](docs/plan.md) — locked decisions and work graph
@@ -30,7 +31,7 @@ make vet
 ```sh
 xbnf --version
 xbnf --help-agent
-xbnf sandbox          # http://127.0.0.1:7373/docs/cheatsheet.html
+xbnf sandbox          # http://127.0.0.1:7373/docs/index.html
 ```
 
 ## License

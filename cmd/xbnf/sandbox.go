@@ -27,12 +27,13 @@ func newSandboxMux() (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/docs/", http.StripPrefix("/docs/", http.FileServer(http.FS(sub))))
+	mux.HandleFunc("/run", handleRun)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		http.Redirect(w, r, "/docs/cheatsheet.html", http.StatusFound)
+		http.Redirect(w, r, "/docs/index.html", http.StatusFound)
 	})
 	return mux, nil
 }
@@ -52,13 +53,13 @@ func listenSandbox(bind string, port int) (net.Listener, http.Handler, error) {
 func sandboxURL(addr net.Addr) string {
 	host, port, err := net.SplitHostPort(addr.String())
 	if err != nil {
-		return "http://127.0.0.1/docs/cheatsheet.html"
+		return "http://127.0.0.1/docs/index.html"
 	}
 	ip := net.ParseIP(host)
 	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() {
 		host = "127.0.0.1"
 	}
-	return "http://" + net.JoinHostPort(host, port) + "/docs/cheatsheet.html"
+	return "http://" + net.JoinHostPort(host, port) + "/docs/index.html"
 }
 
 func runSandbox(bind string, port int) int {

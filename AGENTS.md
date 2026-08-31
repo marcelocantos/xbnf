@@ -33,14 +33,15 @@ Packages (create when the code that fills them lands):
 ```
 cmd/xbnf/     CLI
 grammar/      IR (Rule, Term) — exists
-syntax/       bootstrap parser: xbnf source → IR
-engine/       GLL + DFA
+syntax/       bootstrap parser: xbnf source → IR — exists
+engine/       longest-match IR interpreter — exists; GLL is T4
 ast/          committed parse tree
 ```
 
-Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`) plus package
-`grammar` (IR types, no parser). Spec, plan, and cheat sheet under `docs/`.
-`xbnf sandbox` hosts the cheat sheet; it does not parse.
+Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`) plus packages
+`grammar` (IR), `syntax` (bootstrap parser), and `engine` (longest-match
+interpreter). `xbnf sandbox` hosts the cheat sheet and syntax reference;
+`POST /run` matches editable examples. GLL (T4) is not this interpreter.
 
 Locked decisions, work graph, and non-goals: [`docs/plan.md`](docs/plan.md).
 Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).
