@@ -10,11 +10,12 @@ they declare a disambiguator (`#prefer`, `#avoid`, `#assoc`, `#priority`,
 
 ## Status
 
-The GLL engine is not implemented. The CLI supports `--version`, `--help`,
-`--help-agent`, and `sandbox` (also `-sandbox`) to host the cheat sheet and
-a syntax reference. Sandbox `POST /run` parses xbnf with the bootstrap
-parser and matches input with a longest-match IR interpreter. Do not add a
-file-based `parse` CLI until T8.
+The engine is GLL with a DFA terminal layer for regular-fragment rules.
+The CLI supports `--version`, `--help`, `--help-agent`, and `sandbox`
+(also `-sandbox`) to host the cheat sheet and a syntax reference.
+Sandbox `POST /run` parses xbnf with the bootstrap parser and matches
+input with that engine. Do not add a file-based `parse` CLI until T8.
+Compile-time disambiguation (T6) and self-host (T7) are still open.
 
 ## Spec and plan
 

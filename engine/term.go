@@ -1,0 +1,133 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+
+package engine
+
+import (
+	"regexp"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/marcelocantos/xbnf/grammar"
+)
+
+func hasMod(mods []string, name string) bool {
+	for _, m := range mods {
+		if m == name {
+			return true
+		}
+	}
+	return false
+}
+
+func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
+	switch x := t.(type) {
+	case grammar.String:
+		if pos+len(x.Text) <= len(input) && input[pos:pos+len(x.Text)] == x.Text {
+			return pos + len(x.Text), true
+		}
+	case grammar.CharClass:
+		if pos >= len(input) {
+			return pos, false
+		}
+		r, n := utf8.DecodeRuneInString(input[pos:])
+		if classMatch(x, r) {
+			return pos + n, true
+		}
+	case grammar.Escape:
+		if pos >= len(input) {
+			return pos, false
+		}
+		r, n := utf8.DecodeRuneInString(input[pos:])
+		if escapeMatch(x.Code, r) {
+			return pos + n, true
+		}
+	case grammar.AnyChar:
+		if pos >= len(input) {
+			return pos, false
+		}
+		_, n := utf8.DecodeRuneInString(input[pos:])
+		return pos + n, true
+	case grammar.Empty:
+		return pos, true
+	case grammar.Leaf:
+		re, err := leafRegexp(x.Pattern)
+		if err != nil {
+			return pos, false
+		}
+		loc := re.FindStringIndex(input[pos:])
+		if loc == nil || loc[0] != 0 {
+			return pos, false
+		}
+		return pos + loc[1], true
+	}
+	return pos, false
+}
+
+func classMatch(c grammar.CharClass, r rune) bool {
+	ok := false
+	for _, e := range c.Elems {
+		lo, _ := utf8.DecodeRuneInString(e.Lo)
+		if e.Hi == "" {
+			if r == lo {
+				ok = true
+				break
+			}
+			continue
+		}
+		hi, _ := utf8.DecodeRuneInString(e.Hi)
+		if r >= lo && r <= hi {
+			ok = true
+			break
+		}
+	}
+	if c.Negated {
+		return !ok
+	}
+	return ok
+}
+
+func escapeMatch(code string, r rune) bool {
+	if code == "" {
+		return false
+	}
+	switch code {
+	case "s":
+		return unicode.IsSpace(r)
+	case "S":
+		return !unicode.IsSpace(r)
+	case "d":
+		return r >= '0' && r <= '9'
+	case "D":
+		return r < '0' || r > '9'
+	case "w":
+		return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+	case "W":
+		return !(r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r))
+	case "n":
+		return r == '\n'
+	case "t":
+		return r == '\t'
+	case "r":
+		return r == '\r'
+	default:
+		ch, _ := utf8.DecodeRuneInString(code)
+		return r == ch
+	}
+}
+
+func leafRegexp(pat string) (*regexp.Regexp, error) {
+	return regexp.Compile(`\A(?s:` + pat + `)`)
+}
+
+func runePred(t grammar.Term) func(rune) bool {
+	switch x := t.(type) {
+	case grammar.CharClass:
+		return func(r rune) bool { return classMatch(x, r) }
+	case grammar.Escape:
+		return func(r rune) bool { return escapeMatch(x.Code, r) }
+	case grammar.AnyChar:
+		return func(rune) bool { return true }
+	}
+	return nil
+}

@@ -204,8 +204,8 @@
     "group": "Atoms",
     "title": "Label filter",
     "syntax": "tok::kw_if",
-    "blurb": "Run tok; succeed only if the winning labelled alternative is kw_if. First-slice runner reports this as not executed.",
-    "slice": "later",
+    "blurb": "Run tok; succeed only if a longest-match alternative carries this label.",
+    "slice": "core",
     "grammar": "start -> tok::kw ;\ntok -> kw=\"if\" | ident=[a-z]+ ;\n#wrap -> () ;\n",
     "input": "if"
   },
