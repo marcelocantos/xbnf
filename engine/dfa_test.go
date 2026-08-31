@@ -136,6 +136,113 @@ func TestLabelLongestMatch(t *testing.T) {
 	}
 }
 
+func strQuant(min, max int) *grammar.Grammar {
+	return &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Quant{
+			Term: grammar.String{Text: "a"},
+			Min:  min,
+			Max:  max,
+		}},
+	}}
+}
+
+func TestDFAQuantZeroToN(t *testing.T) {
+	t.Parallel()
+	g := strQuant(0, 2)
+	c, err := engine.Compile(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.IsDFA("S") {
+		t.Fatal("a{0,2} should be a DFA")
+	}
+	for _, in := range []string{"", "a", "aa"} {
+		if res := engine.Parse(g, "S", in); !res.OK {
+			t.Fatalf("a{0,2} on %q: %s", in, res.Error)
+		}
+	}
+	if engine.Parse(g, "S", "aaa").OK {
+		t.Fatal("a{0,2} must reject aaa")
+	}
+}
+
+func TestDFAQuantMinUnbounded(t *testing.T) {
+	t.Parallel()
+	g := strQuant(2, grammar.Unbounded)
+	c, err := engine.Compile(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.IsDFA("S") {
+		t.Fatal("a{2,} should be a DFA")
+	}
+	if engine.Parse(g, "S", "a").OK {
+		t.Fatal("a{2,} must reject a")
+	}
+	for _, in := range []string{"aa", "aaa", "aaaa"} {
+		if res := engine.Parse(g, "S", in); !res.OK {
+			t.Fatalf("a{2,} on %q: %s", in, res.Error)
+		}
+	}
+}
+
+func TestLookaheadNotEpsilon(t *testing.T) {
+	t.Parallel()
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Seq{Terms: []grammar.Term{
+			grammar.Lookahead{Term: grammar.String{Text: "xy"}},
+			grammar.String{Text: "ab"},
+		}}},
+	}}
+	c, err := engine.Compile(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IsDFA("S") {
+		t.Fatal("lookahead must not compile to a DFA")
+	}
+	if engine.Parse(g, "S", "ab").OK {
+		t.Fatal(`(?="xy")"ab" must not match "ab"`)
+	}
+	ok := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Seq{Terms: []grammar.Term{
+			grammar.Lookahead{Term: grammar.String{Text: "ab"}},
+			grammar.String{Text: "ab"},
+		}}},
+	}}
+	if res := engine.Parse(ok, "S", "ab"); !res.OK {
+		t.Fatalf(`(?="ab")"ab" on ab: %s`, res.Error)
+	}
+}
+
+func TestNegLookaheadNotEpsilon(t *testing.T) {
+	t.Parallel()
+	letters := grammar.Quant{
+		Term: grammar.CharClass{Elems: []grammar.ClassElem{{Lo: "a", Hi: "z"}}},
+		Min:  1,
+		Max:  grammar.Unbounded,
+	}
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Seq{Terms: []grammar.Term{
+			grammar.NegLookahead{Term: grammar.String{Text: "xx"}},
+			letters,
+		}}},
+	}}
+	c, err := engine.Compile(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IsDFA("S") {
+		t.Fatal("neg-lookahead must not compile to a DFA")
+	}
+	if engine.Parse(g, "S", "xx").OK {
+		t.Fatal(`(?!"xx")[a-z]+ must not match "xx"`)
+	}
+	if res := engine.Parse(g, "S", "xy"); !res.OK {
+		t.Fatalf(`(?!"xx")[a-z]+ on xy: %s`, res.Error)
+	}
+}
+
 func leftRecGrammar(lex bool) *grammar.Grammar {
 	mods := []string(nil)
 	if lex {

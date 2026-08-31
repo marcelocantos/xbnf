@@ -250,67 +250,39 @@ func (b *nfaB) lit(s string) (int, int) {
 }
 
 func (b *nfaB) quant(q grammar.Quant) (int, int) {
-	s, a := b.term(q.Term)
-	if q.Min == 0 && q.Max == 1 {
-		st := b.n.st()
-		acc := b.n.st()
-		b.n.states[st].eps = append(b.n.states[st].eps, s, acc)
-		b.n.states[a].eps = append(b.n.states[a].eps, acc)
-		return st, acc
+	start := b.n.st()
+	if q.Min < 0 {
+		q.Min = 0
 	}
-	if q.Min == 0 && q.Max == grammar.Unbounded {
-		st := b.n.st()
-		acc := b.n.st()
-		b.n.states[st].eps = append(b.n.states[st].eps, s, acc)
-		b.n.states[a].eps = append(b.n.states[a].eps, s, acc)
-		return st, acc
+	if q.Max != grammar.Unbounded && q.Max < q.Min {
+		return start, start
 	}
-	if q.Min == 1 && q.Max == grammar.Unbounded {
-		st := b.n.st()
-		acc := b.n.st()
-		b.n.states[st].eps = append(b.n.states[st].eps, s)
-		b.n.states[a].eps = append(b.n.states[a].eps, s, acc)
-		return st, acc
+	if q.Max == 0 {
+		return start, start
 	}
-	// finite: concat min copies, then optional extras
-	if q.Min == 0 && q.Max == 0 {
-		st := b.n.st()
-		return st, st
+	cur := start
+	for i := 0; i < q.Min; i++ {
+		s, a := b.term(q.Term)
+		b.n.states[cur].eps = append(b.n.states[cur].eps, s)
+		cur = a
 	}
-	n := q.Min
-	if n < 1 {
-		n = 1
-	}
-	cs, ca := b.term(q.Term)
-	for i := 1; i < q.Min; i++ {
-		s2, a2 := b.term(q.Term)
-		b.n.states[ca].eps = append(b.n.states[ca].eps, s2)
-		ca = a2
-	}
-	if q.Min == 0 {
-		st := b.n.st()
-		acc := b.n.st()
-		b.n.states[st].eps = append(b.n.states[st].eps, cs, acc)
-		b.n.states[ca].eps = append(b.n.states[ca].eps, acc)
-		cs, ca = st, acc
-	}
-	extra := q.Max - q.Min
 	if q.Max == grammar.Unbounded {
-		b.n.states[ca].eps = append(b.n.states[ca].eps, cs)
-		return cs, ca
-	}
-	curS, curA := cs, ca
-	for i := 0; i < extra; i++ {
-		s2, a2 := b.term(q.Term)
+		s, a := b.term(q.Term)
 		st := b.n.st()
 		acc := b.n.st()
-		b.n.states[curA].eps = append(b.n.states[curA].eps, st)
-		b.n.states[st].eps = append(b.n.states[st].eps, s2, acc)
-		b.n.states[a2].eps = append(b.n.states[a2].eps, acc)
-		curA = acc
-		_ = curS
+		b.n.states[st].eps = append(b.n.states[st].eps, s, acc)
+		b.n.states[a].eps = append(b.n.states[a].eps, s, acc)
+		b.n.states[cur].eps = append(b.n.states[cur].eps, st)
+		return start, acc
 	}
-	return cs, curA
+	for i := 0; i < q.Max-q.Min; i++ {
+		s, a := b.term(q.Term)
+		acc := b.n.st()
+		b.n.states[cur].eps = append(b.n.states[cur].eps, s, acc)
+		b.n.states[a].eps = append(b.n.states[a].eps, acc)
+		cur = acc
+	}
+	return start, cur
 }
 
 func (b *nfaB) eps(s intset) intset {

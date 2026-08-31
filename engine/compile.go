@@ -206,9 +206,11 @@ func (c *compiler) analyzeRegular() {
 			r, b := walk(x.Term)
 			return append(refs, r...), bad || b
 		case grammar.Lookahead:
-			return walk(x.Term)
+			r, _ := walk(x.Term)
+			return r, true
 		case grammar.NegLookahead:
-			return walk(x.Term)
+			r, _ := walk(x.Term)
+			return r, true
 		}
 		return refs, bad
 	}
@@ -501,10 +503,8 @@ func localRegular(t grammar.Term) bool {
 		return localRegular(x.Term)
 	case grammar.Delim:
 		return localRegular(x.Term) && localRegular(x.Sep)
-	case grammar.Lookahead:
-		return localRegular(x.Term)
-	case grammar.NegLookahead:
-		return localRegular(x.Term)
+	case grammar.Lookahead, grammar.NegLookahead:
+		return false
 	case grammar.Scope:
 		return localRegular(x.Term)
 	}
