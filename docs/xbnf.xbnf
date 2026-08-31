@@ -1,0 +1,135 @@
+// ===========================================================
+// xbnf.xbnf — the xbnf grammar language defined in itself
+// ===========================================================
+//
+// Key departures from wbnf:
+//   '.'    any character (was pragma prefix)
+//   '#'    pragma/directive sigil (new)
+//   '|'    unordered alternation (was ordered/PEG)
+//   /pat/  leaf collapse (was regex delegation)
+//   <: :>  gone; use #assoc directive instead
+//   /{…}/  gone; character classes are grammar-level
+//   (?!…)  negative lookahead (new)
+//
+// Sigils:
+//   .           any character
+//   #keyword    pragma, directive, or rule modifier
+//   @           Stack self-ref (bare) or positional (@col)
+//   %name       back-reference
+//   %%name      external reference
+//   %!name()    macro invocation
+//   ::          label filter
+
+// ── Structure ──────────────────────────────────────────────
+
+grammar -> stmt+ ;
+
+stmt -> COMMENT | rule | pragma ;
+
+rule -> IDENT mod* "->" term ";" ;
+
+mod -> "#" IDENT ;                           // #lex, #leaf
+
+pragma -> "#" IDENT "->" term ";"            // #wrap -> \s* ;
+        | "#" IDENT STR ";"?                 // #import "path" ;
+        | "#" IDENT IDENT                    // #macro name(args) { body }
+          "(" IDENT:","? ")"
+          "{" term "}" ";"? ;
+
+// ── Terms ──────────────────────────────────────────────────
+// Precedence stack (L1 loosest → L4 tightest):
+//   L1  Stack levels     a > b > c
+//   L2  Alternation      a | b | c
+//   L3  Sequence          a b c   (+ trailing directives)
+//   L4  Atoms             "x"  [a-z]  \d  name  name?
+
+term -> (@ ("{" scope "}")?):op=">"
+      > @:op="|"
+      > @+ directive*
+      > named quant* ;
+
+scope -> (rule | pragma)* term ;
+
+named -> (IDENT op="=")? atom ;
+
+quant -> op=[?*+]
+       | "{" INT "}"
+       | "{" min=INT? "," max=INT? "}"
+       | ":" opt_leading=","? named opt_trailing=","? ;
+
+directive -> "#" IDENT ("=" (IDENT | INT))? ;
+
+atom -> IDENT ("::" IDENT)?             // rule ref, optional label filter
+      | STR                              // "string"
+      | CHARCLASS                        // [a-z]
+      | ESCAPE                           // \d
+      | LEAF                             // /pattern/
+      | "."                              // any character
+      | REF                              // %name
+      | EXTREF                           // %%name
+      | MACRO_NAME "(" term:","? ")"     // %!name(args)
+      | "(?=" term ")"                   // positive lookahead
+      | "(?!" term ")"                   // negative lookahead
+      | "@"                              // Stack self-reference
+      | POS_PROP ("(" CMP ")")?          // @col  or  @col(=level)
+      | "(" term ")"                     // grouping
+      | "(" ")" ;                        // empty
+
+CMP -> ("=" | "!=" | "<" | ">" | "<=" | ">=") IDENT ;
+
+// ── Terminals ──────────────────────────────────────────────
+// #leaf collapses the match to a flat string in the AST.
+// Scoped #wrap -> () suppresses whitespace between characters.
+
+COMMENT #leaf -> { #wrap -> () ;
+    "//" [^\n]*
+  | "/*" ([^*] | "*" [^/])* "*/" ;
+} ;
+
+IDENT #leaf -> { #wrap -> () ;
+    [A-Za-z_] [A-Za-z0-9_]* ;
+} ;
+
+INT #leaf -> { #wrap -> () ;
+    [0-9]+ ;
+} ;
+
+STR #leaf -> { #wrap -> () ;
+    '"' ("\\" . | [^"\\])* '"'
+  | "'" ("\\" . | [^'\\])* "'"
+  | "`" ("``"  | [^`]   )* "`" ;
+} ;
+
+CHARCLASS #leaf -> { #wrap -> () ;
+    "[" "^"? cc_item+ "]" ;
+    cc_item -> cc_atom ("-" cc_atom)? ;
+    cc_atom -> "\\" . | [^\]\\] ;
+} ;
+
+ESCAPE #leaf -> { #wrap -> () ;
+    "\\" [a-zA-Z0-9] ;
+} ;
+
+LEAF #leaf -> { #wrap -> () ;
+    "/" ("\\" . | [^/\\])* "/" ;
+} ;
+
+REF #leaf -> { #wrap -> () ;
+    "%" [A-Za-z_] [A-Za-z0-9_]* ("=" STR)? ;
+} ;
+
+EXTREF #leaf -> { #wrap -> () ;
+    "%%" [A-Za-z_] [A-Za-z0-9_]* ;
+} ;
+
+MACRO_NAME #leaf -> { #wrap -> () ;
+    "%!" [A-Za-z_] [A-Za-z0-9_]* ;
+} ;
+
+POS_PROP #leaf -> { #wrap -> () ;
+    "@" [A-Za-z_] [A-Za-z0-9_]* ;
+} ;
+
+// ── Default whitespace ─────────────────────────────────────
+
+#wrap -> (\s | COMMENT)* ;

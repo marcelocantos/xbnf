@@ -1,0 +1,120 @@
+// sql-select.xbnf — SQL SELECT subset (SQL:2016 flavour)
+//
+// Exercises: case-insensitive keywords via character classes,
+// heavy use of optional/repeated clauses, set operations on queries,
+// subqueries in multiple positions, window functions.
+
+query -> select_stmt:op=("UNION" all="ALL"? | "INTERSECT" | "EXCEPT") ;
+
+select_stmt -> "SELECT" distinct=("DISTINCT" | "ALL")?
+               select_list
+               ("FROM" from_clause)?
+               ("WHERE" where=expr)?
+               ("GROUP" "BY" group_by=expr:","?)?
+               ("HAVING" having=expr)?
+               ("ORDER" "BY" order_item:","?)?
+               ("LIMIT" limit=expr ("OFFSET" offset=expr)?)? ;
+
+select_list -> "*" | select_item:","? ;
+select_item -> expr (("AS")? alias=IDENT)? ;
+
+from_clause -> table_ref:","? ;
+
+table_ref -> table_ref join_op table_ref join_cond?
+           | table_primary ;
+
+table_primary -> table_name (("AS")? alias=IDENT)?
+               | "(" query ")" (("AS")? alias=IDENT)?
+               | "LATERAL" "(" query ")" (("AS")? alias=IDENT)? ;
+
+table_name -> (schema=IDENT ".")? IDENT ;
+
+join_op -> ("LEFT" | "RIGHT" | "FULL")? "OUTER"? "JOIN"
+         | "INNER" "JOIN"
+         | "CROSS" "JOIN"
+         | "NATURAL" ("LEFT" | "RIGHT" | "FULL")? "JOIN"
+         | "," ;
+
+join_cond -> "ON" expr
+           | "USING" "(" IDENT:","? ")" ;
+
+order_item -> expr ("ASC" | "DESC")? ("NULLS" ("FIRST" | "LAST"))? ;
+
+// ── Expressions ────────────────────────────────────────────
+
+expr -> @:op="OR"
+      > @:op="AND"
+      > "NOT" @
+      | @ "IS" "NOT"? ("NULL" | "TRUE" | "FALSE" | "UNKNOWN")
+      | @ "NOT"? "BETWEEN" @ "AND" @
+      | @ "NOT"? "IN" ("(" (expr:","? | query) ")")
+      | @ "NOT"? "LIKE" @ ("ESCAPE" @)?
+      | @:op=("=" | "!=" | "<>" | "<" | ">" | "<=" | ">=")
+      > @:op=("+" | "-")      #assoc=left
+      > @:op=("*" | "/" | "%") #assoc=left
+      > @ "||" @                                        // string concat
+      > op=("-" | "+") @                                // unary
+      > @ "::" type_name                                // cast
+      > atom ;
+
+atom -> func_call
+      | window_func
+      | case_expr
+      | "EXISTS" "(" query ")"
+      | "(" query ")"                                   // scalar subquery
+      | "(" expr ")"
+      | "CAST" "(" expr "AS" type_name ")"
+      | "ARRAY" "[" (expr:","?)? "]"
+      | "ROW" "(" expr:","? ")"
+      | column_ref
+      | literal ;
+
+func_call -> IDENT "(" ("DISTINCT"? (expr:","?)? | "*") ")" ;
+
+window_func -> IDENT "(" ("DISTINCT"? (expr:","?)? | "*") ")"
+               "OVER" "(" window_spec ")" ;
+
+window_spec -> ("PARTITION" "BY" expr:","?)?
+               ("ORDER" "BY" order_item:","?)?
+               frame_clause? ;
+
+frame_clause -> ("ROWS" | "RANGE" | "GROUPS")
+                (frame_bound | "BETWEEN" frame_bound "AND" frame_bound)
+                ("EXCLUDE" ("CURRENT" "ROW" | "GROUP" | "TIES" | "NO" "OTHERS"))? ;
+
+frame_bound -> "UNBOUNDED" ("PRECEDING" | "FOLLOWING")
+             | "CURRENT" "ROW"
+             | expr ("PRECEDING" | "FOLLOWING") ;
+
+case_expr -> "CASE" (operand=expr)?
+             ("WHEN" cond=expr "THEN" result=expr)+
+             ("ELSE" default=expr)?
+             "END" ;
+
+column_ref -> (table=IDENT ".")? IDENT ;
+
+literal -> NUMBER | STR | "NULL" | "TRUE" | "FALSE" ;
+
+type_name -> IDENT ("(" NUMBER ("," NUMBER)? ")")? ;
+
+// ── Terminals ──────────────────────────────────────────────
+
+IDENT #leaf -> { #wrap -> () ;
+    [A-Za-z_] [A-Za-z0-9_]*
+  | '"' [^"]+ '"' ;                                    // quoted identifier
+} ;
+
+NUMBER #leaf -> { #wrap -> () ;
+    [0-9]+ ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
+} ;
+
+STR #leaf -> { #wrap -> () ;
+    "'" ("''" | [^'])* "'" ;                            // SQL string
+} ;
+
+COMMENT #leaf -> { #wrap -> () ;
+    "--" [^\n]*
+  | "/*" ([^*] | "*" [^/])* "*/" ;
+} ;
+
+#wrap -> (\s | COMMENT)* ;

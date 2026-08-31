@@ -1,0 +1,40 @@
+// calc.xbnf — expression language with precedence, associativity,
+//              ternary operator, function calls, and let-bindings
+
+expr -> "let" IDENT "=" @ ";" @
+      > @:op="?" @:op=":"                          // ternary  (right-assoc)
+      > @:op="||"                                   // logical or
+      > @:op="&&"                                   // logical and
+      > @:op=("==" | "!=")                          // equality
+      > @:op=("<" | ">" | "<=" | ">=")              // relational
+      > @:op=("+" | "-")    #assoc=left             // additive
+      > @:op=("*" | "/" | "%")  #assoc=left         // multiplicative
+      > op=("-" | "!" | "~") @                      // unary prefix
+      > @ op=("!" | "++" | "--")                    // postfix
+      > @ "(" (expr:","?)? ")"                      // call
+      | @ "[" expr "]"                              // index
+      | @ "." IDENT                                 // member
+      | "(" expr ")"
+      | NUMBER
+      | STR
+      | IDENT ;
+
+// ── Terminals ──────────────────────────────────────────────
+
+IDENT #leaf -> { #wrap -> () ;
+    [A-Za-z_] [A-Za-z0-9_]* ;
+} ;
+
+NUMBER #leaf -> { #wrap -> () ;
+    [0-9]+ ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
+} ;
+
+STR #leaf -> { #wrap -> () ;
+    '"' ("\\" . | [^"\\])* '"' ;
+} ;
+
+#wrap -> (\s | COMMENT)* ;
+
+COMMENT #leaf -> { #wrap -> () ;
+    "//" [^\n]* ;
+} ;

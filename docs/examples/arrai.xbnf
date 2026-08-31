@@ -1,0 +1,142 @@
+// arrai.xbnf — arr.ai expression language
+//
+// Exercises: deep precedence stack (15+ levels), macros, embedded
+// grammars, expression strings, relational operators, pattern matching,
+// safe navigation, curried lambdas, set/dict/array/tuple/bytes literals.
+
+expr -> amp="&"* @ arrow=(
+            nest
+          | unnest
+          | ARROW @
+          | "filter" cond=(controlVar=@ "{" (condition=pattern ":" value=expr):","? "}")
+          | binding="->" "\\" pattern %%bind @
+          | binding="->" %%bind @
+        )*
+      > @:op=">>>"
+      > unop=(":" ">" | "=>" | ">>")* @
+      > @:op=("without" | "with")
+      > @:op="||"
+      > @:op="&&"
+      > @:mergeop="+>"
+      > @:compare=("!=" | "<:" | "=" | "<=" | ">=" | "<" | ">"
+                   | "(<)" | "(<=)" | "(>)" | "(>=)" | "(<>)" | "(=)")
+      > @ ("if" t=expr ("else" f=expr)?)*
+      > @:op=("++" | "+" | "|" | "-" | "-%")
+      > @:op=("&~" | "&" | "~~" | "<->" | "<-" | "->")
+      > @:op=("//" | "*" | "/" | "%" | "\\")
+      > @:rbinop="^"
+      > unop=("-" | "+" | "!" | "*" | "^")* @
+      > @ postfix=("count" | "single")? touch?
+      > (get | @) tail_op=(
+            safe_tail=(first_safe=(tail "?") ops=(safe=(tail "?") | tail)* ":" fall=@)
+          | tail
+        )*
+      > %!patternterms(expr)
+      | "cond" "{" (key=@ ":" value=@):","? "}"
+      | "cond" controlVar=expr "{" (condition=pattern ":" value=@):","? "}"
+      | "{:" embed=(macro=@ rule? ":" subgrammar=%%ast) ":}"
+      | "\\\\" @
+      | "\\" pattern @
+      | "//" pkg=(decoder=("[" @ "]")? "{" dot="."? PKGPATH "}" | std=IDENT?)
+      | "(" @ ")"
+      | "let" rec="rec"? pat=(pattern "=")? @ %%bind ";" @
+      | xstr
+      | IDENT
+      | STR
+      | NUM
+      | CHAR ;
+
+rule   -> "[" name "]" ;
+nest   -> "nest" inv="~"? names? IDENT ;
+unnest -> "unnest" IDENT ;
+touch  -> ("->*" ("&"? IDENT | STR))+ "(" expr:"," ","? ")" ;
+get    -> "." ("&"? IDENT | STR | "~"? names) ;
+names  -> "|" IDENT:"," "|" ;
+name   -> IDENT | STR ;
+
+// ── Expression strings ─────────────────────────────────────
+
+xstr -> quote='$"' part=(sexpr | fragment=/(?:\\.|[^\\"$]|\$[^{"])+/)* '"'
+      | quote="$'" part=(sexpr | fragment=/(?:\\.|[^\\'$]|\$[^{'])+/)* "'"
+      | quote="$`" part=(sexpr | fragment=/(?:``|[^`$]|\$[^{`])+/)* "`" ;
+
+sexpr -> "${" expr control=/(?::[-+#*._0-9a-z]*(?::(?:\\.|[^\\:}])*){0,2})?/ close="}" ;
+
+// ── Tails (calls, indexing) ────────────────────────────────
+
+tail -> get
+      | call=("(" arg=(
+            expr (":" end=expr? (":" step=expr)?)?
+          |       ":" end=expr  (":" step=expr)?
+        ):","
+      ")") ;
+
+// ── Patterns ───────────────────────────────────────────────
+
+pattern -> extra
+         | %!patternterms(pattern | expr)
+         | IDENT
+         | NUM
+         | "(" exprpattern=expr:","? ")"
+         | exprpattern=STR ;
+
+extra    -> "..." ident=IDENT? ;
+fallback -> "?"? ":" fall=expr ;
+
+// ── Macro: collection literals ─────────────────────────────
+// Shared between expr and pattern contexts.
+
+#macro patternterms(top) {
+    "{" rel=(names tuple=("(" v=top:","  ")"  ):","? ) "}"     // relation
+  | "{" set=(elt=top:","?)                             "}"     // set
+  | "{" dict=(pair=((extra | key=(expr tail="?"?)              // dict
+              nested_op? ":" value=(top fall=(":" expr)?))
+        ):","?)                                         "}"
+  | "[" array=(%!sparse_sequence(tail="?"? top fall=(":" expr)?)?)"}"  // FIXME: should be "]"
+  | "<<" bytes=(item=(STR | NUM | CHAR | IDENT | "(" top ")")):","? ">>"
+  | "(" tuple=(pair=(extra | (((name? tail="?") | rec="rec"? name | name?)
+              nested_op? ":" v=(top fall=(":" expr)?))
+        ):","?)                                         ")"
+} ;
+
+nested_op -> "+>" | "|" | "++" ;
+
+#macro sparse_sequence(top) {
+    first_item=top ("," (item=(top | empty=()))*)?
+} ;
+
+// ── Terminals ──────────────────────────────────────────────
+
+ARROW #leaf -> { #wrap -> () ;
+    ":>" | "=>" | ">>" | "orderby" | "order" | "rank"
+  | "where" | "sum" | "max" | "mean" | "median" | "min" ;
+} ;
+
+IDENT #leaf -> { #wrap -> () ;
+    "." | "@{" ([^{}] | "{" [^}]+ "}")+ "}"
+  | [$@A-Za-z_] [0-9$@A-Za-z_]* ;
+} ;
+
+PKGPATH #leaf -> { #wrap -> () ;
+    ("\\" . | [^\\}])* ;
+} ;
+
+STR #leaf -> { #wrap -> () ;
+    '"' ("\\" . | [^"\\])* '"'
+  | "'" ("\\" . | [^'\\])* "'"
+  | "`" ("``" | [^`])* "`" ;
+} ;
+
+NUM #leaf -> { #wrap -> () ;
+    ([0-9]+ ("." [0-9]*)? | "." [0-9]+) ([eE] [+-]? [0-9]+)? ;
+} ;
+
+CHAR #leaf -> { #wrap -> () ;
+    "%" ("\\" . | .) ;
+} ;
+
+COMMENT #leaf -> { #wrap -> () ;
+    "#" [^\n]* ;
+} ;
+
+#wrap -> (\s | COMMENT)* ;

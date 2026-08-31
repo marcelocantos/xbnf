@@ -1,0 +1,113 @@
+// python-subset.xbnf — indentation-sensitive subset of Python
+//
+// Demonstrates @col positional constraints for off-side rule parsing.
+
+file -> (stmt @col(=0))* ;
+
+stmt -> simple_stmt NEWLINE
+      | compound_stmt ;
+
+simple_stmt -> assignment
+             | expr
+             | "return" expr?
+             | "pass"
+             | "break"
+             | "continue"
+             | "import" dotted_name
+             | "from" dotted_name "import" (IDENT:","? | "*") ;
+
+compound_stmt -> if_stmt
+               | while_stmt
+               | for_stmt
+               | func_def
+               | class_def ;
+
+if_stmt    -> "if" expr ":" block
+              ("elif" expr ":" block)*
+              ("else" ":" block)? ;
+
+while_stmt -> "while" expr ":" block ;
+
+for_stmt   -> "for" IDENT "in" expr ":" block ;
+
+func_def   -> "def" IDENT "(" (param:","?)? ")" ("->" expr)? ":" block ;
+
+class_def  -> "class" IDENT ("(" (expr:","?)? ")")? ":" block ;
+
+param -> IDENT (":" expr)? ("=" expr)? ;
+
+// Block: indented sequence of statements at a column deeper than the parent.
+// @col(>parent) is enforced by the stack level's scope.
+block -> NEWLINE (stmt @col(>0)){1,} ;
+
+assignment -> target (":" expr)? "=" expr ;
+target     -> IDENT | expr "." IDENT | expr "[" expr "]" ;
+
+expr -> @:op="or"
+      > @:op="and"
+      > "not" @
+      | @:op=("==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "not" "in" | "is" | "is" "not")
+      > @:op="|"
+      > @:op="^"
+      > @:op="&"
+      > @:op=("<<" | ">>")
+      > @:op=("+" | "-")   #assoc=left
+      > @:op=("*" | "/" | "//" | "%" | "@")  #assoc=left
+      > op=("-" | "+" | "~") @
+      > @:op="**"           #assoc=right
+      > @ "(" (arg:","?)? ")"                   // call
+      | @ "[" slice "]"                          // subscript
+      | @ "." IDENT                              // attribute
+      | "(" expr ")"
+      | "[" (expr:","?)? "]"                     // list
+      | "{" (expr:","?)? "}"                     // set
+      | "{" (pair:","?)? "}"                     // dict
+      | "(" (expr:","?)? ")"                     // tuple
+      | NUMBER
+      | STR
+      | "True" | "False" | "None"
+      | IDENT ;
+
+arg   -> (IDENT "=")? expr | "*" expr | "**" expr ;
+pair  -> expr ":" expr ;
+slice -> expr? ":" expr? (":" expr?)? | expr ;
+
+dotted_name -> IDENT:"." ;
+
+// ── Terminals ──────────────────────────────────────────────
+
+IDENT #leaf -> { #wrap -> () ;
+    (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]* ;
+} ;
+
+KEYWORD #leaf -> { #wrap -> () ;
+    ("if" | "elif" | "else" | "while" | "for" | "def" | "class"
+    | "return" | "pass" | "break" | "continue" | "import" | "from"
+    | "and" | "or" | "not" | "in" | "is" | "True" | "False" | "None")
+    (?![A-Za-z0-9_]) ;
+} ;
+
+NUMBER #leaf -> { #wrap -> () ;
+    [0-9]+ ("." [0-9]*)? ([eE] [+-]? [0-9]+)?
+  | "0" [xX] [0-9a-fA-F]+
+  | "0" [oO] [0-7]+
+  | "0" [bB] [01]+ ;
+} ;
+
+STR #leaf -> { #wrap -> () ;
+    '"""' ([^"\\] | "\\" . | '"' (?!'"' '"'))* '"""'
+  | "'''" ([^'\\] | "\\" . | "'" (?!"'" "'"))* "'''"
+  | '"' ("\\" . | [^"\\\n])* '"'
+  | "'" ("\\" . | [^'\\\n])* "'" ;
+} ;
+
+NEWLINE #leaf -> { #wrap -> () ;
+    \n ;
+} ;
+
+COMMENT #leaf -> { #wrap -> () ;
+    "#" [^\n]* ;
+} ;
+
+// Whitespace between tokens, but NOT newlines (significant for off-side rule).
+#wrap -> ([ \t] | "\\" \n | COMMENT)* ;

@@ -1,0 +1,60 @@
+# AGENTS.md
+
+xbnf is a scannerless CFG parser generator. The language spec is
+`docs/xbnf.xbnf`. The engine is GLL with a layered DFA fast path.
+This is a new product, not an in-place rewrite of `arr-ai/wbnf`.
+
+## Delivery
+
+merged to master
+
+## Build
+
+```sh
+make          # bin/xbnf
+make test
+make vet
+make bullseye # standing invariants for /cv
+```
+
+Never pass `-j` to make; `MAKEFLAGS` is set in the Makefile.
+
+```sh
+make test
+go test ./cmd/xbnf/ -run TestName   # set GOWORK=off; a parent go.work does not include this module
+```
+
+The Makefile exports `GOWORK=off`. Bare `go test ./...` from this directory fails if a parent `go.work` is visible.
+
+## Architecture
+
+Planned packages (create when the code that fills them lands):
+
+```
+cmd/xbnf/     CLI
+grammar/      IR (Rule, Term)
+syntax/       bootstrap parser: xbnf source → IR
+engine/       GLL + DFA
+ast/          committed parse tree
+```
+
+Today the module is a CLI stub (`--version`, `--help`, `--help-agent`) plus
+the spec and plan under `docs/`.
+
+Locked decisions, work graph, and non-goals: [`docs/plan.md`](docs/plan.md).
+Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).
+
+## Conventions
+
+- Go. Read `~/.claude/go.md` before writing Go. No functional-options pattern.
+- Apache-2.0. SPDX on source files:
+  `// Copyright 2026 Marcelo Cantos` / `// SPDX-License-Identifier: Apache-2.0`
+- Line length 120.
+- Tests: `testify` is fine once a real engine exists; stdlib is enough for
+  the stub.
+- Default branch is `master`.
+- Do not introduce TOML.
+
+## Agent guide
+
+[`agents-guide.md`](agents-guide.md) is also printed by `xbnf --help-agent`.
