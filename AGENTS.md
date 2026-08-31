@@ -39,7 +39,7 @@ fromwbnf/     parse old .wbnf into an IR of meaning — exists
 ast/          committed parse tree
 ```
 
-Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`, `from-wbnf`)
+Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`, `-from-wbnf`)
 plus packages `grammar` (IR), `syntax` (bootstrap parser), `engine` (GLL
 with a DFA fast path), and `fromwbnf` (parse `.wbnf` into meaning and
 emit xbnf). `xbnf sandbox` hosts the cheat sheet; `POST /run` matches

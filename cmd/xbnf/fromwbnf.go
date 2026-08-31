@@ -13,6 +13,7 @@ import (
 func runFromWbnf(args []string) int {
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "usage: xbnf from-wbnf file.wbnf")
+		fmt.Fprintln(os.Stderr, "       xbnf -from-wbnf file.wbnf")
 		return 2
 	}
 	src, err := os.ReadFile(args[0])

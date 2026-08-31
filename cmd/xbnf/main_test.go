@@ -65,15 +65,31 @@ func TestRunHelp(t *testing.T) {
 }
 
 func TestRunFromWbnf(t *testing.T) {
-	code, stdout, stderr := capture(t, []string{"from-wbnf", "../../fromwbnf/testdata/xml.wbnf"})
+	xml := "../../fromwbnf/testdata/xml.wbnf"
+	for _, args := range [][]string{
+		{"from-wbnf", xml},
+		{"-from-wbnf", xml},
+	} {
+		code, stdout, stderr := capture(t, args)
+		if code != 0 {
+			t.Fatalf("%v exit %d stderr %q", args, code, stderr)
+		}
+		if !strings.Contains(stdout, "#wrap") || !strings.Contains(stdout, "|>") {
+			t.Fatalf("%v output: %q", args, stdout)
+		}
+		if stderr != "" {
+			t.Fatalf("%v stderr: %q", args, stderr)
+		}
+	}
+}
+
+func TestRunHelpMentionsFromWbnf(t *testing.T) {
+	code, _, stderr := capture(t, []string{"-h"})
 	if code != 0 {
-		t.Fatalf("from-wbnf exit %d stderr %q", code, stderr)
+		t.Fatalf("help exit: %d", code)
 	}
-	if !strings.Contains(stdout, "#wrap") || !strings.Contains(stdout, "|>") {
-		t.Fatalf("from-wbnf output: %q", stdout)
-	}
-	if stderr != "" {
-		t.Fatalf("from-wbnf stderr: %q", stderr)
+	if !strings.Contains(stderr, "-from-wbnf") {
+		t.Fatalf("help missing -from-wbnf: %q", stderr)
 	}
 }
 

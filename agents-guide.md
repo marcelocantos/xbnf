@@ -14,7 +14,7 @@ they declare a disambiguator (`#prefer`, `#avoid`, `#assoc`, `#priority`,
 The engine is GLL with a DFA terminal layer for regular-fragment rules.
 The CLI supports `--version`, `--help`, `--help-agent`, `sandbox`
 (also `-sandbox`) to host the cheat sheet and a syntax reference,
-and `from-wbnf file.wbnf` to emit xbnf for an old wbnf grammar.
+and `from-wbnf` (also `-from-wbnf`) to emit xbnf for an old wbnf grammar.
 Sandbox `POST /run` parses xbnf with the bootstrap parser and matches
 input with that engine. `fromwbnf` parses old `.wbnf` into an IR of
 meaning; it is not a runner. Do not add a file-based `parse` CLI until T8.

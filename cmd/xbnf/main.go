@@ -34,12 +34,14 @@ func run(args []string) int {
 		fmt.Fprintf(out, "  xbnf -help-agent\n")
 		fmt.Fprintf(out, "  xbnf sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
 		fmt.Fprintf(out, "  xbnf -sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
-		fmt.Fprintf(out, "  xbnf from-wbnf file.wbnf\n\n")
+		fmt.Fprintf(out, "  xbnf from-wbnf file.wbnf\n")
+		fmt.Fprintf(out, "  xbnf -from-wbnf file.wbnf\n\n")
 		fs.PrintDefaults()
 	}
 	showVersion := fs.Bool("version", false, "print version")
 	helpAgent := fs.Bool("help-agent", false, "print CLI help and the agent guide")
 	sandboxFlag := fs.Bool("sandbox", false, "host the language sandbox")
+	fromWbnf := fs.String("from-wbnf", "", "convert a .wbnf grammar to xbnf on stdout")
 	bind := fs.String("bind", sandboxBindDefault, "sandbox listen address")
 	port := fs.Int("port", sandboxPortDefault, "sandbox listen port")
 	if err := fs.Parse(args); err != nil {
@@ -65,6 +67,13 @@ func run(args []string) int {
 			return 2
 		}
 		return runSandbox(*bind, *port)
+	}
+	if *fromWbnf != "" {
+		if fs.NArg() != 0 {
+			fmt.Fprintln(os.Stderr, "xbnf -from-wbnf: unexpected argument")
+			return 2
+		}
+		return runFromWbnf([]string{*fromWbnf})
 	}
 	if fs.NArg() == 0 {
 		fs.Usage()

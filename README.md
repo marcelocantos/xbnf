@@ -32,6 +32,7 @@ make vet
 xbnf --version
 xbnf --help-agent
 xbnf sandbox          # http://127.0.0.1:7373/docs/index.html
+xbnf -from-wbnf old.wbnf > old.xbnf
 ```
 
 ## License
