@@ -28,18 +28,18 @@ The Makefile exports `GOWORK=off`. Bare `go test ./...` from this directory fail
 
 ## Architecture
 
-Planned packages (create when the code that fills them lands):
+Packages (create when the code that fills them lands):
 
 ```
 cmd/xbnf/     CLI
-grammar/      IR (Rule, Term)
+grammar/      IR (Rule, Term) — exists
 syntax/       bootstrap parser: xbnf source → IR
 engine/       GLL + DFA
 ast/          committed parse tree
 ```
 
-Today the module is a CLI stub (`--version`, `--help`, `--help-agent`) plus
-the spec and plan under `docs/`.
+Today: CLI stub (`--version`, `--help`, `--help-agent`) plus package `grammar`
+(IR types, no parser). Spec and plan under `docs/`.
 
 Locked decisions, work graph, and non-goals: [`docs/plan.md`](docs/plan.md).
 Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).
