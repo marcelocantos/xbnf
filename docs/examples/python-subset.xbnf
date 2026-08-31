@@ -30,9 +30,9 @@ while_stmt -> "while" expr ":" block ;
 
 for_stmt   -> "for" IDENT "in" expr ":" block ;
 
-func_def   -> "def" IDENT "(" (param:","?)? ")" ("->" expr)? ":" block ;
+func_def   -> "def" IDENT "(" param:","? ")" ("->" expr)? ":" block ;
 
-class_def  -> "class" IDENT ("(" (expr:","?)? ")")? ":" block ;
+class_def  -> "class" IDENT ("(" expr:","? ")")? ":" block ;
 
 param -> IDENT (":" expr)? ("=" expr)? ;
 
@@ -55,14 +55,14 @@ expr -> @:op="or"
       > @:op=("*" | "/" | "//" | "%" | "@")  #assoc=left
       > op=("-" | "+" | "~") @
       > @:op="**"           #assoc=right
-      > @ "(" (arg:","?)? ")"                   // call
+      > @ "(" arg:","? ")"                   // call
       | @ "[" slice "]"                          // subscript
       | @ "." IDENT                              // attribute
       | "(" expr ")"
-      | "[" (expr:","?)? "]"                     // list
-      | "{" (expr:","?)? "}"                     // set
-      | "{" (pair:","?)? "}"                     // dict
-      | "(" (expr:","?)? ")"                     // tuple
+      | "[" expr:","? "]"                     // list
+      | "{" expr:","? "}"                     // set
+      | "{" pair:","? "}"                     // dict
+      | "(" expr:","? ")"                     // tuple
       | NUMBER
       | STR
       | "True" | "False" | "None"

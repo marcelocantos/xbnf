@@ -4,10 +4,10 @@ json -> value ;
 
 value -> object | array | STR | NUMBER | "true" | "false" | "null" ;
 
-object -> "{" (member:","?)? "}" ;
+object -> "{" member:","? "}" ;
 member -> STR ":" value ;
 
-array -> "[" (value:","?)? "]" ;
+array -> "[" value:","? "]" ;
 
 // ── Terminals ──────────────────────────────────────────────
 

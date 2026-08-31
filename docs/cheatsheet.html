@@ -392,7 +392,7 @@ op="+"</pre></div>
 x:,","        // optional leading ","
 x:",",        // optional trailing ","
 x:,",",       // both
-(member:","?)?   // JSON-style optional list, no trailing comma</pre></div>
+member:","?     // JSON-style optional list, no trailing comma</pre></div>
           <p>IR: <span class="badge ir">Delim</span> with <code>Leading</code> / <code>Trailing</code>. A following <code>?</code> is a separate <span class="badge ir">Quant</span>.</p>
         </div>
 
@@ -411,7 +411,7 @@ x:,",",       // both
 <pre class="xbnf">expr -&gt; @:op=("+" | "-")  #assoc=left
       &gt; @:op=("*" | "/" | "%")  #assoc=left
       &gt; op=("-" | "!") @
-      &gt; @ "(" (expr:","?)? ")"
+      &gt; @ "(" expr:","? ")"
       | NUMBER
       | IDENT ;</pre></div>
           <p><code>@:op="+"</code> is the idiom “infix <code>+</code> at this level”, operator captured as <code>op</code>.</p>
@@ -501,9 +501,9 @@ x:,",",       // both
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
 <pre class="xbnf">json   -&gt; value ;
 value  -&gt; object | array | STR | NUMBER | "true" | "false" | "null" ;
-object -&gt; "{" (member:","?)? "}" ;
+object -&gt; "{" member:","? "}" ;
 member -&gt; STR ":" value ;
-array  -&gt; "[" (value:","?)? "]" ;
+array  -&gt; "[" value:","? "]" ;
 
 NUMBER #leaf -&gt; { #wrap -&gt; () ;
     "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
@@ -520,7 +520,7 @@ NUMBER #leaf -&gt; { #wrap -&gt; () ;
       &gt; @:op=("+" | "-")    #assoc=left
       &gt; @:op=("*" | "/" | "%")  #assoc=left
       &gt; op=("-" | "!" | "~") @
-      &gt; @ "(" (expr:","?)? ")"
+      &gt; @ "(" expr:","? ")"
       | NUMBER
       | IDENT ;</pre></div>
         </div>

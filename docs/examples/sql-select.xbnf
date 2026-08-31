@@ -10,9 +10,9 @@ select_stmt -> "SELECT" distinct=("DISTINCT" | "ALL")?
                select_list
                ("FROM" from_clause)?
                ("WHERE" where=expr)?
-               ("GROUP" "BY" group_by=expr:","?)?
+               ("GROUP" "BY" group_by=expr:",")?
                ("HAVING" having=expr)?
-               ("ORDER" "BY" order_item:","?)?
+               ("ORDER" "BY" order_item:",")?
                ("LIMIT" limit=expr ("OFFSET" offset=expr)?)? ;
 
 select_list -> "*" | select_item:","? ;
@@ -64,18 +64,18 @@ atom -> func_call
       | "(" query ")"                                   // scalar subquery
       | "(" expr ")"
       | "CAST" "(" expr "AS" type_name ")"
-      | "ARRAY" "[" (expr:","?)? "]"
+      | "ARRAY" "[" expr:","? "]"
       | "ROW" "(" expr:","? ")"
       | column_ref
       | literal ;
 
-func_call -> IDENT "(" ("DISTINCT"? (expr:","?)? | "*") ")" ;
+func_call -> IDENT "(" ("DISTINCT"? expr:","? | "*") ")" ;
 
-window_func -> IDENT "(" ("DISTINCT"? (expr:","?)? | "*") ")"
+window_func -> IDENT "(" ("DISTINCT"? expr:","? | "*") ")"
                "OVER" "(" window_spec ")" ;
 
-window_spec -> ("PARTITION" "BY" expr:","?)?
-               ("ORDER" "BY" order_item:","?)?
+window_spec -> ("PARTITION" "BY" expr:",")?
+               ("ORDER" "BY" order_item:",")?
                frame_clause? ;
 
 frame_clause -> ("ROWS" | "RANGE" | "GROUPS")

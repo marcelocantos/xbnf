@@ -173,10 +173,10 @@
     "id": "delim-trailing",
     "group": "Combinators",
     "title": "Optional delimited list",
-    "syntax": "(x:\",\"?)?",
+    "syntax": "x:\",\"?",
     "blurb": "JSON-style: zero or more items, no trailing comma in the input.",
     "slice": "core",
-    "grammar": "start -> \"[\" (item:\",\"?)? \"]\" ;\nitem -> [0-9]+ ;\n#wrap -> () ;\n",
+    "grammar": "start -> \"[\" item:\",\"? \"]\" ;\nitem -> [0-9]+ ;\n#wrap -> () ;\n",
     "input": "[1,2,3]"
   },
   {

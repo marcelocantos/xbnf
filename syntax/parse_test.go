@@ -60,6 +60,25 @@ func TestParseJSON(t *testing.T) {
 	if wrap(t, g) == nil {
 		t.Fatal("missing #wrap")
 	}
+	obj := rule(t, g, "object")
+	seq, ok := obj.Body.(grammar.Seq)
+	if !ok || len(seq.Terms) != 3 {
+		t.Fatalf("object seq: %#v", obj.Body)
+	}
+	q, ok := seq.Terms[1].(grammar.Quant)
+	if !ok || q.Min != 0 || q.Max != 1 {
+		t.Fatalf("object list quant: %#v", seq.Terms[1])
+	}
+	d, ok := q.Term.(grammar.Delim)
+	if !ok {
+		t.Fatalf("object list should be member:\",\"? (delim then optional), got %T", q.Term)
+	}
+	if id, ok := d.Term.(grammar.Ident); !ok || id.Name != "member" {
+		t.Fatalf("delim term: %#v", d.Term)
+	}
+	if s, ok := d.Sep.(grammar.String); !ok || s.Text != "," {
+		t.Fatalf("delim sep: %#v", d.Sep)
+	}
 }
 
 func TestParseCalc(t *testing.T) {

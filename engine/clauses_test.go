@@ -88,4 +88,19 @@ func TestJSONTrue(t *testing.T) {
 	if !res.OK {
 		t.Fatal(res.Error)
 	}
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{`{}`, true},
+		{`{"a":true,"b":null}`, true},
+		{`{"a":true,}`, false},
+		{`{"a":true "b":false}`, false},
+	}
+	for _, c := range cases {
+		got := engine.Parse(g, "json", c.in)
+		if got.OK != c.want {
+			t.Errorf("%s: ok=%v want %v (%s)", c.in, got.OK, c.want, got.Error)
+		}
+	}
 }

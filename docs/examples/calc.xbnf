@@ -11,7 +11,7 @@ expr -> "let" IDENT "=" @ ";" @
       > @:op=("*" | "/" | "%")  #assoc=left         // multiplicative
       > op=("-" | "!" | "~") @                      // unary prefix
       > @ op=("!" | "++" | "--")                    // postfix
-      > @ "(" (expr:","?)? ")"                      // call
+      > @ "(" expr:","? ")"                      // call
       | @ "[" expr "]"                              // index
       | @ "." IDENT                                 // member
       | "(" expr ")"
