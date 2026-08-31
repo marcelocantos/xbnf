@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"regexp"
 	"unicode"
 	"unicode/utf8"
 
@@ -50,16 +49,6 @@ func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 		return pos + n, true
 	case grammar.Empty:
 		return pos, true
-	case grammar.Leaf:
-		re, err := leafRegexp(x.Pattern)
-		if err != nil {
-			return pos, false
-		}
-		loc := re.FindStringIndex(input[pos:])
-		if loc == nil || loc[0] != 0 {
-			return pos, false
-		}
-		return pos + loc[1], true
 	}
 	return pos, false
 }
@@ -114,10 +103,6 @@ func escapeMatch(code string, r rune) bool {
 		ch, _ := utf8.DecodeRuneInString(code)
 		return r == ch
 	}
-}
-
-func leafRegexp(pat string) (*regexp.Regexp, error) {
-	return regexp.Compile(`\A(?s:` + pat + `)`)
 }
 
 func runePred(t grammar.Term) func(rune) bool {

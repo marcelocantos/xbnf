@@ -95,7 +95,6 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 			}
 		}
 	}
-	bindDFAOwner(out)
 	for _, name := range c.order {
 		if c.regular[name] {
 			continue
@@ -106,6 +105,10 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 	for i, p := range c.prods {
 		out.ntProds[p.nt] = append(out.ntProds[p.nt], i)
 	}
+	for name, d := range c.extraDFA {
+		out.dfa[name] = d
+	}
+	bindDFAOwner(out)
 	return out, nil
 }
 
@@ -150,13 +153,14 @@ func Parse(g *grammar.Grammar, start, input string) *Result {
 }
 
 type compiler struct {
-	rules   map[string]grammar.Rule
-	order   []string
-	first   string
-	wrap    grammar.Term
-	regular map[string]bool
-	prods   []prod
-	hid     int
+	rules    map[string]grammar.Rule
+	order    []string
+	first    string
+	wrap     grammar.Term
+	regular  map[string]bool
+	prods    []prod
+	hid      int
+	extraDFA map[string]*dfa
 }
 
 func (c *compiler) analyzeRegular() {
@@ -188,6 +192,8 @@ func (c *compiler) analyzeRegular() {
 				bad = bad || b
 			}
 		case grammar.Named:
+			return walk(x.Term)
+		case grammar.Leaf:
 			return walk(x.Term)
 		case grammar.Quant:
 			return walk(x.Term)
@@ -269,6 +275,16 @@ func (c *compiler) analyzeRegular() {
 	}
 }
 
+func (c *compiler) leafDFA(x grammar.Leaf) string {
+	h := c.fresh("lf")
+	d := compileOneDFA(x, c)
+	if c.extraDFA == nil {
+		c.extraDFA = map[string]*dfa{}
+	}
+	c.extraDFA[h] = d
+	return h
+}
+
 func (c *compiler) fresh(kind string) string {
 	c.hid++
 	return fmt.Sprintf("$%s%d", kind, c.hid)
@@ -310,6 +326,8 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 		return []elem{{kind: ekNT, nt: x.Name, label: x.Label}}
 	case grammar.Named:
 		return c.flatten(x.Term)
+	case grammar.Leaf:
+		return []elem{{kind: ekDFA, nt: c.leafDFA(x)}}
 	case grammar.Quant:
 		return []elem{{kind: ekNT, nt: c.quantNT(c.flatten(x.Term), x.Min, x.Max)}}
 	case grammar.Delim:
@@ -328,7 +346,7 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 		return []elem{{kind: ekNegLook, nt: h}}
 	case grammar.Empty:
 		return nil
-	case grammar.String, grammar.CharClass, grammar.Escape, grammar.Leaf, grammar.AnyChar:
+	case grammar.String, grammar.CharClass, grammar.Escape, grammar.AnyChar:
 		return []elem{{kind: ekTerm, term: x}}
 	case grammar.Self:
 		return nil
@@ -429,6 +447,8 @@ func rewriteSelf(t grammar.Term, tighter string) grammar.Term {
 		return grammar.Alt{Terms: ts}
 	case grammar.Named:
 		return grammar.Named{Name: x.Name, Term: rewriteSelf(x.Term, tighter)}
+	case grammar.Leaf:
+		return grammar.Leaf{Term: rewriteSelf(x.Term, tighter)}
 	case grammar.Quant:
 		return grammar.Quant{Term: rewriteSelf(x.Term, tighter), Min: x.Min, Max: x.Max}
 	case grammar.Delim:
@@ -498,6 +518,8 @@ func localRegular(t grammar.Term) bool {
 			}
 		}
 	case grammar.Named:
+		return localRegular(x.Term)
+	case grammar.Leaf:
 		return localRegular(x.Term)
 	case grammar.Quant:
 		return localRegular(x.Term)

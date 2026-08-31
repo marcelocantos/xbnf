@@ -125,9 +125,9 @@ type Escape struct {
 func (Escape) term()      {}
 func (Escape) Kind() Kind { return KindEscape }
 
-// Leaf is `/pattern/`. Pattern is the text between the slashes.
+// Leaf is `/term/`: match Term (the same language) and emit one string.
 type Leaf struct {
-	Pattern string
+	Term Term
 }
 
 func (Leaf) term()      {}

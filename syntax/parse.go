@@ -32,8 +32,9 @@ func Parse(src []byte) (*grammar.Grammar, error) {
 }
 
 type parser struct {
-	src []byte
-	pos int
+	src    []byte
+	pos    int
+	inLeaf int
 }
 
 func (p *parser) err(msg string) error {
@@ -118,6 +119,9 @@ func (p *parser) parseRule() (grammar.Stmt, error) {
 		if !ok {
 			p.pos = start
 			break
+		}
+		if mod == "leaf" {
+			return nil, p.err("#leaf is /term/; wrap the body in slashes")
 		}
 		mods = append(mods, mod)
 		p.skip()
@@ -336,6 +340,8 @@ func (p *parser) seqEnds() bool {
 		return true
 	case '#':
 		return true
+	case '/':
+		return p.inLeaf > 0
 	}
 	return false
 }
@@ -701,21 +707,19 @@ func (p *parser) parseMacroCall() (grammar.Term, error) {
 }
 
 func (p *parser) parseLeaf() (grammar.Term, error) {
-	p.pos++ // /
-	start := p.pos
-	for p.pos < len(p.src) {
-		if p.src[p.pos] == '\\' && p.pos+1 < len(p.src) {
-			p.pos += 2
-			continue
-		}
-		if p.src[p.pos] == '/' {
-			pat := string(p.src[start:p.pos])
-			p.pos++
-			return grammar.Leaf{Pattern: pat}, nil
-		}
-		p.pos++
+	p.pos++ // opening /
+	p.inLeaf++
+	defer func() { p.inLeaf-- }()
+	p.skip()
+	t, err := p.parseTerm()
+	if err != nil {
+		return nil, err
 	}
-	return nil, p.err("unterminated leaf")
+	p.skip()
+	if !p.eat("/") {
+		return nil, p.err("expected /")
+	}
+	return grammar.Leaf{Term: t}, nil
 }
 
 func (p *parser) parseClass() (grammar.Term, error) {

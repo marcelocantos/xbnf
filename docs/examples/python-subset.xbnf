@@ -76,38 +76,38 @@ dotted_name -> IDENT:"." ;
 
 // ── Terminals ──────────────────────────────────────────────
 
-IDENT #leaf -> { #wrap -> () ;
+IDENT -> /{ #wrap -> () ;
     (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]* ;
-} ;
+}/ ;
 
-KEYWORD #leaf -> { #wrap -> () ;
+KEYWORD -> /{ #wrap -> () ;
     ("if" | "elif" | "else" | "while" | "for" | "def" | "class"
     | "return" | "pass" | "break" | "continue" | "import" | "from"
     | "and" | "or" | "not" | "in" | "is" | "True" | "False" | "None")
     (?![A-Za-z0-9_]) ;
-} ;
+}/ ;
 
-NUMBER #leaf -> { #wrap -> () ;
+NUMBER -> /{ #wrap -> () ;
     [0-9]+ ("." [0-9]*)? ([eE] [+-]? [0-9]+)?
   | "0" [xX] [0-9a-fA-F]+
   | "0" [oO] [0-7]+
   | "0" [bB] [01]+ ;
-} ;
+}/ ;
 
-STR #leaf -> { #wrap -> () ;
+STR -> /{ #wrap -> () ;
     '"""' ([^"\\] | "\\" . | '"' (?!'"' '"'))* '"""'
   | "'''" ([^'\\] | "\\" . | "'" (?!"'" "'"))* "'''"
   | '"' ("\\" . | [^"\\\n])* '"'
   | "'" ("\\" . | [^'\\\n])* "'" ;
-} ;
+}/ ;
 
-NEWLINE #leaf -> { #wrap -> () ;
+NEWLINE -> /{ #wrap -> () ;
     \n ;
-} ;
+}/ ;
 
-COMMENT #leaf -> { #wrap -> () ;
+COMMENT -> /{ #wrap -> () ;
     "#" [^\n]* ;
-} ;
+}/ ;
 
 // Whitespace between tokens, but NOT newlines (significant for off-side rule).
 #wrap -> ([ \t] | "\\" \n | COMMENT)* ;

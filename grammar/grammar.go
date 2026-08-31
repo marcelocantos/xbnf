@@ -90,7 +90,7 @@ type Stmt interface {
 }
 
 // Rule is `name mod* -> term ;`.
-// Mods are identifier names without the `#` sigil (`lex`, `leaf`).
+// Mods are identifier names without the `#` sigil (`lex`).
 type Rule struct {
 	Name string
 	Mods []string

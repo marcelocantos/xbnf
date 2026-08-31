@@ -31,18 +31,18 @@ func TestRule(t *testing.T) {
 	}
 }
 
-func TestModifiersLexLeaf(t *testing.T) {
+func TestModifiersLex(t *testing.T) {
 	t.Parallel()
 	r := grammar.Rule{
 		Name: "IDENT",
-		Mods: []string{"lex", "leaf"},
+		Mods: []string{"lex"},
 		Body: grammar.Ident{Name: "body"},
 	}
 	if r.Kind() != grammar.KindRule {
 		t.Fatalf("Kind() = %v, want %v", r.Kind(), grammar.KindRule)
 	}
-	if len(r.Mods) != 2 || r.Mods[0] != "lex" || r.Mods[1] != "leaf" {
-		t.Fatalf("Mods = %v, want [lex leaf]", r.Mods)
+	if len(r.Mods) != 1 || r.Mods[0] != "lex" {
+		t.Fatalf("Mods = %v, want [lex]", r.Mods)
 	}
 }
 
@@ -371,10 +371,15 @@ func TestAtoms(t *testing.T) {
 		},
 		{
 			name: "leaf",
-			term: grammar.Leaf{Pattern: `(?:\\.|[^\\"$])+`},
+			term: grammar.Leaf{Term: grammar.Quant{
+				Term: grammar.CharClass{Elems: []grammar.ClassElem{{Lo: "a", Hi: "z"}}},
+				Min:  1,
+				Max:  grammar.Unbounded,
+			}},
 			kind: grammar.KindLeaf,
 			check: func(t *testing.T, term grammar.Term) {
-				if as[grammar.Leaf](t, term).Pattern != `(?:\\.|[^\\"$])+` {
+				q := as[grammar.Quant](t, as[grammar.Leaf](t, term).Term)
+				if q.Min != 1 || q.Max != grammar.Unbounded {
 					t.Fatalf("%v", term)
 				}
 			},

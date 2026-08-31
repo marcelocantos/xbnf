@@ -85,7 +85,7 @@ func (c *Compiled) gll(start, input string) *Result {
 		if end != len(input) {
 			return &Result{Error: fmt.Sprintf("unconsumed input at byte %d", end), End: end}
 		}
-		return &Result{OK: true, End: end, Tree: Node{Kind: "rule", Name: start, Text: input[pos:end]}}
+		return &Result{OK: true, End: end, Tree: c.buildTree(start, input, pos)}
 	}
 	for _, pid := range c.ntProds[start] {
 		p.add(slot{pid: pid, ip: 0}, dummy, pos)
@@ -119,14 +119,14 @@ func (c *Compiled) gll(start, input string) *Result {
 			Error:  fmt.Sprintf("unconsumed input at byte %d", endw),
 			End:    endw,
 			Packed: p.packed,
-			Tree:   Node{Kind: "rule", Name: start, Text: input[pos:end]},
+			Tree:   c.buildTree(start, input, pos),
 		}
 	}
 	return &Result{
 		OK:     true,
 		End:    endw,
 		Packed: p.packed + packs,
-		Tree:   Node{Kind: "rule", Name: start, Text: input[pos:end]},
+		Tree:   c.buildTree(start, input, pos),
 	}
 }
 

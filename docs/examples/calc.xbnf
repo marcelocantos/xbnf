@@ -21,18 +21,20 @@ expr -> "let" IDENT "=" @ ";" @
 
 // ── Terminals ──────────────────────────────────────────────
 
-IDENT -> /[A-Za-z_][A-Za-z0-9_]*/ ;
+IDENT -> /{ #wrap -> () ;
+    [A-Za-z_] [A-Za-z0-9_]* ;
+}/ ;
 
-NUMBER #leaf -> { #wrap -> () ;
+NUMBER -> /{ #wrap -> () ;
     [0-9]+ ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
-} ;
+}/ ;
 
-STR #leaf -> { #wrap -> () ;
+STR -> /{ #wrap -> () ;
     '"' ("\\" . | [^"\\])* '"' ;
-} ;
+}/ ;
 
 #wrap -> (\s | COMMENT)* ;
 
-COMMENT #leaf -> { #wrap -> () ;
+COMMENT -> /{ #wrap -> () ;
     "//" [^\n]* ;
-} ;
+}/ ;

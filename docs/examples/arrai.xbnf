@@ -107,36 +107,36 @@ nested_op -> "+>" | "|" | "++" ;
 
 // ── Terminals ──────────────────────────────────────────────
 
-ARROW #leaf -> { #wrap -> () ;
+ARROW -> /{ #wrap -> () ;
     ":>" | "=>" | ">>" | "orderby" | "order" | "rank"
   | "where" | "sum" | "max" | "mean" | "median" | "min" ;
-} ;
+}/ ;
 
-IDENT #leaf -> { #wrap -> () ;
+IDENT -> /{ #wrap -> () ;
     "." | "@{" ([^{}] | "{" [^}]+ "}")+ "}"
   | [$@A-Za-z_] [0-9$@A-Za-z_]* ;
-} ;
+}/ ;
 
-PKGPATH #leaf -> { #wrap -> () ;
+PKGPATH -> /{ #wrap -> () ;
     ("\\" . | [^\\}])* ;
-} ;
+}/ ;
 
-STR #leaf -> { #wrap -> () ;
+STR -> /{ #wrap -> () ;
     '"' ("\\" . | [^"\\])* '"'
   | "'" ("\\" . | [^'\\])* "'"
   | "`" ("``" | [^`])* "`" ;
-} ;
+}/ ;
 
-NUM #leaf -> { #wrap -> () ;
+NUM -> /{ #wrap -> () ;
     ([0-9]+ ("." [0-9]*)? | "." [0-9]+) ([eE] [+-]? [0-9]+)? ;
-} ;
+}/ ;
 
-CHAR #leaf -> { #wrap -> () ;
+CHAR -> /{ #wrap -> () ;
     "%" ("\\" . | .) ;
-} ;
+}/ ;
 
-COMMENT #leaf -> { #wrap -> () ;
+COMMENT -> /{ #wrap -> () ;
     "#" [^\n]* ;
-} ;
+}/ ;
 
 #wrap -> (\s | COMMENT)* ;

@@ -99,22 +99,22 @@ type_name -> IDENT ("(" NUMBER ("," NUMBER)? ")")? ;
 
 // ── Terminals ──────────────────────────────────────────────
 
-IDENT #leaf -> { #wrap -> () ;
+IDENT -> /{ #wrap -> () ;
     [A-Za-z_] [A-Za-z0-9_]*
   | '"' [^"]+ '"' ;                                    // quoted identifier
-} ;
+}/ ;
 
-NUMBER #leaf -> { #wrap -> () ;
+NUMBER -> /{ #wrap -> () ;
     [0-9]+ ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
-} ;
+}/ ;
 
-STR #leaf -> { #wrap -> () ;
+STR -> /{ #wrap -> () ;
     "'" ("''" | [^'])* "'" ;                            // SQL string
-} ;
+}/ ;
 
-COMMENT #leaf -> { #wrap -> () ;
+COMMENT -> /{ #wrap -> () ;
     "--" [^\n]*
   | "/*" ([^*] | "*" [^/])* "*/" ;
-} ;
+}/ ;
 
 #wrap -> (\s | COMMENT)* ;

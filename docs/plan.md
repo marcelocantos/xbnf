@@ -33,8 +33,9 @@ preserve ordered-choice semantics.
    `rule::label` is filtered longest-match over named alternatives.
 
 5. **Scannerless, scoped whitespace.** `#wrap` replaces wbnf `.wrapRE`.
-   `#leaf` collapses a match to a flat string. Terminals typically wrap
-   themselves in `{ #wrap -> () ; … }`.
+   `/term/` matches term (the same language) and emits one string.
+   Terminals that are character sequences use a wrap-off scope inside
+   the slashes: `IDENT -> /{ #wrap -> () ; [A-Za-z_] [A-Za-z0-9_]* }/`.
 
 6. **Bootstrap, then self-host.** A hand-written parser of `xbnf.xbnf`
    produces the grammar IR. The GLL engine consumes that IR. Once the

@@ -88,18 +88,16 @@ func capture(t *testing.T, args []string) (int, string, string) {
 		t.Fatal(err)
 	}
 	os.Stdout, os.Stderr = outW, errW
+	var outB, errB []byte
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); outB, _ = io.ReadAll(outR) }()
+	go func() { defer wg.Done(); errB, _ = io.ReadAll(errR) }()
 	code := run(args)
 	_ = outW.Close()
 	_ = errW.Close()
+	wg.Wait()
 	os.Stdout, os.Stderr = oldOut, oldErr
-	outB, readErr := io.ReadAll(outR)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	errB, readErr := io.ReadAll(errR)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
 	_ = outR.Close()
 	_ = errR.Close()
 	return code, string(outB), string(errB)

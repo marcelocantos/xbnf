@@ -146,6 +146,73 @@ func strQuant(min, max int) *grammar.Grammar {
 	}}
 }
 
+func TestLeafTermSequence(t *testing.T) {
+	t.Parallel()
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Leaf{Term: grammar.Seq{Terms: []grammar.Term{
+			grammar.String{Text: "("},
+			grammar.Quant{
+				Term: grammar.Delim{
+					Term: grammar.Ident{Name: "foo"},
+					Sep:  grammar.String{Text: ","},
+				},
+				Min: 0,
+				Max: 1,
+			},
+			grammar.String{Text: ")"},
+		}}}},
+		grammar.Rule{Name: "foo", Body: grammar.Leaf{Term: grammar.Quant{
+			Term: grammar.CharClass{Elems: []grammar.ClassElem{{Lo: "a", Hi: "z"}}},
+			Min:  1,
+			Max:  grammar.Unbounded,
+		}}},
+	}}
+	res := engine.Parse(g, "S", "(one,two,three)")
+	if !res.OK {
+		t.Fatalf(`/"(" foo:","? ")"/ : %s`, res.Error)
+	}
+}
+
+func TestDelimLeafTree(t *testing.T) {
+	t.Parallel()
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Delim{
+			Term: grammar.Ident{Name: "item"},
+			Sep:  grammar.String{Text: ","},
+		}},
+		grammar.Rule{Name: "item", Body: grammar.Leaf{Term: grammar.Quant{
+			Term: grammar.CharClass{Elems: []grammar.ClassElem{{Lo: "a", Hi: "z"}}},
+			Min:  1,
+			Max:  grammar.Unbounded,
+		}}},
+	}}
+	res := engine.Parse(g, "S", "one,two,three")
+	if !res.OK {
+		t.Fatalf("parse: %s", res.Error)
+	}
+	got := leafTexts(res.Tree)
+	want := []string{"one", "two", "three"}
+	if len(got) != len(want) {
+		t.Fatalf("leaf texts %v, want %v (tree=%+v)", got, want, res.Tree)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("leaf texts %v, want %v", got, want)
+		}
+	}
+}
+
+func leafTexts(n engine.Node) []string {
+	if n.Kind == "leaf" {
+		return []string{n.Text}
+	}
+	var out []string
+	for _, c := range n.Children {
+		out = append(out, leafTexts(c)...)
+	}
+	return out
+}
+
 func TestDFALeafDelim(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{
@@ -153,7 +220,11 @@ func TestDFALeafDelim(t *testing.T) {
 			Term: grammar.Ident{Name: "item"},
 			Sep:  grammar.String{Text: ","},
 		}},
-		grammar.Rule{Name: "item", Body: grammar.Leaf{Pattern: `[a-z]+`}},
+		grammar.Rule{Name: "item", Body: grammar.Leaf{Term: grammar.Quant{
+			Term: grammar.CharClass{Elems: []grammar.ClassElem{{Lo: "a", Hi: "z"}}},
+			Min:  1,
+			Max:  grammar.Unbounded,
+		}}},
 	}}
 	c, err := engine.Compile(g)
 	if err != nil {

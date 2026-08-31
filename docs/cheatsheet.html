@@ -276,7 +276,7 @@ SPDX-License-Identifier: Apache-2.0
             <tr class="item" data-slice="core" data-q="> stack precedence"><td><code>&gt;</code></td><td>precedence-stack separator</td><td><span class="badge ir">Stack</span></td></tr>
             <tr class="item" data-slice="core" data-q="| alternation"><td><code>|</code></td><td>unordered alternation</td><td><span class="badge ir">Alt</span></td></tr>
             <tr class="item" data-slice="core" data-q=": delimited repetition comma"><td><code>:</code></td><td>delimited repetition, <code>x:","</code></td><td><span class="badge ir">Delim</span></td></tr>
-            <tr class="item" data-slice="core" data-q="/pat/ leaf collapse regex"><td><code>/pat/</code></td><td>leaf collapse, not a second matching engine</td><td><span class="badge ir">Leaf</span></td></tr>
+            <tr class="item" data-slice="core" data-q="/term/ leaf collapse"><td><code>/term/</code></td><td>leaf collapse: same language, one string in the tree</td><td><span class="badge ir">Leaf</span></td></tr>
           </tbody>
         </table>
         <p class="muted item" data-slice="core" data-q="gone wbnf <: :> /{}/">Gone from wbnf: <code>.</code> as pragma prefix, <code>&lt;:</code> / <code>:&gt;</code> associativity, <code>/{…}/</code> regex holes.</p>
@@ -295,17 +295,13 @@ rule  = NAME mods* "-&gt;" term ";"</pre></div>
 
       <section id="rules">
         <h2>Rules and modifiers</h2>
-        <div class="item" data-slice="core" data-q="rule #leaf #lex modifier">
+        <div class="item" data-slice="core" data-q="rule #lex modifier">
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">IDENT #leaf #lex -&gt; term ;</pre></div>
+<pre class="xbnf">IDENT #lex -&gt; /[A-Za-z_] [A-Za-z0-9_]*/ ;</pre></div>
         </div>
         <table>
           <thead><tr><th>Modifier</th><th>Role</th></tr></thead>
           <tbody>
-            <tr class="item" data-slice="core" data-q="#leaf flat string ast">
-              <td><code>#leaf</code></td>
-              <td>The match is one flat string in the AST. IR: <span class="badge ir">Rule.Mods</span></td>
-            </tr>
             <tr class="item" data-slice="core" data-q="#lex regularity lock dfa">
               <td><code>#lex</code></td>
               <td>Strictness lock: this rule must stay regular. Not the DFA switch — regularity is detected; <code>#lex</code> makes drift a compile error.</td>
@@ -419,11 +415,11 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
 
         <h3>Scope</h3>
         <div class="item" data-slice="core" data-q="scope { wrap local rules terminal }">
-          <p><code>{ decls term }</code> on a stack level or as a rule body: nested rules/pragmas plus a body. Wrap-off plus <code>#leaf</code> is for a terminal that is a small grammar, not one pattern.</p>
+          <p><code>{ decls term }</code> on a stack level or as a rule body: nested rules/pragmas plus a body. Wrap-off inside <code>/…/</code> is for a terminal that is several character-level terms.</p>
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">NUMBER #leaf -&gt; { #wrap -&gt; () ;
+<pre class="xbnf">NUMBER -&gt; /{ #wrap -&gt; () ;
     [0-9]+ ("." [0-9]+)? ;
-} ;</pre></div>
+}/ ;</pre></div>
           <p>IR: <span class="badge ir">Scope</span>.</p>
         </div>
       </section>
@@ -438,7 +434,7 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
             <tr class="item" data-slice="core" data-q='string "let" backtick'><td><code>"let"</code> <code>'let'</code> <code>`let`</code></td><td>literal (backtick doubles <code>`</code> to escape)</td><td><span class="badge ir">String</span></td></tr>
             <tr class="item" data-slice="core" data-q="character class [a-z] negated"><td><code>[a-z]</code> <code>[^\n]</code></td><td>one character; <code>-</code> is a range. Many of these: <code>/[a-z]+/</code>, not <code>[a-z]+</code></td><td><span class="badge ir">CharClass</span></td></tr>
             <tr class="item" data-slice="core" data-q="escape \d \s \n"><td><code>\d</code> <code>\s</code> <code>\n</code></td><td>backslash class (<code>\</code> + alphanum)</td><td><span class="badge ir">Escape</span></td></tr>
-            <tr class="item" data-slice="core" data-q="leaf /pattern/ token"><td><code>/pattern/</code></td><td>match, emit as one string — usual spelling of a token</td><td><span class="badge ir">Leaf</span></td></tr>
+            <tr class="item" data-slice="core" data-q="leaf /term/ token"><td><code>/term/</code></td><td>match term, emit one string — same language, not a regex dialect</td><td><span class="badge ir">Leaf</span></td></tr>
             <tr class="item" data-slice="core" data-q=". any char"><td><code>.</code></td><td>any character</td><td><span class="badge ir">AnyChar</span></td></tr>
             <tr class="item" data-slice="core" data-q="%name default"><td><code>%name</code> <code>%name="EOF"</code></td><td>back-ref, optional default</td><td><span class="badge ir">Ref</span></td></tr>
             <tr class="item" data-slice="core" data-q="%%bind extref"><td><code>%%bind</code></td><td>external ref</td><td><span class="badge ir">ExtRef</span></td></tr>
@@ -461,9 +457,9 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
               <td><code>#wrap</code></td>
               <td>What may appear <em>between</em> terminals (spaces, comments, nothing).</td>
             </tr>
-            <tr class="item" data-slice="core" data-q="#leaf tree or string">
-              <td><code>#leaf</code></td>
-              <td>Whether a successful match is a tree or a string. Tokens that are one regex are <code>/pat/</code>; <code>#leaf</code> collapses a structured body.</td>
+            <tr class="item" data-slice="core" data-q="/term/ tree or string">
+              <td><code>/term/</code></td>
+              <td>Whether a successful match is a tree or a string. Inner syntax is xbnf, not a second regex language.</td>
             </tr>
             <tr class="item" data-slice="core" data-q="regular dfa #lex lock">
               <td>Regular vs not</td>
@@ -473,9 +469,9 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
         </table>
         <div class="item" data-slice="core" data-q="NUMBER terminal wrap off">
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">NUMBER #leaf -&gt; { #wrap -&gt; () ;
+<pre class="xbnf">NUMBER -&gt; /{ #wrap -&gt; () ;
     [0-9]+ ("." [0-9]+)? ;
-} ;</pre></div>
+}/ ;</pre></div>
           <p>Inside the braces, wrap is empty, so <code>"."</code> and digits concatenate with no injected space. Outside, <code>#wrap -&gt; \s*</code> still applies <em>around</em> a <code>NUMBER</code> reference.</p>
         </div>
       </section>
@@ -505,9 +501,9 @@ object -&gt; "{" member:","? "}" ;
 member -&gt; STR ":" value ;
 array  -&gt; "[" value:","? "]" ;
 
-NUMBER #leaf -&gt; { #wrap -&gt; () ;
+NUMBER -&gt; /{ #wrap -&gt; () ;
     "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
-} ;
+}/ ;
 
 #wrap -&gt; \s* ;</pre></div>
         </div>
@@ -525,10 +521,12 @@ NUMBER #leaf -&gt; { #wrap -&gt; () ;
       | IDENT ;</pre></div>
         </div>
 
-        <div class="panel item" data-ex-panel="ident" hidden data-slice="core" data-q="IDENT /pattern/ leaf token">
-          <p class="muted">Typical token: a leaf pattern. <code>#leaf</code> is for a structured body that is not one regex (see NUMBER).</p>
+        <div class="panel item" data-ex-panel="ident" hidden data-slice="core" data-q="IDENT /term/ leaf token">
+          <p class="muted">Typical token: collapse xbnf, not a regex dialect. Wrap-off when several character-level terms sit next to each other.</p>
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">IDENT -&gt; /[A-Za-z_][A-Za-z0-9_]*/ ;</pre></div>
+<pre class="xbnf">IDENT -&gt; /{ #wrap -&gt; () ;
+    [A-Za-z_] [A-Za-z0-9_]* ;
+}/ ;</pre></div>
         </div>
 
         <div class="panel item" data-ex-panel="python" hidden data-slice="later" data-q="@col python indent off-side">
@@ -556,8 +554,8 @@ block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
               <td>Unordered <code>|</code> plus <code>#assoc</code> / <code>#prefer</code> / <code>#longest</code> / <code>#priority</code></td>
               <td class="item" data-slice="later">Algebraic grammar composition (<code>+</code>, <code>|=</code>)</td>
             </tr>
-            <tr class="item" data-slice="core" data-q="#wrap #leaf #lex ::">
-              <td><code>#wrap</code>, <code>#leaf</code>, <code>#lex</code>, <code>::</code> labels</td>
+            <tr class="item" data-slice="core" data-q="#wrap /term/ #lex ::">
+              <td><code>#wrap</code>, <code>/term/</code>, <code>#lex</code>, <code>::</code> labels</td>
               <td class="item" data-slice="later">Relation-valued attributes; generated Go types</td>
             </tr>
             <tr class="item" data-slice="core" data-q="self-host json calc xbnf.xbnf T7">

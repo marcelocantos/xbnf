@@ -12,12 +12,12 @@
   {
     "id": "mod-leaf",
     "group": "Structure",
-    "title": "Modifier #leaf",
-    "syntax": "NAME #leaf -> term ;",
-    "blurb": "The match is one flat string in the tree. Use #leaf when the body is structured; a token that is one pattern is /pat/ instead.",
+    "title": "Leaf /term/",
+    "syntax": "/term/",
+    "blurb": "Match term (the same language) and emit one string. Not a second regex engine. Wrap still applies inside unless a wrap-off scope says otherwise.",
     "slice": "core",
-    "grammar": "tok #leaf -> { #wrap -> () ; [A-Za-z] [A-Za-z0-9]* ; } ;\n",
-    "input": "Hello"
+    "grammar": "start -> /\"(\" foo:\",\"? \")\"/ ;\nfoo -> /[a-z]+/ ;\n#wrap -> () ;\n",
+    "input": "(one,two,three)"
   },
   {
     "id": "mod-lex",
@@ -26,7 +26,7 @@
     "syntax": "NAME #lex -> term ;",
     "blurb": "Strictness lock: this rule must stay regular. The sandbox still matches it; the compiler (T5) rejects drift.",
     "slice": "core",
-    "grammar": "tok #lex #leaf -> [0-9]+ ;\n#wrap -> () ;\n",
+    "grammar": "tok #lex -> /[0-9]+/ ;\n#wrap -> () ;\n",
     "input": "42"
   },
   {
@@ -242,9 +242,9 @@
   {
     "id": "leaf",
     "group": "Atoms",
-    "title": "Leaf /pattern/",
-    "syntax": "/pattern/",
-    "blurb": "Match and emit as one string. The usual spelling of a token. Not a second engine: collapse, not regex delegation. The sandbox compiles the pattern as RE2 anchored at the cursor.",
+    "title": "Leaf /term/",
+    "syntax": "/term/",
+    "blurb": "Match term and emit as one string. /[A-Za-z]+/ is xbnf (class plus quant), not a regex dialect.",
     "slice": "core",
     "grammar": "start -> /[A-Za-z]+/ ;\n#wrap -> () ;\n",
     "input": "hello"

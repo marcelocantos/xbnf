@@ -53,6 +53,8 @@ func rejectLater(stmts []grammar.Stmt) error {
 			}
 		case grammar.Named:
 			return walkTerm(x.Term)
+		case grammar.Leaf:
+			return walkTerm(x.Term)
 		case grammar.Quant:
 			return walkTerm(x.Term)
 		case grammar.Delim:

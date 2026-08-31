@@ -6,7 +6,7 @@
 //   '.'    any character (was pragma prefix)
 //   '#'    pragma/directive sigil (new)
 //   '|'    unordered alternation (was ordered/PEG)
-//   /pat/  leaf collapse (was regex delegation)
+//   /term/ leaf collapse (same language, one string in the tree)
 //   <: :>  gone; use #assoc directive instead
 //   /{…}/  gone; character classes are grammar-level
 //   (?!…)  negative lookahead (new)
@@ -28,7 +28,7 @@ stmt -> COMMENT | rule | pragma ;
 
 rule -> IDENT mod* "->" term ";" ;
 
-mod -> "#" IDENT ;                           // #lex, #leaf
+mod -> "#" IDENT ;                           // #lex
 
 pragma -> "#" IDENT "->" term ";"            // #wrap -> \s* ;
         | "#" IDENT STR ";"?                 // #import "path" ;
@@ -63,7 +63,7 @@ atom -> IDENT ("::" IDENT)?             // rule ref, optional label filter
       | STR                              // "string"
       | CHARCLASS                        // [a-z]
       | ESCAPE                           // \d
-      | LEAF                             // /pattern/
+      | "/" term "/"                     // leaf collapse
       | "."                              // any character
       | REF                              // %name
       | EXTREF                           // %%name
@@ -78,57 +78,51 @@ atom -> IDENT ("::" IDENT)?             // rule ref, optional label filter
 CMP -> ("=" | "!=" | "<" | ">" | "<=" | ">=") IDENT ;
 
 // ── Terminals ──────────────────────────────────────────────
-// #leaf collapses the match to a flat string in the AST.
-// Scoped #wrap -> () suppresses whitespace between characters.
+// /term/ matches term (one language) and emits one string.
+// Scoped #wrap -> () suppresses wrap between characters inside a token.
 
-COMMENT #leaf -> { #wrap -> () ;
+COMMENT -> /{ #wrap -> () ;
     "//" [^\n]*
   | "/*" ([^*] | "*" [^/])* "*/" ;
-} ;
+}/ ;
 
-IDENT #leaf -> { #wrap -> () ;
+IDENT -> /{ #wrap -> () ;
     [A-Za-z_] [A-Za-z0-9_]* ;
-} ;
+}/ ;
 
-INT #leaf -> { #wrap -> () ;
-    [0-9]+ ;
-} ;
+INT -> /[0-9]+/ ;
 
-STR #leaf -> { #wrap -> () ;
+STR -> /{ #wrap -> () ;
     '"' ("\\" . | [^"\\])* '"'
   | "'" ("\\" . | [^'\\])* "'"
   | "`" ("``"  | [^`]   )* "`" ;
-} ;
+}/ ;
 
-CHARCLASS #leaf -> { #wrap -> () ;
+CHARCLASS -> /{ #wrap -> () ;
     "[" "^"? cc_item+ "]" ;
     cc_item -> cc_atom ("-" cc_atom)? ;
     cc_atom -> "\\" . | [^\]\\] ;
-} ;
+}/ ;
 
-ESCAPE #leaf -> { #wrap -> () ;
+ESCAPE -> /{ #wrap -> () ;
     "\\" [a-zA-Z0-9] ;
-} ;
+}/ ;
 
-LEAF #leaf -> { #wrap -> () ;
-    "/" ("\\" . | [^/\\])* "/" ;
-} ;
-
-REF #leaf -> { #wrap -> () ;
+REF -> /{ #wrap -> () ;
     "%" [A-Za-z_] [A-Za-z0-9_]* ("=" STR)? ;
-} ;
+}/ ;
 
-EXTREF #leaf -> { #wrap -> () ;
+EXTREF -> /{ #wrap -> () ;
     "%%" [A-Za-z_] [A-Za-z0-9_]* ;
-} ;
+}/ ;
 
-MACRO_NAME #leaf -> { #wrap -> () ;
+MACRO_NAME -> /{ #wrap -> () ;
     "%!" [A-Za-z_] [A-Za-z0-9_]* ;
-} ;
+}/ ;
 
-POS_PROP #leaf -> { #wrap -> () ;
+POS_PROP -> /{ #wrap -> () ;
     "@" [A-Za-z_] [A-Za-z0-9_]* ;
-} ;
+}/ ;
 
 // ── Default whitespace ─────────────────────────────────────
 

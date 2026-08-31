@@ -44,12 +44,13 @@ func TestParseJSON(t *testing.T) {
 		t.Fatalf("value body: %#v", val.Body)
 	}
 	num := rule(t, g, "NUMBER")
-	if len(num.Mods) != 1 || num.Mods[0] != "leaf" {
-		t.Fatalf("NUMBER mods: %v", num.Mods)
-	}
-	sc, ok := num.Body.(grammar.Scope)
+	leaf, ok := num.Body.(grammar.Leaf)
 	if !ok {
 		t.Fatalf("NUMBER body %T", num.Body)
+	}
+	sc, ok := leaf.Term.(grammar.Scope)
+	if !ok {
+		t.Fatalf("NUMBER leaf %T", leaf.Term)
 	}
 	if len(sc.Decls) != 1 {
 		t.Fatalf("NUMBER decls: %d", len(sc.Decls))
@@ -97,8 +98,8 @@ func TestParseCalc(t *testing.T) {
 	if !ok {
 		t.Fatalf("IDENT body %T", ident.Body)
 	}
-	if leaf.Pattern != `[A-Za-z_][A-Za-z0-9_]*` {
-		t.Fatalf("IDENT pattern %q", leaf.Pattern)
+	if _, ok := leaf.Term.(grammar.Scope); !ok {
+		t.Fatalf("IDENT leaf %T", leaf.Term)
 	}
 }
 
@@ -131,6 +132,31 @@ func TestLaterExampleGrammars(t *testing.T) {
 	_, err = syntax.Parse(repoFile(t, "docs", "examples", "arrai.xbnf"))
 	if err != nil {
 		t.Logf("skip arrai: %v", err)
+	}
+}
+
+func TestParseLeafTerm(t *testing.T) {
+	t.Parallel()
+	g, err := syntax.Parse([]byte(`start -> /"(" foo:","? ")"/ ;
+foo -> /[a-z]+/ ;
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, ok := rule(t, g, "start").Body.(grammar.Leaf)
+	if !ok {
+		t.Fatalf("start body %T", rule(t, g, "start").Body)
+	}
+	seq, ok := leaf.Term.(grammar.Seq)
+	if !ok || len(seq.Terms) != 3 {
+		t.Fatalf("leaf term %T %#v", leaf.Term, leaf.Term)
+	}
+	foo, ok := rule(t, g, "foo").Body.(grammar.Leaf)
+	if !ok {
+		t.Fatalf("foo body %T", rule(t, g, "foo").Body)
+	}
+	if _, ok := foo.Term.(grammar.Quant); !ok {
+		t.Fatalf("foo leaf %T", foo.Term)
 	}
 }
 

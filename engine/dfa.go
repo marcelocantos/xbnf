@@ -12,7 +12,6 @@ import (
 type nfaTrans struct {
 	pred      func(rune) bool
 	to        int
-	lit       string // if non-empty, match exact string from current byte pos (multi-rune)
 	call      string // regular rule invoked as an atomic longest-match DFA
 	callLabel string // required ::label of that call, if any
 }
@@ -116,9 +115,10 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 		s := b.n.st()
 		return s, s
 	case grammar.Leaf:
-		s := b.n.st()
-		a := b.n.st()
-		b.n.states[s].trans = append(b.n.states[s].trans, nfaTrans{lit: "/" + x.Pattern, to: a})
+		saved := b.nowrap
+		b.nowrap = true
+		s, a := b.term(x.Term)
+		b.nowrap = saved
 		return s, a
 	case grammar.Seq:
 		if len(x.Terms) == 0 {
@@ -334,26 +334,12 @@ func (d *dfa) state(set intset) *dfaState {
 	return st
 }
 
-func (d *dfa) move(set intset, r rune, rest string) intset {
+func (d *dfa) move(set intset, r rune) intset {
 	nb := nfaB{n: d.nfa}
 	var out intset
 	seen := map[int]bool{}
 	for _, i := range set {
 		for _, tr := range d.nfa.states[i].trans {
-			if tr.lit != "" {
-				if tr.lit[0] == '/' {
-					re, err := leafRegexp(tr.lit[1:])
-					if err != nil {
-						continue
-					}
-					loc := re.FindStringIndex(rest)
-					if loc != nil && loc[0] == 0 && loc[1] > 0 {
-						// leaf handled in match(), not per-rune
-						_ = rest
-					}
-				}
-				continue
-			}
 			if tr.pred != nil && tr.pred(r) && !seen[tr.to] {
 				seen[tr.to] = true
 				out = append(out, tr.to)
@@ -381,7 +367,7 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 		r, n := utf8.DecodeRuneInString(input[cur:])
 		nx := st.trans[r]
 		if nx == nil {
-			mv := d.move(st.set, r, input[cur:])
+			mv := d.move(st.set, r)
 			if len(mv) == 0 {
 				break
 			}
@@ -395,9 +381,6 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 			end = cur
 			labels = st.labels
 		}
-	}
-	if !ok {
-		end, labels, ok = d.matchLeaf(input, pos)
 	}
 	return end, labels, ok
 }
@@ -425,9 +408,6 @@ func (d *dfa) hasCall() bool {
 	for i := range d.nfa.states {
 		for _, tr := range d.nfa.states[i].trans {
 			if tr.call != "" {
-				return true
-			}
-			if len(tr.lit) > 0 && tr.lit[0] == '/' {
 				return true
 			}
 		}
@@ -483,47 +463,17 @@ func (d *dfa) matchCalls(input string, pos int) (end int, labels []string, ok bo
 					q = append(q, cur{set: nb.eps(intset{tr.to}), pos: e})
 					continue
 				}
-				if len(tr.lit) > 0 && tr.lit[0] == '/' {
-					re, err := leafRegexp(tr.lit[1:])
-					if err != nil {
-						continue
-					}
-					loc := re.FindStringIndex(input[c.pos:])
-					if loc != nil && loc[0] == 0 {
-						q = append(q, cur{set: nb.eps(intset{tr.to}), pos: c.pos + loc[1]})
-					}
-				}
 			}
 		}
 		if c.pos < len(input) {
 			r, n := utf8.DecodeRuneInString(input[c.pos:])
-			mv := d.move(c.set, r, input[c.pos:])
+			mv := d.move(c.set, r)
 			if len(mv) > 0 {
 				q = append(q, cur{set: mv, pos: c.pos + n})
 			}
 		}
 	}
 	return end, labels, ok
-}
-
-func (d *dfa) matchLeaf(input string, pos int) (int, []string, bool) {
-	nb := nfaB{n: d.nfa}
-	set := nb.eps(intset(d.start))
-	for _, i := range set {
-		for _, tr := range d.nfa.states[i].trans {
-			if len(tr.lit) > 0 && tr.lit[0] == '/' {
-				re, err := leafRegexp(tr.lit[1:])
-				if err != nil {
-					continue
-				}
-				loc := re.FindStringIndex(input[pos:])
-				if loc != nil && loc[0] == 0 {
-					return pos + loc[1], nil, true
-				}
-			}
-		}
-	}
-	return pos, nil, false
 }
 
 func hasLabel(labels []string, want string) bool {
