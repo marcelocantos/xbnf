@@ -130,6 +130,9 @@ func bindOneDFA(d *dfa, c *Compiled) {
 	for i := range d.alts {
 		bindOneDFA(d.alts[i].d, c)
 	}
+	for i := range d.ordered {
+		bindOneDFA(d.ordered[i], c)
+	}
 }
 
 func (c *Compiled) IsDFA(rule string) bool {
@@ -179,8 +182,15 @@ func (c *compiler) analyzeRegular() {
 			return []string{x.Name}, false
 		case grammar.Stack, grammar.Self, grammar.Ref, grammar.ExtRef, grammar.MacroCall, grammar.PosProp:
 			return nil, true
-		case grammar.Alt:
-			for _, a := range x.Terms {
+		case grammar.Alt, grammar.OrderedAlt:
+			var terms []grammar.Term
+			switch a := x.(type) {
+			case grammar.Alt:
+				terms = a.Terms
+			case grammar.OrderedAlt:
+				terms = a.Terms
+			}
+			for _, a := range terms {
 				r, b := walk(a)
 				refs = append(refs, r...)
 				bad = bad || b
@@ -300,6 +310,27 @@ func (c *compiler) emitRule(name string, body grammar.Term) {
 	}
 }
 
+func pegEncode(o grammar.OrderedAlt) grammar.Alt {
+	alts := make([]grammar.Term, len(o.Terms))
+	for i, t := range o.Terms {
+		if i == 0 {
+			alts[i] = t
+			continue
+		}
+		seq := make([]grammar.Term, 0, i+1)
+		for j := 0; j < i; j++ {
+			seq = append(seq, grammar.NegLookahead{Term: o.Terms[j]})
+		}
+		seq = append(seq, t)
+		if len(seq) == 1 {
+			alts[i] = seq[0]
+		} else {
+			alts[i] = grammar.Seq{Terms: seq}
+		}
+	}
+	return grammar.Alt{Terms: alts}
+}
+
 func splitAlt(t grammar.Term) []grammar.Term {
 	if a, ok := t.(grammar.Alt); ok {
 		return a.Terms
@@ -319,6 +350,8 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 		h := c.fresh("alt")
 		c.emitRule(h, x)
 		return []elem{{kind: ekNT, nt: h}}
+	case grammar.OrderedAlt:
+		return c.flatten(pegEncode(x))
 	case grammar.Ident:
 		if c.regular[x.Name] {
 			return []elem{{kind: ekDFA, nt: x.Name, label: x.Label}}
@@ -445,6 +478,12 @@ func rewriteSelf(t grammar.Term, tighter string) grammar.Term {
 			ts[i] = rewriteSelf(s, tighter)
 		}
 		return grammar.Alt{Terms: ts}
+	case grammar.OrderedAlt:
+		ts := make([]grammar.Term, len(x.Terms))
+		for i, s := range x.Terms {
+			ts[i] = rewriteSelf(s, tighter)
+		}
+		return grammar.OrderedAlt{Terms: ts}
 	case grammar.Named:
 		return grammar.Named{Name: x.Name, Term: rewriteSelf(x.Term, tighter)}
 	case grammar.Leaf:
@@ -505,8 +544,15 @@ func localRegular(t grammar.Term) bool {
 	switch x := t.(type) {
 	case grammar.Ident, grammar.Stack, grammar.Self, grammar.Ref, grammar.ExtRef, grammar.MacroCall, grammar.PosProp:
 		return false
-	case grammar.Alt:
-		for _, a := range x.Terms {
+	case grammar.Alt, grammar.OrderedAlt:
+		var terms []grammar.Term
+		switch a := x.(type) {
+		case grammar.Alt:
+			terms = a.Terms
+		case grammar.OrderedAlt:
+			terms = a.Terms
+		}
+		for _, a := range terms {
 			if !localRegular(a) {
 				return false
 			}

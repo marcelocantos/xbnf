@@ -136,6 +136,20 @@ func TestAlt(t *testing.T) {
 	}
 }
 
+func TestOrderedAlt(t *testing.T) {
+	t.Parallel()
+	a := grammar.OrderedAlt{Terms: []grammar.Term{
+		grammar.String{Text: "if"},
+		grammar.Ident{Name: "ident"},
+	}}
+	if a.Kind() != grammar.KindOrderedAlt {
+		t.Fatalf("Kind() = %v, want %v", a.Kind(), grammar.KindOrderedAlt)
+	}
+	if len(a.Terms) != 2 {
+		t.Fatalf("len(Terms) = %d, want 2", len(a.Terms))
+	}
+}
+
 func TestSeq(t *testing.T) {
 	t.Parallel()
 	s := grammar.Seq{Terms: []grammar.Term{
@@ -510,6 +524,7 @@ func TestTermKindsDistinct(t *testing.T) {
 	terms := []grammar.Term{
 		grammar.Stack{},
 		grammar.Alt{},
+		grammar.OrderedAlt{},
 		grammar.Seq{},
 		grammar.Named{},
 		grammar.Quant{},

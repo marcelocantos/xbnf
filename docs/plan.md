@@ -19,10 +19,11 @@ preserve ordered-choice semantics.
    ALL(*) is rejected: its prediction DFA is token-keyed and assumes a
    context-free lexer.
 
-2. **Alternation is unordered.** Source order has no meaning. A decision
+2. **Alternation is unordered.** Source order of `|` has no meaning. A decision
    that is neither provably deterministic (bounded lookahead at compile
    time) nor covered by an explicit disambiguator is a compile error.
-   Unnecessary disambiguation is a warning.
+   Unnecessary disambiguation is a warning. Ordered choice is a different
+   combinator (`|>`); mixing `|` and `|>` in one alternation is an error.
 
 3. **Disambiguation vocabulary** (first-class syntax, `#` sigil):
    `#prefer` / `#avoid`, `#assoc=left|right|none`, `#priority`, `#longest`

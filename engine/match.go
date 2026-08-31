@@ -45,6 +45,12 @@ func rejectLater(stmts []grammar.Stmt) error {
 					return err
 				}
 			}
+		case grammar.OrderedAlt:
+			for _, c := range x.Terms {
+				if err := walkTerm(c); err != nil {
+					return err
+				}
+			}
 		case grammar.Seq:
 			for _, c := range x.Terms {
 				if err := walkTerm(c); err != nil {

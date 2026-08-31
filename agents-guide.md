@@ -4,7 +4,8 @@
 
 xbnf is a scannerless CFG parser generator. Grammars are written in xbnf
 notation (`docs/xbnf.xbnf`). Regular rules become DFAs; the rest parse as
-GLL. Alternation is unordered. Ambiguous grammars do not compile unless
+GLL. Alternation `|` is unordered; `|>` is committed choice (do not mix).
+Ambiguous grammars do not compile unless
 they declare a disambiguator (`#prefer`, `#avoid`, `#assoc`, `#priority`,
 `#longest`).
 

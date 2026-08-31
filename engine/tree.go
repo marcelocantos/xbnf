@@ -118,6 +118,14 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 			cur = end
 		}
 		return cur, Node{Kind: "seq", Children: kids, Text: w.input[pos:cur]}, true
+	case grammar.OrderedAlt:
+		for _, a := range x.Terms {
+			end, n, ok := w.term(a, pos, nowrap)
+			if ok {
+				return end, n, true
+			}
+		}
+		return pos, Node{}, false
 	case grammar.Alt:
 		bestEnd := pos
 		var best Node

@@ -275,6 +275,7 @@ SPDX-License-Identifier: Apache-2.0
             <tr class="item" data-slice="core" data-q=":: label filter tok"><td><code>::</code></td><td>label filter: <code>tok::kw_if</code></td><td><span class="badge ir">Ident.Label</span></td></tr>
             <tr class="item" data-slice="core" data-q="> stack precedence"><td><code>&gt;</code></td><td>precedence-stack separator</td><td><span class="badge ir">Stack</span></td></tr>
             <tr class="item" data-slice="core" data-q="| alternation"><td><code>|</code></td><td>unordered alternation</td><td><span class="badge ir">Alt</span></td></tr>
+            <tr class="item" data-slice="core" data-q="|> ordered choice peg"><td><code>|&gt;</code></td><td>ordered choice; cannot mix with <code>|</code></td><td><span class="badge ir">OrderedAlt</span></td></tr>
             <tr class="item" data-slice="core" data-q=": delimited repetition comma"><td><code>:</code></td><td>delimited repetition, <code>x:","</code></td><td><span class="badge ir">Delim</span></td></tr>
             <tr class="item" data-slice="core" data-q="/term/ leaf collapse"><td><code>/term/</code></td><td>leaf collapse: same language, one string in the tree</td><td><span class="badge ir">Leaf</span></td></tr>
           </tbody>
@@ -347,7 +348,7 @@ rule  = NAME mods* "-&gt;" term ";"</pre></div>
         <p class="item" data-slice="core" data-q="precedence stack alt seq atom tightest">Tightest last. <code>(term)</code> groups and is not an IR node. <code>()</code> is empty.</p>
         <div class="layers item" data-slice="core" data-q="L1 L2 L3 L4 stack alt seq named">
           <div class="layer"><b>L1</b> <span><code>a &gt; b &gt; c</code> stack</span> <span class="badge ir">Stack</span></div>
-          <div class="layer"><b>L2</b> <span><code>a | b | c</code> unordered alt</span> <span class="badge ir">Alt</span></div>
+          <div class="layer"><b>L2</b> <span><code>a | b | c</code> or <code>a |&gt; b |&gt; c</code> (no mixing)</span> <span class="badge ir">Alt</span></div>
           <div class="layer"><b>L3</b> <span><code>a b c</code> sequence, trailing <code>#</code> directives</span> <span class="badge ir">Seq</span></div>
           <div class="layer"><b>L4</b> <span>named atom with quantifiers</span> <span class="badge ir">Named Quant</span></div>
         </div>
@@ -357,7 +358,8 @@ rule  = NAME mods* "-&gt;" term ";"</pre></div>
         <h2>Combinators</h2>
 
         <h3>Sequence, alt, named</h3>
-        <div class="item" data-slice="core" data-q="sequence juxtaposition named capture">
+        <div class="item" data-slice="core" data-q="sequence juxtaposition named capture ordered |>">
+          <p><code>|</code> is unordered. <code>|&gt;</code> is committed choice (first match at this position). Mixing them in one alternation is an error; parenthesize to nest.</p>
           <div class="code-wrap"><button type="button" class="copy">Copy</button>
 <pre class="xbnf">member -&gt; STR ":" value ;
 value  -&gt; object | array | STR | "null" ;

@@ -70,6 +70,42 @@ func TestGLLUnorderedAlt(t *testing.T) {
 	}
 }
 
+func TestOrderedAltFirstMatch(t *testing.T) {
+	t.Parallel()
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.OrderedAlt{Terms: []grammar.Term{
+			grammar.String{Text: "if"},
+			grammar.Leaf{Term: grammar.Quant{
+				Term: grammar.CharClass{Elems: []grammar.ClassElem{{Lo: "a", Hi: "z"}}},
+				Min:  1,
+				Max:  grammar.Unbounded,
+			}},
+		}}},
+	}}
+	if res := engine.Parse(g, "S", "if"); !res.OK {
+		t.Fatalf("if: %s", res.Error)
+	}
+	if engine.Parse(g, "S", "ifx").OK {
+		t.Fatal(`"if" |> /[a-z]+/ must not take ident on ifx`)
+	}
+	if res := engine.Parse(g, "S", "foo"); !res.OK {
+		t.Fatalf("foo: %s", res.Error)
+	}
+	u := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Alt{Terms: []grammar.Term{
+			grammar.String{Text: "if"},
+			grammar.Leaf{Term: grammar.Quant{
+				Term: grammar.CharClass{Elems: []grammar.ClassElem{{Lo: "a", Hi: "z"}}},
+				Min:  1,
+				Max:  grammar.Unbounded,
+			}},
+		}}},
+	}}
+	if !engine.Parse(u, "S", "ifx").OK {
+		t.Fatal(`unordered | should accept ifx as ident`)
+	}
+}
+
 func TestGLLPackedForest(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{

@@ -90,6 +90,16 @@
     "input": "false"
   },
   {
+    "id": "alt-ordered",
+    "group": "Combinators",
+    "title": "Ordered choice",
+    "syntax": "a |> b |> c",
+    "blurb": "Committed choice. The first alternative that matches at this position wins. Cannot mix with | ; parenthesize to nest.",
+    "slice": "core",
+    "grammar": "start -> \"if\" |> /[a-z]+/ ;\n#wrap -> () ;\n",
+    "input": "if"
+  },
+  {
     "id": "seq",
     "group": "Combinators",
     "title": "Sequence",

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/marcelocantos/xbnf/grammar"
@@ -157,6 +158,31 @@ foo -> /[a-z]+/ ;
 	}
 	if _, ok := foo.Term.(grammar.Quant); !ok {
 		t.Fatalf("foo leaf %T", foo.Term)
+	}
+}
+
+func TestParseOrderedAlt(t *testing.T) {
+	t.Parallel()
+	g, err := syntax.Parse([]byte(`start -> "if" |> /[a-z]+/ ;
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, ok := rule(t, g, "start").Body.(grammar.OrderedAlt)
+	if !ok || len(o.Terms) != 2 {
+		t.Fatalf("start body %#v", rule(t, g, "start").Body)
+	}
+}
+
+func TestParseMixAltError(t *testing.T) {
+	t.Parallel()
+	_, err := syntax.Parse([]byte(`start -> "a" | "b" |> "c" ;
+`))
+	if err == nil {
+		t.Fatal("expected mix error")
+	}
+	if !strings.Contains(err.Error(), "|") || !strings.Contains(err.Error(), "|>") {
+		t.Fatalf("mix error: %v", err)
 	}
 }
 

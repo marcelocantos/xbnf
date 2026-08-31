@@ -33,11 +33,12 @@ func (n *nfa) st() int {
 }
 
 type dfa struct {
-	nfa   *nfa
-	start intset
-	memo  map[string]*dfaState
-	alts  []labAlt
-	owner *Compiled // sibling DFAs for ::label calls; set after Compile fills the map
+	nfa     *nfa
+	start   intset
+	memo    map[string]*dfaState
+	alts    []labAlt
+	ordered []*dfa // |> : first matching alt wins
+	owner   *Compiled
 }
 
 type labAlt struct {
@@ -66,6 +67,13 @@ func (s intset) key() string {
 }
 
 func buildDFA(body grammar.Term, c *compiler) (*dfa, error) {
+	if o, ok := body.(grammar.OrderedAlt); ok {
+		d := &dfa{nfa: &nfa{states: []nfaState{{}}}, memo: map[string]*dfaState{}}
+		for _, t := range o.Terms {
+			d.ordered = append(d.ordered, compileOneDFA(t, c))
+		}
+		return d, nil
+	}
 	d := compileOneDFA(body, c)
 	if a, ok := body.(grammar.Alt); ok {
 		allNamed := len(a.Terms) > 0
@@ -141,6 +149,20 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 			b.n.states[a].eps = append(b.n.states[a].eps, s2)
 			a = a2
 		}
+		return s, a
+	case grammar.OrderedAlt:
+		s := b.n.st()
+		a := b.n.st()
+		od := &dfa{nfa: &nfa{states: []nfaState{{}}}, memo: map[string]*dfaState{}}
+		for _, t := range x.Terms {
+			od.ordered = append(od.ordered, compileOneDFA(t, b.c))
+		}
+		h := b.c.fresh("oa")
+		if b.c.extraDFA == nil {
+			b.c.extraDFA = map[string]*dfa{}
+		}
+		b.c.extraDFA[h] = od
+		b.n.states[s].trans = append(b.n.states[s].trans, nfaTrans{call: h, to: a})
 		return s, a
 	case grammar.Alt:
 		s := b.n.st()
@@ -352,6 +374,15 @@ func (d *dfa) move(set intset, r rune) intset {
 // match consumes the longest prefix from pos. ok is true if some accept was seen
 // (including empty if start is accepting). labels are those of the longest accept.
 func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
+	if len(d.ordered) > 0 {
+		for _, a := range d.ordered {
+			e, labs, hit := a.match(input, pos)
+			if hit {
+				return e, labs, true
+			}
+		}
+		return pos, nil, false
+	}
 	if len(d.alts) > 0 {
 		return d.matchAlts(input, pos)
 	}

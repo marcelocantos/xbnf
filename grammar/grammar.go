@@ -22,6 +22,7 @@ const (
 
 	KindStack
 	KindAlt
+	KindOrderedAlt
 	KindSeq
 	KindNamed
 	KindQuant
@@ -52,6 +53,7 @@ func (k Kind) String() string {
 		KindMacro:        "Macro",
 		KindStack:        "Stack",
 		KindAlt:          "Alt",
+		KindOrderedAlt:   "OrderedAlt",
 		KindSeq:          "Seq",
 		KindNamed:        "Named",
 		KindQuant:        "Quant",

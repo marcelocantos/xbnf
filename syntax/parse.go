@@ -257,21 +257,40 @@ func (p *parser) parseAlt() (grammar.Term, error) {
 		return nil, err
 	}
 	p.skip()
-	if p.peek() != '|' {
-		return left, nil
+	if p.at("|>") {
+		return p.parseAltRest(left, true)
 	}
+	if p.peek() == '|' {
+		return p.parseAltRest(left, false)
+	}
+	return left, nil
+}
+
+func (p *parser) parseAltRest(left grammar.Term, ordered bool) (grammar.Term, error) {
 	terms := []grammar.Term{left}
 	for {
 		p.skip()
-		if p.peek() != '|' {
+		nextOrd := p.at("|>")
+		nextUn := p.peek() == '|' && !nextOrd
+		if !nextOrd && !nextUn {
 			break
 		}
-		p.pos++
+		if nextOrd != ordered {
+			return nil, p.err("cannot mix | and |> in one alternation; parenthesize")
+		}
+		if ordered {
+			p.pos += 2
+		} else {
+			p.pos++
+		}
 		t, err := p.parseSeq()
 		if err != nil {
 			return nil, err
 		}
 		terms = append(terms, t)
+	}
+	if ordered {
+		return grammar.OrderedAlt{Terms: terms}, nil
 	}
 	return grammar.Alt{Terms: terms}, nil
 }

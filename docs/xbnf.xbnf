@@ -39,12 +39,13 @@ pragma -> "#" IDENT "->" term ";"            // #wrap -> \s* ;
 // ── Terms ──────────────────────────────────────────────────
 // Precedence stack (L1 loosest → L4 tightest):
 //   L1  Stack levels     a > b > c
-//   L2  Alternation      a | b | c
+//   L2  Alternation      a | b | c   unordered
+//                        a |> b |> c ordered; do not mix with |
 //   L3  Sequence          a b c   (+ trailing directives)
 //   L4  Atoms             "x"  [a-z]  \d  name  name?
 
 term -> (@ ("{" scope "}")?):op=">"
-      > @:op="|"
+      > ( (@ ("|" @)+) | (@ ("|>" @)+) | @ )
       > @+ directive*
       > named quant* ;
 

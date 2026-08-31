@@ -28,6 +28,15 @@ type Alt struct {
 func (Alt) term()      {}
 func (Alt) Kind() Kind { return KindAlt }
 
+// OrderedAlt is committed choice (`a |> b |> c`). First match at this
+// position wins. Mixing `|` and `|>` in one alternation is a parse error.
+type OrderedAlt struct {
+	Terms []Term
+}
+
+func (OrderedAlt) term()      {}
+func (OrderedAlt) Kind() Kind { return KindOrderedAlt }
+
 // Seq is juxtaposition (`a b c`) with optional trailing directives.
 type Seq struct {
 	Terms      []Term
