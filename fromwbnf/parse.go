@@ -158,9 +158,13 @@ func (p *parser) parseStmt() (Stmt, error) {
 
 func (p *parser) parseImport() (Stmt, error) {
 	p.skip()
+	if p.at("//") || p.at("/*") {
+		return nil, p.err("expected import path")
+	}
 	start := p.pos
 	end := p.pos
-	if p.eat("/") {
+	if p.peek() == '/' && !p.at("//") {
+		p.eat("/")
 		end = p.pos
 		p.skip()
 	}
@@ -169,12 +173,17 @@ func (p *parser) parseImport() (Stmt, error) {
 			break
 		}
 		end = p.pos
+		save := p.pos
 		p.skip()
 		if !p.eat("/") {
 			break
 		}
-		end = p.pos
 		p.skip()
+		if _, ok := p.pathPart(); !ok {
+			p.pos = save
+			break
+		}
+		end = p.pos
 	}
 	if end == start {
 		return nil, p.err("expected import path")

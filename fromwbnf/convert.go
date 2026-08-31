@@ -36,6 +36,15 @@ func (e *ConvertError) Error() string {
 	return b.String()
 }
 
+// Leftover kinds with no xbnf spelling (ConvertError, never silent):
+//
+//	unicode-property  \p{…} / \P{…}
+//	regex-anchor      \A \z \b \B
+//	regex-flag        (?i: (?m: and friends; (?s: is handled)
+//	regex             \Q\E and malformed regex
+//	lazy-quant        *? +? ??
+//	posix-class       unknown or negated POSIX classes
+//
 // Convert turns parsed .wbnf meaning into xbnf source.
 func Convert(src []byte) (string, error) {
 	f, err := Parse(src)
@@ -91,7 +100,7 @@ func (c *converter) grammar(f *File) *grammar.Grammar {
 			}
 			g.Stmts = append(g.Stmts, grammar.Rule{Name: s.Name, Body: c.term(s.Body)})
 		case Import:
-			g.Stmts = append(g.Stmts, grammar.Import{Path: s.Path})
+			g.Stmts = append(g.Stmts, grammar.Import{Path: convertImportPath(s.Path)})
 		case MacroDef:
 			c.at = "#macro " + s.Name
 			g.Stmts = append(g.Stmts, grammar.Macro{Name: s.Name, Params: s.Args, Body: c.term(s.Body)})
@@ -103,13 +112,35 @@ func (c *converter) grammar(f *File) *grammar.Grammar {
 	return g
 }
 
+func convertImportPath(path string) string {
+	if strings.HasSuffix(path, ".wbnf") {
+		return strings.TrimSuffix(path, ".wbnf") + ".xbnf"
+	}
+	return path
+}
+
 func (c *converter) wrapBody(t Term) grammar.Term {
-	re, ok := t.(RE)
-	if !ok {
-		c.issue("wrap", "wrapRE body is not a regex")
+	switch x := t.(type) {
+	case RE:
+		return c.wrapRE(string(x))
+	case Oneof:
+		alts := make([]grammar.Term, len(x))
+		for i, u := range x {
+			alts[i] = c.wrapBody(u)
+		}
+		return grammar.OrderedAlt{Terms: alts}
+	case Seq:
+		terms := make([]grammar.Term, len(x))
+		for i, u := range x {
+			terms[i] = c.wrapBody(u)
+		}
+		return grammar.Seq{Terms: terms}
+	default:
 		return c.term(t)
 	}
-	s := string(re)
+}
+
+func (c *converter) wrapRE(s string) grammar.Term {
 	left, right, ok := strings.Cut(s, "()")
 	if !ok {
 		return c.re(s)
@@ -203,6 +234,7 @@ func (c *converter) term(t Term) grammar.Term {
 		r := grammar.Ref{Name: x.Ident}
 		if x.Default != nil {
 			r.Default = string(*x.Default)
+			r.HasDefault = true
 		}
 		if !isXBNFIdent(r.Name) {
 			c.issue("ident", fmt.Sprintf("ref %q is not an xbnf identifier", r.Name))
@@ -234,7 +266,7 @@ func (c *converter) term(t Term) grammar.Term {
 					}
 					sc.Decls = append(sc.Decls, grammar.Rule{Name: s.Name, Body: c.term(s.Body)})
 				case Import:
-					sc.Decls = append(sc.Decls, grammar.Import{Path: s.Path})
+					sc.Decls = append(sc.Decls, grammar.Import{Path: convertImportPath(s.Path)})
 				case MacroDef:
 					c.at = "#macro " + s.Name
 					sc.Decls = append(sc.Decls, grammar.Macro{Name: s.Name, Params: s.Args, Body: c.term(s.Body)})
@@ -292,9 +324,34 @@ func eqTerm(a, b grammar.Term) bool {
 	case grammar.Escape:
 		y, ok := b.(grammar.Escape)
 		return ok && x.Code == y.Code
+	case grammar.String:
+		y, ok := b.(grammar.String)
+		return ok && x.Text == y.Text
+	case grammar.CharClass:
+		y, ok := b.(grammar.CharClass)
+		if !ok || x.Negated != y.Negated || len(x.Elems) != len(y.Elems) {
+			return false
+		}
+		for i := range x.Elems {
+			if x.Elems[i] != y.Elems[i] {
+				return false
+			}
+		}
+		return true
 	case grammar.Quant:
 		y, ok := b.(grammar.Quant)
 		return ok && x.Min == y.Min && x.Max == y.Max && eqTerm(x.Term, y.Term)
+	case grammar.Seq:
+		y, ok := b.(grammar.Seq)
+		if !ok || len(x.Terms) != len(y.Terms) {
+			return false
+		}
+		for i := range x.Terms {
+			if !eqTerm(x.Terms[i], y.Terms[i]) {
+				return false
+			}
+		}
+		return true
 	case grammar.Empty:
 		_, ok := b.(grammar.Empty)
 		return ok

@@ -240,6 +240,18 @@ func TestParseREForms(t *testing.T) {
 	}
 }
 
+func TestParseImportThenComment(t *testing.T) {
+	t.Parallel()
+	f := mustParse(t, []byte(".import stmt.wbnf\n\n// c\nstart -> \"x\";\n"))
+	if len(f.Stmts) != 2 {
+		t.Fatalf("stmts: %#v", f.Stmts)
+	}
+	imp, ok := f.Stmts[0].(fromwbnf.Import)
+	if !ok || imp.Path != "stmt.wbnf" {
+		t.Fatalf("import: %#v", f.Stmts[0])
+	}
+}
+
 func TestParseEmptyError(t *testing.T) {
 	t.Parallel()
 	if _, err := fromwbnf.Parse(nil); err == nil {

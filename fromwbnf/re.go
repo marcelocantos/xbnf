@@ -164,14 +164,12 @@ func (p *reParser) group() grammar.Term {
 			}
 		case '=':
 			p.i++
-			p.issue("regex-lookahead", "(?=…) in a regex terminal")
 			t := p.alt()
 			p.eat(')')
 			p.dotall = saveDot
 			return grammar.Lookahead{Term: t}
 		case '!':
 			p.i++
-			p.issue("regex-lookahead", "(?!…) in a regex terminal")
 			t := p.alt()
 			p.eat(')')
 			p.dotall = saveDot
@@ -340,10 +338,7 @@ func (p *reParser) class() grammar.Term {
 	for p.i < len(p.s) && (p.peek() != ']' || first) {
 		first = false
 		if p.atPOSIX() {
-			p.issue("posix-class", p.s[p.i:min(p.i+8, len(p.s))])
-			for p.i < len(p.s) && p.peek() != ']' {
-				p.i++
-			}
+			elems = append(elems, p.posixElems()...)
 			continue
 		}
 		lo := p.classAtom()
@@ -363,6 +358,63 @@ func (p *reParser) class() grammar.Term {
 
 func (p *reParser) atPOSIX() bool {
 	return p.i+1 < len(p.s) && p.s[p.i] == '[' && p.s[p.i+1] == ':'
+}
+
+func (p *reParser) posixElems() []grammar.ClassElem {
+	if !p.eat('[') || !p.eat(':') {
+		return nil
+	}
+	if p.eat('^') {
+		start := p.i
+		for p.i < len(p.s) && p.s[p.i] >= 'a' && p.s[p.i] <= 'z' {
+			p.i++
+		}
+		name := p.s[start:p.i]
+		p.eat(':')
+		p.eat(']')
+		p.issue("posix-class", "[:^"+name+":] has no class-atom spelling")
+		return nil
+	}
+	start := p.i
+	for p.i < len(p.s) && p.s[p.i] >= 'a' && p.s[p.i] <= 'z' {
+		p.i++
+	}
+	name := p.s[start:p.i]
+	if !p.eat(':') || !p.eat(']') {
+		p.issue("posix-class", "malformed [:"+name)
+		return nil
+	}
+	elems, ok := posixClass(name)
+	if !ok {
+		p.issue("posix-class", "[:"+name+":]")
+		return nil
+	}
+	return elems
+}
+
+func posixClass(name string) ([]grammar.ClassElem, bool) {
+	switch name {
+	case "digit":
+		return []grammar.ClassElem{{Lo: "0", Hi: "9"}}, true
+	case "lower":
+		return []grammar.ClassElem{{Lo: "a", Hi: "z"}}, true
+	case "upper":
+		return []grammar.ClassElem{{Lo: "A", Hi: "Z"}}, true
+	case "alpha":
+		return []grammar.ClassElem{{Lo: "A", Hi: "Z"}, {Lo: "a", Hi: "z"}}, true
+	case "alnum":
+		return []grammar.ClassElem{{Lo: "0", Hi: "9"}, {Lo: "A", Hi: "Z"}, {Lo: "a", Hi: "z"}}, true
+	case "xdigit":
+		return []grammar.ClassElem{{Lo: "0", Hi: "9"}, {Lo: "A", Hi: "F"}, {Lo: "a", Hi: "f"}}, true
+	case "blank":
+		return []grammar.ClassElem{{Lo: " "}, {Lo: "\t"}}, true
+	case "space":
+		return []grammar.ClassElem{{Lo: " "}, {Lo: "\t"}, {Lo: "\n"}, {Lo: "\r"}, {Lo: "\f"}, {Lo: "\v"}}, true
+	case "word":
+		return []grammar.ClassElem{{Lo: "0", Hi: "9"}, {Lo: "A", Hi: "Z"}, {Lo: "a", Hi: "z"}, {Lo: "_"}}, true
+	default:
+		return nil, false
+	}
 }
 
 func (p *reParser) classAtom() string {

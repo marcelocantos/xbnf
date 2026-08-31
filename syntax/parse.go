@@ -538,6 +538,7 @@ func (p *parser) parseAtom() (grammar.Term, error) {
 			return nil, p.err("expected ref name")
 		}
 		def := ""
+		has := false
 		p.skip()
 		if p.eat("=") {
 			p.skip()
@@ -546,8 +547,9 @@ func (p *parser) parseAtom() (grammar.Term, error) {
 				return nil, err
 			}
 			def = s
+			has = true
 		}
-		return grammar.Ref{Name: name, Default: def}, nil
+		return grammar.Ref{Name: name, Default: def, HasDefault: has}, nil
 	case p.peek() == '@':
 		return p.parseAt()
 	}

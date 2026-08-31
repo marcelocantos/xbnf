@@ -186,9 +186,9 @@ func emitTerm(b *strings.Builder, t grammar.Term, prec int, compact bool) {
 	case grammar.Ref:
 		b.WriteByte('%')
 		b.WriteString(x.Name)
-		if x.Default != "" {
+		if x.HasDefault {
 			b.WriteByte('=')
-			b.WriteString(strconv.Quote(x.Default))
+			b.WriteString(quoteString(x.Default))
 		}
 	case grammar.ExtRef:
 		b.WriteString("%%")

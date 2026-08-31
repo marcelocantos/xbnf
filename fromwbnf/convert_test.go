@@ -84,6 +84,32 @@ func TestConvertIndents(t *testing.T) {
 	}
 }
 
+func TestConvertSysl(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{
+		"sysl/stmt.wbnf", "sysl/endpoints.wbnf", "sysl/views.wbnf", "sysl/sysl.wbnf",
+	} {
+		src, err := fromwbnf.Convert(testdata(t, name))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := syntax.Parse([]byte(src)); err != nil {
+			t.Fatalf("%s xbnf parse: %v\n%s", name, err, src)
+		}
+	}
+}
+
+func TestConvertImportPath(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(".import stmt.wbnf\nstart -> x;\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, `#import "stmt.xbnf"`) {
+		t.Fatalf("import path: %s", src)
+	}
+}
+
 func TestConvertCorpus(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"xml.wbnf", "balancedbraces.wbnf", "wbnf.wbnf", "indents.wbnf"} {
@@ -93,6 +119,78 @@ func TestConvertCorpus(t *testing.T) {
 		}
 		if _, err := syntax.Parse([]byte(src)); err != nil {
 			t.Fatalf("%s xbnf parse: %v\n%s", name, err, src)
+		}
+	}
+}
+
+func TestConvertEmptyRefDefault(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`n -> %level="" \s+;`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, `%level=`) {
+		t.Fatalf("empty default dropped: %s", src)
+	}
+}
+
+func TestConvertPOSIXClass(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`n -> [[:digit:]]+;`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, "[0-9]") {
+		t.Fatalf("posix digit: %s", src)
+	}
+}
+
+func TestConvertLookaheadInRE(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`n -> /{(?=a)b};`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, "(?=") {
+		t.Fatalf("lookahead: %s", src)
+	}
+}
+
+func TestConvertLeftoverKinds(t *testing.T) {
+	t.Parallel()
+	allowed := map[string]bool{
+		"unicode-property": true,
+		"regex-anchor":     true,
+		"regex-flag":       true,
+		"regex":            true,
+		"lazy-quant":       true,
+		"posix-class":      true,
+	}
+	snippets := []string{
+		`n -> \p{Greek};`,
+		`n -> \b;`,
+		`n -> /{(?i:x)};`,
+		`n -> /{a*?};`,
+		`n -> /{\QA\E};`,
+		`n -> [[:foo:]];`,
+	}
+	seen := map[string]bool{}
+	for _, s := range snippets {
+		_, err := fromwbnf.Convert([]byte(s))
+		ce, ok := err.(*fromwbnf.ConvertError)
+		if !ok {
+			t.Fatalf("%s: want ConvertError, got %v", s, err)
+		}
+		for _, i := range ce.Issues {
+			if !allowed[i.Kind] {
+				t.Fatalf("%s: undocumented leftover kind %q", s, i.Kind)
+			}
+			seen[i.Kind] = true
+		}
+	}
+	for k := range allowed {
+		if !seen[k] {
+			t.Fatalf("no snippet produced leftover kind %q", k)
 		}
 	}
 }

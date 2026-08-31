@@ -148,10 +148,12 @@ type AnyChar struct{}
 func (AnyChar) term()      {}
 func (AnyChar) Kind() Kind { return KindAnyChar }
 
-// Ref is `%name` or `%name="default"`.
+// Ref is `%name` or `%name="default"`. HasDefault is true when `=` was written,
+// including `%name=""` (empty default is not the same as no default).
 type Ref struct {
-	Name    string
-	Default string
+	Name       string
+	Default    string
+	HasDefault bool
 }
 
 func (Ref) term()      {}

@@ -419,11 +419,11 @@ func TestAtoms(t *testing.T) {
 		},
 		{
 			name: "ref_default",
-			term: grammar.Ref{Name: "tag", Default: "EOF"},
+			term: grammar.Ref{Name: "tag", Default: "EOF", HasDefault: true},
 			kind: grammar.KindRef,
 			check: func(t *testing.T, term grammar.Term) {
 				r := as[grammar.Ref](t, term)
-				if r.Name != "tag" || r.Default != "EOF" {
+				if r.Name != "tag" || r.Default != "EOF" || !r.HasDefault {
 					t.Fatalf("%+v", r)
 				}
 			},
