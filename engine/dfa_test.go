@@ -342,14 +342,17 @@ func leftRecGrammar(lex bool) *grammar.Grammar {
 		mods = []string{"lex"}
 	}
 	return &grammar.Grammar{Stmts: []grammar.Stmt{
-		grammar.Rule{Name: "E", Mods: mods, Body: grammar.Alt{Terms: []grammar.Term{
-			grammar.Seq{Terms: []grammar.Term{
-				grammar.Ident{Name: "E"},
-				grammar.String{Text: "+"},
+		grammar.Rule{Name: "E", Mods: mods, Body: grammar.Seq{
+			Terms: []grammar.Term{grammar.Alt{Terms: []grammar.Term{
+				grammar.Seq{Terms: []grammar.Term{
+					grammar.Ident{Name: "E"},
+					grammar.String{Text: "+"},
+					grammar.Ident{Name: "T"},
+				}},
 				grammar.Ident{Name: "T"},
-			}},
-			grammar.Ident{Name: "T"},
-		}}},
+			}}},
+			Directives: []grammar.Directive{{Name: "assoc", Value: "left"}},
+		}},
 		grammar.Rule{Name: "T", Body: grammar.String{Text: "1"}},
 	}}
 }

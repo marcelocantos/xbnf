@@ -31,14 +31,15 @@ type prod struct {
 
 // Compiled is a grammar compiled to GLL slots and DFAs.
 type Compiled struct {
-	first   string
-	regular map[string]bool
-	dfa     map[string]*dfa
-	prods   []prod
-	ntProds map[string][]int
-	wrap    grammar.Term
-	wrapDFA *dfa
-	rules   map[string]grammar.Rule
+	first    string
+	regular  map[string]bool
+	dfa      map[string]*dfa
+	prods    []prod
+	ntProds  map[string][]int
+	wrap     grammar.Term
+	wrapDFA  *dfa
+	rules    map[string]grammar.Rule
+	Warnings []string
 }
 
 func Compile(g *grammar.Grammar) (*Compiled, error) {
@@ -71,13 +72,18 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 			return nil, fmt.Errorf("#lex on non-regular rule %s", name)
 		}
 	}
+	warns, err := c.checkDisambiguation()
+	if err != nil {
+		return nil, err
+	}
 	out := &Compiled{
-		first:   c.first,
-		regular: c.regular,
-		dfa:     map[string]*dfa{},
-		ntProds: map[string][]int{},
-		wrap:    c.wrap,
-		rules:   c.rules,
+		first:    c.first,
+		regular:  c.regular,
+		dfa:      map[string]*dfa{},
+		ntProds:  map[string][]int{},
+		wrap:     c.wrap,
+		rules:    c.rules,
+		Warnings: warns,
 	}
 	for _, name := range c.order {
 		if c.regular[name] {

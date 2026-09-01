@@ -13,14 +13,17 @@ import (
 func TestGLLLeftRecursiveExpr(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{
-		grammar.Rule{Name: "E", Body: grammar.Alt{Terms: []grammar.Term{
-			grammar.Seq{Terms: []grammar.Term{
-				grammar.Ident{Name: "E"},
-				grammar.String{Text: "+"},
+		grammar.Rule{Name: "E", Body: grammar.Seq{
+			Terms: []grammar.Term{grammar.Alt{Terms: []grammar.Term{
+				grammar.Seq{Terms: []grammar.Term{
+					grammar.Ident{Name: "E"},
+					grammar.String{Text: "+"},
+					grammar.Ident{Name: "T"},
+				}},
 				grammar.Ident{Name: "T"},
-			}},
-			grammar.Ident{Name: "T"},
-		}}},
+			}}},
+			Directives: []grammar.Directive{{Name: "assoc", Value: "left"}},
+		}},
 		grammar.Rule{Name: "T", Body: grammar.String{Text: "1"}},
 	}}
 	res := engine.Parse(g, "E", "1+1+1")
@@ -109,10 +112,13 @@ func TestOrderedAltFirstMatch(t *testing.T) {
 func TestGLLPackedForest(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{
-		grammar.Rule{Name: "S", Body: grammar.Alt{Terms: []grammar.Term{
-			grammar.Ident{Name: "A"},
-			grammar.Ident{Name: "B"},
-		}}},
+		grammar.Rule{Name: "S", Body: grammar.Seq{
+			Terms: []grammar.Term{grammar.Alt{Terms: []grammar.Term{
+				grammar.Ident{Name: "A"},
+				grammar.Ident{Name: "B"},
+			}}},
+			Directives: []grammar.Directive{{Name: "prefer"}},
+		}},
 		grammar.Rule{Name: "A", Body: grammar.Alt{Terms: []grammar.Term{
 			grammar.String{Text: "x"},
 			grammar.Seq{Terms: []grammar.Term{
