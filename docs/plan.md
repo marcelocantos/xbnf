@@ -63,7 +63,7 @@ preserve ordered-choice semantics.
 ## Package shape (as packages appear)
 
 ```
-cmd/xbnf/     CLI (--version, --help, --help-agent; later parse/explain)
+cmd/xbnf/     CLI (--version, --help, --help-agent, parse, --explain)
 grammar/      IR: Rule, Term (seq, alt, quant, stack, named, …)
 syntax/       bootstrap parser: xbnf source → grammar.Grammar
 engine/       GLL parse functions + DFA runner + SPPF/tree construction

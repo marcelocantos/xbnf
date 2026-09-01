@@ -39,12 +39,12 @@ fromwbnf/     parse old .wbnf into an IR of meaning — exists
 ast/          committed parse tree
 ```
 
-Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`, `-from-wbnf`)
-plus packages `grammar` (IR), `syntax` (bootstrap parser), `engine` (GLL
-with a DFA fast path), and `fromwbnf` (parse `.wbnf` into meaning and
-emit xbnf). `xbnf sandbox` hosts the cheat sheet; `POST /run` matches
-editable examples. Compile-time disambiguation (T6), self-host (T7), and
-`xbnf parse` (T8) are not this slice.
+Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`, `-from-wbnf`,
+`parse`, `--explain`) plus packages `grammar` (IR), `syntax` (bootstrap
+parser), `engine` (GLL with a DFA fast path), and `fromwbnf` (parse `.wbnf`
+into meaning and emit xbnf). `xbnf sandbox` hosts the cheat sheet;
+`POST /run` matches editable examples. Compile-time disambiguation (T6)
+and self-host (T7) are not this slice.
 
 Locked decisions, work graph, and non-goals: [`docs/plan.md`](docs/plan.md).
 Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).

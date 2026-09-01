@@ -38,6 +38,13 @@ type famKey struct {
 	l, r int
 }
 
+type failInfo struct {
+	pos  int
+	want map[string]bool
+	rule string
+	dfa  bool
+}
+
 type gll struct {
 	c      *Compiled
 	input  string
@@ -48,6 +55,7 @@ type gll struct {
 	sym    map[famKey][]int // prod ids completing (nt,l,r)
 	packed int
 	start  string
+	fail   failInfo
 }
 
 type gssKey struct {
@@ -73,17 +81,23 @@ func (c *Compiled) gll(start, input string) *Result {
 		gssAt: map[gssKey]int{},
 		sym:   map[famKey][]int{},
 		start: start,
+		fail:  failInfo{pos: -1, want: map[string]bool{}},
 	}
 	pos := c.skipWrap(input, 0)
 	dummy := p.gssNode(slot{pid: -1, ip: 0}, pos)
 	if c.IsDFA(start) {
 		end, _, ok := c.dfa[start].match(input, pos)
 		if !ok {
-			return &Result{Error: "no match"}
+			msg := formatExpect(input, pos, []string{displayNT(start)}, start, true)
+			return &Result{Error: msg}
 		}
 		end = c.skipWrap(input, end)
 		if end != len(input) {
-			return &Result{Error: fmt.Sprintf("unconsumed input at byte %d", end), End: end}
+			line, col := lineCol(input, end)
+			return &Result{
+				Error: fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, end),
+				End:   end,
+			}
 		}
 		return &Result{OK: true, End: end, Tree: c.buildTree(start, input, pos)}
 	}
@@ -111,12 +125,13 @@ func (c *Compiled) gll(start, input string) *Result {
 		}
 	}
 	if end < 0 {
-		return &Result{Error: "no match"}
+		return &Result{Error: p.failMessage()}
 	}
 	endw := c.skipWrap(input, end)
 	if endw != len(input) {
+		line, col := lineCol(input, endw)
 		return &Result{
-			Error:  fmt.Sprintf("unconsumed input at byte %d", endw),
+			Error:  fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, endw),
 			End:    endw,
 			Packed: p.packed,
 			Tree:   c.buildTree(start, input, pos),
@@ -135,6 +150,40 @@ func extraPacks(prods []int) int {
 		return 0
 	}
 	return len(prods) - 1
+}
+
+func (p *gll) noteFail(pos int, want, rule string, dfa bool) {
+	if p.fail.want == nil {
+		p.fail.want = map[string]bool{}
+		p.fail.pos = -1
+	}
+	if pos < p.fail.pos {
+		return
+	}
+	if pos > p.fail.pos {
+		p.fail.pos = pos
+		p.fail.want = map[string]bool{want: true}
+		p.fail.rule = rule
+		p.fail.dfa = dfa
+		return
+	}
+	p.fail.want[want] = true
+	if !dfa {
+		p.fail.dfa = false
+		p.fail.rule = rule
+	}
+}
+
+func (p *gll) failMessage() string {
+	if p.fail.pos < 0 || len(p.fail.want) == 0 {
+		line, col := lineCol(p.input, 0)
+		return fmt.Sprintf("in rule %s, expected start at %d:%d; got end of input", displayNT(p.start), line, col)
+	}
+	want := make([]string, 0, len(p.fail.want))
+	for w := range p.fail.want {
+		want = append(want, w)
+	}
+	return formatExpect(p.input, p.fail.pos, want, p.fail.rule, p.fail.dfa)
 }
 
 func (c *Compiled) skipWrap(input string, pos int) int {
@@ -213,6 +262,8 @@ func (p *gll) process(d desc) {
 		end, ok := matchTerminal(e.term, p.input, j)
 		if ok {
 			p.add(next, d.u, end)
+		} else {
+			p.noteFail(j, describeElem(e), pr.nt, false)
 		}
 	case ekDFA:
 		j := p.c.skipWrap(p.input, d.i)
@@ -222,9 +273,11 @@ func (p *gll) process(d desc) {
 		}
 		end, labs, ok := df.match(p.input, j)
 		if !ok {
+			p.noteFail(j, describeElem(e), pr.nt, true)
 			return
 		}
 		if e.label != "" && !hasLabel(labs, e.label) {
+			p.noteFail(j, describeElem(e), pr.nt, true)
 			return
 		}
 		p.add(next, d.u, end)
@@ -235,6 +288,8 @@ func (p *gll) process(d desc) {
 			end, labs, ok := p.c.dfa[e.nt].match(p.input, j)
 			if ok && hasLabel(labs, e.label) {
 				p.add(next, d.u, end)
+			} else {
+				p.noteFail(j, describeElem(e), pr.nt, true)
 			}
 			_ = v
 			return

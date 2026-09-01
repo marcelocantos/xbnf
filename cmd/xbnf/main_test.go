@@ -6,6 +6,7 @@ package main
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -80,6 +81,77 @@ func TestRunFromWbnf(t *testing.T) {
 		if stderr != "" {
 			t.Fatalf("%v stderr: %q", args, stderr)
 		}
+	}
+}
+
+func parseFixture(t *testing.T) (grammar, okIn, badIn string) {
+	t.Helper()
+	dir := t.TempDir()
+	g := filepath.Join(dir, "g.xbnf")
+	ok := filepath.Join(dir, "ok.txt")
+	bad := filepath.Join(dir, "bad.txt")
+	src := "S -> \"(\" S \")\" | A ;\nA -> /[a-z]+/ ;\n"
+	if err := os.WriteFile(g, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ok, []byte("(hi)"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bad, []byte("1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return g, ok, bad
+}
+
+func TestRunParseOK(t *testing.T) {
+	g, in, _ := parseFixture(t)
+	code, stdout, stderr := capture(t, []string{"parse", g, in})
+	if code != 0 {
+		t.Fatalf("parse exit %d stderr %q stdout %q", code, stderr, stdout)
+	}
+	if strings.Contains(stderr, "engine not implemented") {
+		t.Fatalf("stub still in stderr: %q", stderr)
+	}
+}
+
+func TestRunParseFail(t *testing.T) {
+	g, _, bad := parseFixture(t)
+	code, _, stderr := capture(t, []string{"parse", g, bad})
+	if code == 0 {
+		t.Fatal("want non-zero")
+	}
+	if !strings.Contains(stderr, ":") {
+		t.Fatalf("want position: %q", stderr)
+	}
+	if !strings.Contains(stderr, "expected") && !strings.Contains(stderr, "S") && !strings.Contains(stderr, "A") {
+		t.Fatalf("want expected terminals or rule: %q", stderr)
+	}
+}
+
+func TestRunExplain(t *testing.T) {
+	g, _, _ := parseFixture(t)
+	code, stdout, stderr := capture(t, []string{"-explain", g})
+	if code != 0 {
+		t.Fatalf("explain exit %d stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "DFA") || !strings.Contains(stdout, "A") {
+		t.Fatalf("want DFA rule A: %q", stdout)
+	}
+	if !strings.Contains(stdout, "GLL") || !strings.Contains(stdout, "S") {
+		t.Fatalf("want GLL forking S: %q", stdout)
+	}
+	if !strings.Contains(stdout, "forking") {
+		t.Fatalf("want forking: %q", stdout)
+	}
+}
+
+func TestRunHelpMentionsParse(t *testing.T) {
+	code, _, stderr := capture(t, []string{"-h"})
+	if code != 0 {
+		t.Fatalf("help exit: %d", code)
+	}
+	if !strings.Contains(stderr, "parse") || !strings.Contains(stderr, "explain") {
+		t.Fatalf("help missing parse/explain: %q", stderr)
 	}
 }
 

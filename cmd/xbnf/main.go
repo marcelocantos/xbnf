@@ -19,6 +19,9 @@ func run(args []string) int {
 	if len(args) > 0 && args[0] == "from-wbnf" {
 		return runFromWbnf(args[1:])
 	}
+	if len(args) > 0 && args[0] == "parse" {
+		return runParse(args[1:])
+	}
 	sandboxCmd := false
 	if len(args) > 0 && args[0] == "sandbox" {
 		sandboxCmd = true
@@ -35,13 +38,16 @@ func run(args []string) int {
 		fmt.Fprintf(out, "  xbnf sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
 		fmt.Fprintf(out, "  xbnf -sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
 		fmt.Fprintf(out, "  xbnf from-wbnf file.wbnf\n")
-		fmt.Fprintf(out, "  xbnf -from-wbnf file.wbnf\n\n")
+		fmt.Fprintf(out, "  xbnf -from-wbnf file.wbnf\n")
+		fmt.Fprintf(out, "  xbnf parse grammar.xbnf input\n")
+		fmt.Fprintf(out, "  xbnf --explain grammar.xbnf\n\n")
 		fs.PrintDefaults()
 	}
 	showVersion := fs.Bool("version", false, "print version")
 	helpAgent := fs.Bool("help-agent", false, "print CLI help and the agent guide")
 	sandboxFlag := fs.Bool("sandbox", false, "host the language sandbox")
 	fromWbnf := fs.String("from-wbnf", "", "convert a .wbnf grammar to xbnf on stdout")
+	explain := fs.Bool("explain", false, "print DFA vs GLL promotion for a grammar")
 	bind := fs.String("bind", sandboxBindDefault, "sandbox listen address")
 	port := fs.Int("port", sandboxPortDefault, "sandbox listen port")
 	if err := fs.Parse(args); err != nil {
@@ -75,10 +81,17 @@ func run(args []string) int {
 		}
 		return runFromWbnf([]string{*fromWbnf})
 	}
+	if *explain {
+		if fs.NArg() != 1 {
+			fmt.Fprintln(os.Stderr, "usage: xbnf --explain <grammar.xbnf>")
+			return 2
+		}
+		return runExplain(fs.Arg(0))
+	}
 	if fs.NArg() == 0 {
 		fs.Usage()
 		return 2
 	}
-	fmt.Fprintln(os.Stderr, "xbnf: engine not implemented yet")
+	fmt.Fprintln(os.Stderr, "usage: xbnf parse <grammar.xbnf> <input>")
 	return 2
 }
