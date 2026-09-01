@@ -777,7 +777,16 @@ func (p *parser) classAtom() (string, error) {
 		p.pos++
 		r, n := utf8.DecodeRune(p.src[p.pos:])
 		p.pos += n
-		return string(r), nil
+		switch r {
+		case 'n':
+			return "\n", nil
+		case 't':
+			return "\t", nil
+		case 'r':
+			return "\r", nil
+		default:
+			return string(r), nil
+		}
 	}
 	r, n := utf8.DecodeRune(p.src[p.pos:])
 	p.pos += n

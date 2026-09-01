@@ -6,7 +6,7 @@ expr -> "let" IDENT "=" @ ";" @
       > @:op="||"                                   // logical or
       > @:op="&&"                                   // logical and
       > @:op=("==" | "!=")                          // equality
-      > @:op=("<" | ">" | "<=" | ">=")              // relational
+      > @:op=(("<" | ">" | "<=" | ">=") #longest)   // relational
       > @:op=("+" | "-")    #assoc=left             // additive
       > @:op=("*" | "/" | "%")  #assoc=left         // multiplicative
       > op=("-" | "!" | "~") @                      // unary prefix
@@ -14,7 +14,7 @@ expr -> "let" IDENT "=" @ ";" @
       > @ "(" expr:","? ")"                      // call
       | @ "[" expr "]"                              // index
       | @ "." IDENT                                 // member
-      | "(" expr ")"
+      > "(" expr ")"
       | NUMBER
       | STR
       | IDENT ;

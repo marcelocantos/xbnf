@@ -161,6 +161,18 @@ foo -> /[a-z]+/ ;
 	}
 }
 
+func TestParseClassNewlineEscape(t *testing.T) {
+	t.Parallel()
+	g, err := syntax.Parse([]byte("c -> [^\\n] ;\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc, ok := rule(t, g, "c").Body.(grammar.CharClass)
+	if !ok || !cc.Negated || len(cc.Elems) != 1 || cc.Elems[0].Lo != "\n" {
+		t.Fatalf("class: %#v", rule(t, g, "c").Body)
+	}
+}
+
 func TestParseOrderedAlt(t *testing.T) {
 	t.Parallel()
 	g, err := syntax.Parse([]byte(`start -> "if" |> /[a-z]+/ ;

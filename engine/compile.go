@@ -455,7 +455,14 @@ func (c *compiler) stackNT(st grammar.Stack) string {
 		if i+1 < len(names) {
 			tighter = names[i+1]
 		}
-		c.emitRule(names[i], rewriteSelf(lev, tighter))
+		body := rewriteSelf(lev, tighter)
+		if tighter != "" {
+			body = grammar.Alt{Terms: []grammar.Term{
+				body,
+				grammar.Ident{Name: tighter},
+			}}
+		}
+		c.emitRule(names[i], body)
 	}
 	if len(names) == 0 {
 		h := c.fresh("st")

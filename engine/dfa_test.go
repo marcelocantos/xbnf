@@ -213,6 +213,32 @@ func leafTexts(n engine.Node) []string {
 	return out
 }
 
+func TestDFAScopeLocalRules(t *testing.T) {
+	t.Parallel()
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Leaf{Term: grammar.Scope{
+			Decls: []grammar.Stmt{
+				grammar.Rule{Name: "item", Body: grammar.Alt{Terms: []grammar.Term{
+					grammar.String{Text: "a"},
+					grammar.String{Text: "b"},
+				}}},
+			},
+			Term: grammar.Quant{
+				Term: grammar.Ident{Name: "item"},
+				Min:  1,
+				Max:  grammar.Unbounded,
+			},
+		}}},
+	}}
+	res := engine.Parse(g, "S", "aba")
+	if !res.OK {
+		t.Fatalf("scoped local rules: %s", res.Error)
+	}
+	if engine.Parse(g, "S", "c").OK {
+		t.Fatal("scoped local rules should reject c")
+	}
+}
+
 func TestDFALeafDelim(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{

@@ -45,22 +45,23 @@ pragma -> "#" IDENT "->" term ";"            // #wrap -> \s* ;
 //   L4  Atoms             "x"  [a-z]  \d  name  name?
 
 term -> (@ ("{" scope "}")?):op=">"
-      > ( (@ ("|" @)+) | (@ ("|>" @)+) | @ )
+      > ( (@ ("|" @)+) | (@ ("|>" @)+) | @ ) #longest
       > @+ directive*
       > named quant* ;
 
-scope -> (rule | pragma)* term ;
+scope -> (rule | pragma)* term ";"? (rule | pragma)* ;
 
 named -> (IDENT op="=")? atom ;
 
 quant -> op=[?*+]
-       | "{" INT "}"
-       | "{" min=INT? "," max=INT? "}"
+       | "{" INT ( "}" | "," max=INT? "}" )
+       | "{" "," max=INT? "}"
        | ":" opt_leading=","? named opt_trailing=","? ;
 
 directive -> "#" IDENT ("=" (IDENT | INT))? ;
 
-atom -> IDENT ("::" IDENT)?             // rule ref, optional label filter
+atom -> (
+        IDENT ("::" IDENT)?             // rule ref, optional label filter
       | STR                              // "string"
       | CHARCLASS                        // [a-z]
       | ESCAPE                           // \d
@@ -73,8 +74,10 @@ atom -> IDENT ("::" IDENT)?             // rule ref, optional label filter
       | "(?!" term ")"                   // negative lookahead
       | "@"                              // Stack self-reference
       | POS_PROP ("(" CMP ")")?          // @col  or  @col(=level)
+      | "{" scope "}"                    // scoped wrap / locals
       | "(" term ")"                     // grouping
-      | "(" ")" ;                        // empty
+      | "(" ")"                          // empty
+      ) #longest ;
 
 CMP -> ("=" | "!=" | "<" | ">" | "<=" | ">=") IDENT ;
 

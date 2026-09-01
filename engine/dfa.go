@@ -232,16 +232,38 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 		delete(b.seen, x.Name)
 		return s, a
 	case grammar.Scope:
-		saved := b.nowrap
+		savedWrap := b.nowrap
+		type savedRule struct {
+			name string
+			r    grammar.Rule
+			ok   bool
+		}
+		var saved []savedRule
 		for _, d := range x.Decls {
-			if w, ok := d.(grammar.Wrap); ok {
-				if _, emp := w.Body.(grammar.Empty); emp {
+			switch st := d.(type) {
+			case grammar.Wrap:
+				if _, emp := st.Body.(grammar.Empty); emp {
 					b.nowrap = true
 				}
+			case grammar.Rule:
+				old, ok := b.c.rules[st.Name]
+				saved = append(saved, savedRule{st.Name, old, ok})
+				if b.c.rules == nil {
+					b.c.rules = map[string]grammar.Rule{}
+				}
+				b.c.rules[st.Name] = st
 			}
 		}
 		s, a := b.term(x.Term)
-		b.nowrap = saved
+		for i := len(saved) - 1; i >= 0; i-- {
+			sr := saved[i]
+			if sr.ok {
+				b.c.rules[sr.name] = sr.r
+			} else {
+				delete(b.c.rules, sr.name)
+			}
+		}
+		b.nowrap = savedWrap
 		return s, a
 	case grammar.Lookahead, grammar.NegLookahead:
 		s := b.n.st()
