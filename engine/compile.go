@@ -28,6 +28,7 @@ type elem struct {
 
 type prod struct {
 	nt   string
+	nid  int // dense id of nt, for famKey
 	rhs  []elem
 	dirs prodDirs
 	// fallback marks the synthetic `level ::= tighter` alternative of a
@@ -73,7 +74,11 @@ type Compiled struct {
 	rules   map[string]grammar.Rule
 	// slotFirst[pid][ip] is the FIRST set of prods[pid].rhs[ip:].
 	slotFirst [][]firstInfo
-	Warnings  []string
+	// pred[nt] maps the first input byte to a unique production of nt when
+	// the alternatives are non-nullable and FIRST-disjoint on ASCII.
+	pred     map[string]*bytePred
+	ntNID    map[string]int
+	Warnings []string
 }
 
 func Compile(g *grammar.Grammar) (*Compiled, error) {
@@ -140,6 +145,15 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 			continue
 		}
 		c.emitRule(name, c.rules[name].Body)
+	}
+	out.ntNID = map[string]int{}
+	for i := range c.prods {
+		id, ok := out.ntNID[c.prods[i].nt]
+		if !ok {
+			id = len(out.ntNID)
+			out.ntNID[c.prods[i].nt] = id
+		}
+		c.prods[i].nid = id
 	}
 	out.prods = c.prods
 	for i, p := range c.prods {

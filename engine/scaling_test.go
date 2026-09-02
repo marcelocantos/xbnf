@@ -126,6 +126,42 @@ func TestListDescriptorsLinear(t *testing.T) {
 	}
 }
 
+func TestJSONValueBytePred(t *testing.T) {
+	c := compileDoc(t, "docs/examples/json.xbnf")
+	bp := c.pred["value"]
+	if bp == nil {
+		t.Fatal("json value should have a FIRST-disjoint byte predictor")
+	}
+	if bp.byByte['{'] < 0 || bp.byByte['['] < 0 || bp.byByte['"'] < 0 || bp.byByte['t'] < 0 {
+		t.Fatalf("value predictor missing a JSON atom: {=%d [=%d \"=%d t=%d",
+			bp.byByte['{'], bp.byByte['['], bp.byByte['"'], bp.byByte['t'])
+	}
+	if bp.byByte['{'] == bp.byByte['['] {
+		t.Fatal("object and array collided in the value predictor")
+	}
+	if bp.byByte['x'] != nonePID {
+		t.Fatalf("x should be nonePID, got %d", bp.byByte['x'])
+	}
+}
+
+func TestJSON16KParseCost(t *testing.T) {
+	c := compileDoc(t, "docs/examples/json.xbnf")
+	in := nestedJSON(16 << 10)
+	res, p := c.run("json", in)
+	if !res.OK {
+		t.Fatal(res.Error)
+	}
+	const workBound = 30000
+	if p.work > workBound {
+		t.Fatalf("16 KB nested JSON work=%d, bound %d", p.work, workBound)
+	}
+	allocs := testing.AllocsPerRun(10, func() { c.Parse("json", in) })
+	const allocBound = 85000
+	if allocs > allocBound {
+		t.Fatalf("16 KB nested JSON allocs=%.0f, bound %d", allocs, allocBound)
+	}
+}
+
 func TestTreeBuildLinearAlloc(t *testing.T) {
 	c := compileDoc(t, "docs/examples/json.xbnf")
 	in4 := nestedJSON(4 << 10)

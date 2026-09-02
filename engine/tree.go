@@ -36,12 +36,7 @@ type instIndex struct {
 }
 
 func newBuilder(p *gll) *builder {
-	b := &builder{p: p, inst: map[instKey]*instIndex{}, steps: map[instKey][]step{}}
-	for _, st := range p.trace {
-		k := instKey{pid: st.pid, l: st.l}
-		b.steps[k] = append(b.steps[k], st)
-	}
-	return b
+	return &builder{p: p, inst: map[instKey]*instIndex{}, steps: p.steps}
 }
 
 func (b *builder) text(l, r int) string {
@@ -122,7 +117,12 @@ func (b *builder) path(pid, l, r int) ([]int, bool) {
 	if n == 0 {
 		return pos, l == r
 	}
-	idx := b.index(instKey{pid: pid, l: l})
+	k := instKey{pid: pid, l: l}
+	steps := b.steps[k]
+	if len(steps) <= 32 {
+		return b.pathScan(pr, steps, l, pos)
+	}
+	idx := b.index(k)
 	ambiguous := false
 	for ip := n; ip >= 1; ip-- {
 		var cands []int
@@ -134,22 +134,7 @@ func (b *builder) path(pid, l, r int) ([]int, bool) {
 		if len(cands) == 0 {
 			return nil, false
 		}
-		if len(cands) > 1 {
-			// Larger start = shorter final operand = left nesting.
-			switch pr.dirs.assoc {
-			case "right":
-				sort.Ints(cands)
-			case "none":
-				b.fail(fmt.Sprintf("ambiguous derivation of %s at %s: #assoc=none forbids chaining",
-					displayNT(pr.nt), b.where(l)))
-				sort.Sort(sort.Reverse(sort.IntSlice(cands)))
-			case "left":
-				sort.Sort(sort.Reverse(sort.IntSlice(cands)))
-			default:
-				ambiguous = true
-				sort.Sort(sort.Reverse(sort.IntSlice(cands)))
-			}
-		}
+		ambiguous = b.orderCands(pr, cands, l) || ambiguous
 		pos[ip-1] = cands[0]
 	}
 	if pos[0] != l {
@@ -159,6 +144,80 @@ func (b *builder) path(pid, l, r int) ([]int, bool) {
 		b.packed++
 	}
 	return pos, true
+}
+
+func (b *builder) pathScan(pr prod, steps []step, l int, pos []int) ([]int, bool) {
+	n := len(pr.rhs)
+	ambiguous := false
+	for ip := n; ip >= 1; ip-- {
+		var cands []int
+		end := pos[ip]
+		for _, st := range steps {
+			if st.ip != ip-1 || st.end != end {
+				continue
+			}
+			if !scanReach(steps, l, ip-1, st.i) {
+				continue
+			}
+			dup := false
+			for _, c := range cands {
+				if c == st.i {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				cands = append(cands, st.i)
+			}
+		}
+		if len(cands) == 0 {
+			return nil, false
+		}
+		ambiguous = b.orderCands(pr, cands, l) || ambiguous
+		pos[ip-1] = cands[0]
+	}
+	if pos[0] != l {
+		return nil, false
+	}
+	if ambiguous {
+		b.packed++
+	}
+	return pos, true
+}
+
+func scanReach(steps []step, l, ip, pos int) bool {
+	if ip == 0 {
+		return pos == l
+	}
+	for _, st := range steps {
+		if st.ip == ip-1 && st.end == pos && scanReach(steps, l, ip-1, st.i) {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *builder) orderCands(pr prod, cands []int, l int) bool {
+	if len(cands) <= 1 {
+		return false
+	}
+	// Larger start = shorter final operand = left nesting.
+	switch pr.dirs.assoc {
+	case "right":
+		sort.Ints(cands)
+		return false
+	case "none":
+		b.fail(fmt.Sprintf("ambiguous derivation of %s at %s: #assoc=none forbids chaining",
+			displayNT(pr.nt), b.where(l)))
+		sort.Sort(sort.Reverse(sort.IntSlice(cands)))
+		return false
+	case "left":
+		sort.Sort(sort.Reverse(sort.IntSlice(cands)))
+		return false
+	default:
+		sort.Sort(sort.Reverse(sort.IntSlice(cands)))
+		return true
+	}
 }
 
 func (b *builder) fail(msg string) {
@@ -242,7 +301,7 @@ func (b *builder) derive(nt string, l, r int) []Node {
 	if c.IsDFA(nt) {
 		return []Node{c.dfaNode(b.p.input, nt, b.p.skip(l), r)}
 	}
-	pids := b.p.sym[famKey{nt: nt, l: l, r: r}]
+	pids := b.p.sym[famKey{nid: c.ntNID[nt], l: l, r: r}]
 	if len(pids) == 0 {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 		return []Node{{Kind: "rule", Name: nt, Text: b.text(l, r)}}
@@ -286,7 +345,7 @@ func (b *builder) leftRecKids(nt string, l, r int) []Node {
 	var tails [][]Node
 	curR := r
 	for {
-		pids := b.p.sym[famKey{nt: nt, l: l, r: curR}]
+		pids := b.p.sym[famKey{nid: b.p.c.ntNID[nt], l: l, r: curR}]
 		if len(pids) == 0 {
 			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 			return joinSpine(nil, tails)
@@ -339,42 +398,46 @@ func (b *builder) prodKids(pid, l, r int) []Node {
 func (b *builder) rhsNodes(pr prod, pos []int, from int) []Node {
 	var kids []Node
 	for ip := from; ip < len(pr.rhs); ip++ {
-		kids = append(kids, b.elemNodes(pr.rhs[ip], pos[ip], pos[ip+1])...)
+		kids = b.appendElem(kids, pr.rhs[ip], pos[ip], pos[ip+1])
 	}
 	return kids
 }
 
-func (b *builder) elemNodes(e elem, i, end int) []Node {
-	var nodes []Node
+func (b *builder) appendElem(kids []Node, e elem, i, end int) []Node {
 	switch e.kind {
 	case ekTerm:
 		switch e.term.(type) {
 		case grammar.Empty:
-			return nil
+			return kids
 		case grammar.String:
-			nodes = []Node{{Kind: "string", Text: b.text(i, end)}}
+			return append(kids, Node{Kind: "string", Name: e.name, Text: b.text(i, end)})
 		default:
-			nodes = []Node{{Kind: "char", Text: b.text(i, end)}}
+			return append(kids, Node{Kind: "char", Name: e.name, Text: b.text(i, end)})
 		}
 	case ekDFA:
+		var n Node
 		if strings.HasPrefix(e.nt, "$lf") {
-			nodes = []Node{{Kind: "leaf", Text: b.text(i, end)}}
+			n = Node{Kind: "leaf", Text: b.text(i, end)}
 		} else {
-			nodes = []Node{b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)}
+			n = b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)
 		}
+		if e.name != "" {
+			n.Name = e.name
+		}
+		return append(kids, n)
 	case ekNT:
-		nodes = b.derive(e.nt, i, end)
-	default:
-		return nil
-	}
-	if e.name != "" {
-		if len(nodes) == 1 {
-			nodes[0].Name = e.name
-		} else {
-			nodes = []Node{{Kind: "seq", Name: e.name, Text: b.text(i, end), Children: nodes}}
+		nodes := b.derive(e.nt, i, end)
+		if e.name != "" {
+			if len(nodes) == 1 {
+				nodes[0].Name = e.name
+			} else {
+				nodes = []Node{{Kind: "seq", Name: e.name, Text: b.text(i, end), Children: nodes}}
+			}
 		}
+		return append(kids, nodes...)
+	default:
+		return kids
 	}
-	return nodes
 }
 
 // dfaNode is the node for a regular rule matched over input[l:r]. A /leaf/

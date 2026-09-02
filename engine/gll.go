@@ -36,8 +36,7 @@ type gssPop struct {
 }
 
 type famKey struct {
-	nt   string
-	l, r int
+	nid, l, r int
 }
 
 type failInfo struct {
@@ -51,15 +50,17 @@ type gll struct {
 	c       *Compiled
 	input   string
 	R       []desc
-	U       map[desc]bool
+	U       map[uint64]struct{}
+	Ubig    map[desc]bool // used when pid/u/i do not pack into 64 bits
 	gss     []gssNode
-	gssAt   map[gssKey]int
+	gssAt   map[uint64]int
+	gssBig  map[gssKey]int
 	sym     map[famKey][]int // prod ids completing (nt,l,r)
 	start   string
 	fail    failInfo
-	wrapEnd []int // memoised skipWrap per position; -1 = unknown
+	wrapEnd []int // memoised skipWrap per position; 0 = unknown, else end+1
 	work    int   // descriptors processed
-	trace   []step
+	steps   map[instKey][]step
 }
 
 // step records that element ip of production pid, in the instance that
@@ -72,16 +73,14 @@ func newGLL(c *Compiled, input, start string) *gll {
 	p := &gll{
 		c:     c,
 		input: input,
-		U:     map[desc]bool{},
-		gssAt: map[gssKey]int{},
+		U:     map[uint64]struct{}{},
+		gssAt: map[uint64]int{},
 		sym:   map[famKey][]int{},
 		start: start,
 		fail:  failInfo{pos: -1, want: map[string]bool{}},
+		steps: map[instKey][]step{},
 	}
-	p.wrapEnd = make([]int, len(input)+1)
-	for i := range p.wrapEnd {
-		p.wrapEnd[i] = -1
-	}
+	p.wrapEnd = make([]int, len(input)+1) // 0 = unknown; stored values are end+1
 	return p
 }
 
@@ -90,11 +89,11 @@ func (p *gll) skip(i int) int {
 	if i < 0 || i > len(p.input) {
 		return i
 	}
-	if e := p.wrapEnd[i]; e >= 0 {
-		return e
+	if e := p.wrapEnd[i]; e != 0 {
+		return e - 1
 	}
 	e := p.c.skipWrap(p.input, i)
-	p.wrapEnd[i] = e
+	p.wrapEnd[i] = e + 1
 	return e
 }
 
@@ -148,13 +147,12 @@ func (c *Compiled) run(start, input string) (*Result, *gll) {
 		}
 		return &Result{OK: true, End: end, Tree: tree}, p
 	}
-	for _, pid := range c.ntProds[start] {
-		p.add(slot{pid: pid, ip: 0}, dummy, pos)
-	}
+	p.fork(start, dummy, pos)
 	p.drain()
 	end := -1
+	sid := c.ntNID[start]
 	for k := range p.sym {
-		if k.nt == start && k.l == pos && k.r > end {
+		if k.nid == sid && k.l == pos && k.r > end {
 			end = k.r
 		}
 	}
@@ -194,7 +192,8 @@ func (p *gll) noteFail(pos int, want, rule string, dfa bool) {
 	}
 	if pos > p.fail.pos {
 		p.fail.pos = pos
-		p.fail.want = map[string]bool{want: true}
+		clear(p.fail.want)
+		p.fail.want[want] = true
 		p.fail.rule = rule
 		p.fail.dfa = dfa
 		return
@@ -231,15 +230,60 @@ func (c *Compiled) skipWrap(input string, pos int) int {
 	return end
 }
 
+// fork enqueues the productions of nt that can start at position i.
+// When compile-time FIRST is a disjoint ASCII table, only the matching
+// production is created.
+func (p *gll) fork(nt string, u, i int) {
+	if bp := p.c.pred[nt]; bp != nil {
+		j := p.skip(i)
+		if j < len(p.input) {
+			b := p.input[j]
+			if b < 0x80 {
+				switch pid := bp.byByte[b]; pid {
+				case nonePID:
+				case manyPID:
+				default:
+					p.add(slot{pid: int(pid), ip: 0}, u, i)
+					return
+				}
+			}
+		}
+	}
+	for _, pid := range p.c.ntProds[nt] {
+		p.add(slot{pid: pid, ip: 0}, u, i)
+	}
+}
+
+func packDesc(sl slot, u, i int) (uint64, bool) {
+	if sl.pid < 0 || sl.pid > 0xFFFF || sl.ip < 0 || sl.ip > 0xFF || u < 0 || u > 0xFFFFF || i < 0 || i > 0xFFFFF {
+		return 0, false
+	}
+	return uint64(sl.pid)<<48 | uint64(sl.ip)<<40 | uint64(u)<<20 | uint64(i), true
+}
+
 func (p *gll) add(sl slot, u, i int) {
 	d := desc{sl: sl, u: u, i: i}
-	if p.U[d] {
+	if key, ok := packDesc(sl, u, i); ok {
+		if _, hit := p.U[key]; hit {
+			return
+		}
+		if !p.admits(sl, i) {
+			return
+		}
+		p.U[key] = struct{}{}
+		p.R = append(p.R, d)
+		return
+	}
+	if p.Ubig == nil {
+		p.Ubig = map[desc]bool{}
+	}
+	if p.Ubig[d] {
 		return
 	}
 	if !p.admits(sl, i) {
 		return
 	}
-	p.U[d] = true
+	p.Ubig[d] = true
 	p.R = append(p.R, d)
 }
 
@@ -269,18 +313,40 @@ func (p *gll) admits(sl slot, i int) bool {
 // advance records that the element before slot next matched input[i:end]
 // and enqueues next.
 func (p *gll) advance(next slot, u, i, end int) {
-	p.trace = append(p.trace, step{pid: next.pid, ip: next.ip - 1, l: p.gss[u].i, i: i, end: end})
+	l := p.gss[u].i
+	k := instKey{pid: next.pid, l: l}
+	p.steps[k] = append(p.steps[k], step{pid: next.pid, ip: next.ip - 1, l: l, i: i, end: end})
 	p.add(next, u, end)
 }
 
+func packGSS(sl slot, i int) (uint64, bool) {
+	pid := sl.pid + 1 // dummy slot uses pid -1
+	if pid < 0 || pid > 0xFFFF || sl.ip < 0 || sl.ip > 0xFF || i < 0 || i > 0xFFFFFFFF {
+		return 0, false
+	}
+	return uint64(pid)<<40 | uint64(sl.ip)<<32 | uint64(uint32(i)), true
+}
+
 func (p *gll) gssNode(sl slot, i int) int {
+	if key, ok := packGSS(sl, i); ok {
+		if id, hit := p.gssAt[key]; hit {
+			return id
+		}
+		id := len(p.gss)
+		p.gss = append(p.gss, gssNode{sl: sl, i: i})
+		p.gssAt[key] = id
+		return id
+	}
 	k := gssKey{pid: sl.pid, ip: sl.ip, i: i}
-	if id, ok := p.gssAt[k]; ok {
+	if p.gssBig == nil {
+		p.gssBig = map[gssKey]int{}
+	}
+	if id, ok := p.gssBig[k]; ok {
 		return id
 	}
 	id := len(p.gss)
 	p.gss = append(p.gss, gssNode{sl: sl, i: i})
-	p.gssAt[k] = id
+	p.gssBig[k] = id
 	return id
 }
 
@@ -318,7 +384,7 @@ func (p *gll) pop(u, i int) {
 func (p *gll) process(d desc) {
 	pr := p.c.prods[d.sl.pid]
 	if d.sl.ip == len(pr.rhs) {
-		p.complete(pr.nt, d.sl.pid, p.gss[d.u].i, d.i)
+		p.complete(d.sl.pid, p.gss[d.u].i, d.i)
 		p.pop(d.u, d.i)
 		return
 	}
@@ -361,9 +427,7 @@ func (p *gll) process(d desc) {
 			return
 		}
 		v := p.create(next, d.u, d.i)
-		for _, pid := range p.c.ntProds[e.nt] {
-			p.add(slot{pid: pid, ip: 0}, v, d.i)
-		}
+		p.fork(e.nt, v, d.i)
 	case ekLook:
 		if p.succeeds(e.nt, d.i) {
 			p.advance(next, d.u, d.i, d.i)
@@ -375,8 +439,8 @@ func (p *gll) process(d desc) {
 	}
 }
 
-func (p *gll) complete(nt string, pid, left, right int) {
-	k := famKey{nt: nt, l: left, r: right}
+func (p *gll) complete(pid, left, right int) {
+	k := famKey{nid: p.c.prods[pid].nid, l: left, r: right}
 	for _, old := range p.sym[k] {
 		if old == pid {
 			return
@@ -393,12 +457,11 @@ func (p *gll) succeeds(nt string, i int) bool {
 	q := newGLL(p.c, p.input, nt)
 	q.wrapEnd = p.wrapEnd
 	dummy := q.gssNode(slot{pid: -1, ip: 0}, i)
-	for _, pid := range q.c.ntProds[nt] {
-		q.add(slot{pid: pid, ip: 0}, dummy, i)
-	}
+	q.fork(nt, dummy, i)
 	q.drain()
+	nid := q.c.ntNID[nt]
 	for k := range q.sym {
-		if k.nt == nt && k.l == i {
+		if k.nid == nid && k.l == i {
 			return true
 		}
 	}

@@ -20,6 +20,24 @@ import (
 type firstInfo struct {
 	nullable bool
 	atoms    []firstAtom
+	// ascii is a bitset of bytes 0–255 that can begin this remainder, filled
+	// when every FIRST atom is an ASCII-start terminal or DFA. admits then
+	// does not walk atoms or DFAs on the hot path.
+	ascii   [4]uint64
+	asciiOK bool
+}
+
+// nonePID / manyPID are bytePred.byByte sentinels.
+const (
+	nonePID int32 = -1
+	manyPID int32 = -2
+)
+
+// bytePred maps the first input byte to a unique production of one
+// nonterminal, when the alternatives are non-nullable and FIRST-disjoint
+// on ASCII. Built at compile time; used to avoid forking GLL at runtime.
+type bytePred struct {
+	byByte [256]int32
 }
 
 // firstAtom is one member of a FIRST set: a character-level terminal, or a
@@ -74,6 +92,12 @@ func (a firstAtom) eq(b firstAtom) bool {
 func (f firstInfo) admits(r rune) bool {
 	if f.nullable {
 		return true
+	}
+	if f.asciiOK {
+		if r < 0 || r > 255 {
+			return false
+		}
+		return f.ascii[r>>6]&(1<<(uint(r)&63)) != 0
 	}
 	for _, a := range f.atoms {
 		if a.starts(r) {
@@ -164,7 +188,111 @@ func (c *Compiled) computeFirst() {
 	for i, pr := range c.prods {
 		c.slotFirst[i] = make([]firstInfo, len(pr.rhs)+1)
 		for ip := range c.slotFirst[i] {
-			c.slotFirst[i][ip] = c.seqFirst(pr.rhs[ip:], nt)
+			f := c.seqFirst(pr.rhs[ip:], nt)
+			f.buildASCII()
+			c.slotFirst[i][ip] = f
+		}
+	}
+	c.computeBytePred()
+}
+
+func (f *firstInfo) buildASCII() {
+	if f.nullable {
+		return
+	}
+	var seen [256]bool
+	if !fillASCII(*f, &seen) {
+		return
+	}
+	f.asciiOK = true
+	for b := 0; b < 256; b++ {
+		if seen[b] {
+			f.ascii[b>>6] |= 1 << (uint(b) & 63)
+		}
+	}
+}
+
+func fillASCII(f firstInfo, seen *[256]bool) bool {
+	for _, a := range f.atoms {
+		if a.dfa != nil {
+			if a.dfa.calls {
+				return false
+			}
+			for b := 0; b < 256; b++ {
+				if a.dfa.canStart(rune(b)) {
+					seen[b] = true
+				}
+			}
+			continue
+		}
+		switch x := a.term.(type) {
+		case grammar.AnyChar:
+			return false
+		case grammar.String:
+			if x.Text == "" {
+				return false
+			}
+			r, size := utf8.DecodeRuneInString(x.Text)
+			if size != 1 || r > 255 {
+				return false
+			}
+			seen[byte(r)] = true
+		case grammar.CharClass:
+			for b := 0; b < 256; b++ {
+				if classMatch(x, rune(b)) {
+					seen[b] = true
+				}
+			}
+		case grammar.Escape:
+			for b := 0; b < 256; b++ {
+				if escapeMatch(x.Code, rune(b)) {
+					seen[b] = true
+				}
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Compiled) computeBytePred() {
+	c.pred = map[string]*bytePred{}
+	for nt, pids := range c.ntProds {
+		if len(pids) < 2 {
+			continue
+		}
+		bp := &bytePred{}
+		for i := range bp.byByte {
+			bp.byByte[i] = nonePID
+		}
+		ok := true
+		for _, pid := range pids {
+			f := c.slotFirst[pid][0]
+			if f.nullable {
+				ok = false
+				break
+			}
+			var seen [256]bool
+			if !fillASCII(f, &seen) {
+				ok = false
+				break
+			}
+			for b := 0; b < 256; b++ {
+				if !seen[b] {
+					continue
+				}
+				switch bp.byByte[b] {
+				case nonePID:
+					bp.byByte[b] = int32(pid)
+				case int32(pid):
+				default:
+					bp.byByte[b] = manyPID
+				}
+			}
+		}
+		if ok {
+			c.pred[nt] = bp
 		}
 	}
 }
