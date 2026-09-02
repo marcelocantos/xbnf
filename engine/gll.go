@@ -5,6 +5,8 @@ package engine
 
 import (
 	"fmt"
+	"strings"
+	"unicode/utf8"
 )
 
 type slot struct {
@@ -46,34 +48,21 @@ type failInfo struct {
 }
 
 type gll struct {
-	c      *Compiled
-	input  string
-	R      []desc
-	U      map[desc]bool
-	gss    []gssNode
-	gssAt  map[gssKey]int
-	sym    map[famKey][]int // prod ids completing (nt,l,r)
-	packed int
-	start  string
-	fail   failInfo
+	c       *Compiled
+	input   string
+	R       []desc
+	U       map[desc]bool
+	gss     []gssNode
+	gssAt   map[gssKey]int
+	sym     map[famKey][]int // prod ids completing (nt,l,r)
+	packed  int
+	start   string
+	fail    failInfo
+	wrapEnd []int // memoised skipWrap per position; -1 = unknown
+	steps   int   // descriptors processed
 }
 
-type gssKey struct {
-	pid, ip, i int
-}
-
-func (c *Compiled) gll(start, input string) *Result {
-	if start == "" {
-		start = c.first
-	}
-	if start == "" {
-		return &Result{Error: "no start rule"}
-	}
-	if _, ok := c.rules[start]; !ok && !c.IsDFA(start) {
-		if _, ok := c.ntProds[start]; !ok && !c.IsDFA(start) {
-			return &Result{Error: "unknown rule " + start}
-		}
-	}
+func newGLL(c *Compiled, input, start string) *gll {
 	p := &gll{
 		c:     c,
 		input: input,
@@ -83,13 +72,63 @@ func (c *Compiled) gll(start, input string) *Result {
 		start: start,
 		fail:  failInfo{pos: -1, want: map[string]bool{}},
 	}
-	pos := c.skipWrap(input, 0)
+	p.wrapEnd = make([]int, len(input)+1)
+	for i := range p.wrapEnd {
+		p.wrapEnd[i] = -1
+	}
+	return p
+}
+
+// skip is skipWrap memoised per position.
+func (p *gll) skip(i int) int {
+	if i < 0 || i > len(p.input) {
+		return i
+	}
+	if e := p.wrapEnd[i]; e >= 0 {
+		return e
+	}
+	e := p.c.skipWrap(p.input, i)
+	p.wrapEnd[i] = e
+	return e
+}
+
+func (p *gll) drain() {
+	for len(p.R) > 0 {
+		d := p.R[len(p.R)-1]
+		p.R = p.R[:len(p.R)-1]
+		p.steps++
+		p.process(d)
+	}
+}
+
+type gssKey struct {
+	pid, ip, i int
+}
+
+func (c *Compiled) gll(start, input string) *Result {
+	res, _ := c.run(start, input)
+	return res
+}
+
+// run parses and also returns the parser state, for tests that inspect work done.
+func (c *Compiled) run(start, input string) (*Result, *gll) {
+	if start == "" {
+		start = c.first
+	}
+	if start == "" {
+		return &Result{Error: "no start rule"}, nil
+	}
+	if _, ok := c.ntProds[start]; !ok && !c.IsDFA(start) {
+		return &Result{Error: "unknown rule " + start}, nil
+	}
+	p := newGLL(c, input, start)
+	pos := p.skip(0)
 	dummy := p.gssNode(slot{pid: -1, ip: 0}, pos)
 	if c.IsDFA(start) {
 		end, _, ok := c.dfa[start].match(input, pos)
 		if !ok {
 			msg := formatExpect(input, pos, []string{displayNT(start)}, start, true)
-			return &Result{Error: msg}
+			return &Result{Error: msg}, p
 		}
 		end = c.skipWrap(input, end)
 		if end != len(input) {
@@ -97,21 +136,14 @@ func (c *Compiled) gll(start, input string) *Result {
 			return &Result{
 				Error: fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, end),
 				End:   end,
-			}
+			}, p
 		}
-		return &Result{OK: true, End: end, Tree: c.buildTree(start, input, pos)}
+		return &Result{OK: true, End: end, Tree: c.buildTree(start, input, pos)}, p
 	}
 	for _, pid := range c.ntProds[start] {
 		p.add(slot{pid: pid, ip: 0}, dummy, pos)
 	}
-	if len(c.ntProds[start]) == 0 {
-		return &Result{Error: "unknown rule " + start}
-	}
-	for len(p.R) > 0 {
-		d := p.R[0]
-		p.R = p.R[1:]
-		p.process(d)
-	}
+	p.drain()
 	end := -1
 	var packs int
 	for k, prods := range p.sym {
@@ -125,7 +157,7 @@ func (c *Compiled) gll(start, input string) *Result {
 		}
 	}
 	if end < 0 {
-		return &Result{Error: p.failMessage()}
+		return &Result{Error: p.failMessage()}, p
 	}
 	endw := c.skipWrap(input, end)
 	if endw != len(input) {
@@ -135,14 +167,14 @@ func (c *Compiled) gll(start, input string) *Result {
 			End:    endw,
 			Packed: p.packed,
 			Tree:   c.buildTree(start, input, pos),
-		}
+		}, p
 	}
 	return &Result{
 		OK:     true,
 		End:    endw,
 		Packed: p.packed + packs,
 		Tree:   c.buildTree(start, input, pos),
-	}
+	}, p
 }
 
 func extraPacks(prods []int) int {
@@ -170,7 +202,9 @@ func (p *gll) noteFail(pos int, want, rule string, dfa bool) {
 	p.fail.want[want] = true
 	if !dfa {
 		p.fail.dfa = false
-		p.fail.rule = rule
+		if !strings.HasPrefix(rule, "$") || strings.HasPrefix(p.fail.rule, "$") {
+			p.fail.rule = rule
+		}
 	}
 }
 
@@ -202,8 +236,34 @@ func (p *gll) add(sl slot, u, i int) {
 	if p.U[d] {
 		return
 	}
+	if !p.admits(sl, i) {
+		return
+	}
 	p.U[d] = true
 	p.R = append(p.R, d)
+}
+
+// admits is the GLL test: can the remainder of the slot start at position i?
+// A rejected slot records what it expected, so error messages are unchanged.
+func (p *gll) admits(sl slot, i int) bool {
+	f := p.c.slotFirst[sl.pid][sl.ip]
+	if f.nullable {
+		return true
+	}
+	j := p.skip(i)
+	if j < len(p.input) {
+		r, _ := utf8.DecodeRuneInString(p.input[j:])
+		if f.admits(r) {
+			return true
+		}
+	}
+	if j >= p.fail.pos {
+		nt := p.c.prods[sl.pid].nt
+		for _, a := range f.atoms {
+			p.noteFail(j, a.describe(), nt, a.dfa != nil)
+		}
+	}
+	return false
 }
 
 func (p *gll) gssNode(sl slot, i int) int {
@@ -258,7 +318,7 @@ func (p *gll) process(d desc) {
 	next := slot{pid: d.sl.pid, ip: d.sl.ip + 1}
 	switch e.kind {
 	case ekTerm:
-		j := p.c.skipWrap(p.input, d.i)
+		j := p.skip(d.i)
 		end, ok := matchTerminal(e.term, p.input, j)
 		if ok {
 			p.add(next, d.u, end)
@@ -266,7 +326,7 @@ func (p *gll) process(d desc) {
 			p.noteFail(j, describeElem(e), pr.nt, false)
 		}
 	case ekDFA:
-		j := p.c.skipWrap(p.input, d.i)
+		j := p.skip(d.i)
 		df := p.c.dfa[e.nt]
 		if df == nil {
 			return
@@ -282,18 +342,17 @@ func (p *gll) process(d desc) {
 		}
 		p.add(next, d.u, end)
 	case ekNT:
-		v := p.create(next, d.u, d.i)
 		if p.c.IsDFA(e.nt) {
-			j := p.c.skipWrap(p.input, d.i)
+			j := p.skip(d.i)
 			end, labs, ok := p.c.dfa[e.nt].match(p.input, j)
 			if ok && hasLabel(labs, e.label) {
 				p.add(next, d.u, end)
 			} else {
 				p.noteFail(j, describeElem(e), pr.nt, true)
 			}
-			_ = v
 			return
 		}
+		v := p.create(next, d.u, d.i)
 		for _, pid := range p.c.ntProds[e.nt] {
 			p.add(slot{pid: pid, ip: 0}, v, d.i)
 		}
@@ -326,23 +385,13 @@ func (p *gll) succeeds(nt string, i int) bool {
 		_, _, ok := p.c.dfa[nt].match(p.input, i)
 		return ok
 	}
-	q := &gll{
-		c:     p.c,
-		input: p.input,
-		U:     map[desc]bool{},
-		gssAt: map[gssKey]int{},
-		sym:   map[famKey][]int{},
-		start: nt,
-	}
+	q := newGLL(p.c, p.input, nt)
+	q.wrapEnd = p.wrapEnd
 	dummy := q.gssNode(slot{pid: -1, ip: 0}, i)
 	for _, pid := range q.c.ntProds[nt] {
 		q.add(slot{pid: pid, ip: 0}, dummy, i)
 	}
-	for len(q.R) > 0 {
-		d := q.R[0]
-		q.R = q.R[1:]
-		q.process(d)
-	}
+	q.drain()
 	for k := range q.sym {
 		if k.nt == nt && k.l == i {
 			return true

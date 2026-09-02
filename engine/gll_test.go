@@ -8,6 +8,7 @@ import (
 
 	"github.com/marcelocantos/xbnf/engine"
 	"github.com/marcelocantos/xbnf/grammar"
+	"github.com/marcelocantos/xbnf/syntax"
 )
 
 func TestGLLLeftRecursiveExpr(t *testing.T) {
@@ -142,5 +143,24 @@ func TestGLLPackedForest(t *testing.T) {
 	}
 	if res.Packed == 0 {
 		t.Fatal("expected packed SPPF nodes, got silent first-match")
+	}
+}
+
+func TestDelimTrailingSeparatorOptional(t *testing.T) {
+	t.Parallel()
+	src := "s -> \"[\" NUM:\",\", \"]\" ;\nNUM -> /[0-9]+/ ;\n#wrap -> \\s* ;\n"
+	g, err := syntax.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{"[1, 2]", "[1, 2,]", "[1]", "[1,]"} {
+		if res := engine.Parse(g, "s", in); !res.OK {
+			t.Fatalf("%q: %s", in, res.Error)
+		}
+	}
+	for _, in := range []string{"[]", "[,]", "[1,,]"} {
+		if res := engine.Parse(g, "s", in); res.OK {
+			t.Fatalf("%q should not parse", in)
+		}
 	}
 }

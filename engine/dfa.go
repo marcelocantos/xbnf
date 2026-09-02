@@ -35,11 +35,16 @@ func (n *nfa) st() int {
 type dfa struct {
 	nfa     *nfa
 	start   intset
+	start0  *dfaState // memoised state(start)
 	memo    map[string]*dfaState
 	alts    []labAlt
 	ordered []*dfa // |> : first matching alt wins
 	owner   *Compiled
+	calls   bool // some transition invokes another regular rule
 }
+
+// dead marks a cached transition with no target.
+var dead = &dfaState{}
 
 type labAlt struct {
 	name string
@@ -100,6 +105,7 @@ func compileOneDFA(body grammar.Term, c *compiler) *dfa {
 	n.states[a].acc = true
 	d := &dfa{nfa: n, memo: map[string]*dfaState{}}
 	d.start = b.eps(intset{s})
+	d.calls = d.hasCall()
 	return d
 }
 
@@ -135,16 +141,7 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 		}
 		s, a := b.term(x.Terms[0])
 		for _, t := range x.Terms[1:] {
-			if !b.nowrap && b.c.wrap != nil {
-				if _, emp := b.c.wrap.(grammar.Empty); !emp {
-					saved := b.nowrap
-					b.nowrap = true
-					ws, wa := b.term(b.c.wrap)
-					b.nowrap = saved
-					b.n.states[a].eps = append(b.n.states[a].eps, ws)
-					a = wa
-				}
-			}
+			a = b.gap(a)
 			s2, a2 := b.term(t)
 			b.n.states[a].eps = append(b.n.states[a].eps, s2)
 			a = a2
@@ -189,14 +186,17 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 	case grammar.Quant:
 		return b.quant(x)
 	case grammar.Delim:
-		// Term (Sep Term)*
+		// Term (Sep Term)*, with #wrap between items and separators as in
+		// the GLL path. Acceptance sits right after a term (or a trailing
+		// separator), so trailing wrap belongs to the enclosing sequence.
 		ts, ta := b.term(x.Term)
 		ss, sa := b.term(x.Sep)
-		loop := b.n.st()
 		acc := b.n.st()
-		b.n.states[ta].eps = append(b.n.states[ta].eps, loop)
-		b.n.states[loop].eps = append(b.n.states[loop].eps, acc, ss)
-		b.n.states[sa].eps = append(b.n.states[sa].eps, ts)
+		b.n.states[ta].eps = append(b.n.states[ta].eps, acc)
+		afterTerm := b.gap(ta)
+		b.n.states[afterTerm].eps = append(b.n.states[afterTerm].eps, ss)
+		afterSep := b.gap(sa)
+		b.n.states[afterSep].eps = append(b.n.states[afterSep].eps, ts)
 		start := ts
 		if x.Leading {
 			st := b.n.st()
@@ -204,7 +204,6 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 			start = st
 		}
 		if x.Trailing {
-			b.n.states[loop].eps = append(b.n.states[loop].eps, ss)
 			b.n.states[sa].eps = append(b.n.states[sa].eps, acc)
 		}
 		return start, acc
@@ -274,6 +273,22 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 	}
 }
 
+// gap appends the #wrap fragment after state a and returns the new tail.
+// Inside a wrap-off scope, or with no wrap, it returns a unchanged.
+func (b *nfaB) gap(a int) int {
+	if b.nowrap || b.c.wrap == nil {
+		return a
+	}
+	if _, emp := b.c.wrap.(grammar.Empty); emp {
+		return a
+	}
+	b.nowrap = true
+	ws, wa := b.term(b.c.wrap)
+	b.nowrap = false
+	b.n.states[a].eps = append(b.n.states[a].eps, ws)
+	return wa
+}
+
 func (b *nfaB) lit(s string) (int, int) {
 	if s == "" {
 		st := b.n.st()
@@ -304,25 +319,39 @@ func (b *nfaB) quant(q grammar.Quant) (int, int) {
 	if q.Max == 0 {
 		return start, start
 	}
+	// Each iteration after the first is preceded by #wrap, as in the GLL path.
 	cur := start
 	for i := 0; i < q.Min; i++ {
+		if i > 0 {
+			cur = b.gap(cur)
+		}
 		s, a := b.term(q.Term)
 		b.n.states[cur].eps = append(b.n.states[cur].eps, s)
 		cur = a
 	}
 	if q.Max == grammar.Unbounded {
-		s, a := b.term(q.Term)
-		st := b.n.st()
 		acc := b.n.st()
-		b.n.states[st].eps = append(b.n.states[st].eps, s, acc)
-		b.n.states[a].eps = append(b.n.states[a].eps, s, acc)
-		b.n.states[cur].eps = append(b.n.states[cur].eps, st)
+		b.n.states[cur].eps = append(b.n.states[cur].eps, acc)
+		entry := cur
+		if q.Min > 0 {
+			entry = b.gap(cur)
+		}
+		s, a := b.term(q.Term)
+		b.n.states[entry].eps = append(b.n.states[entry].eps, s)
+		b.n.states[a].eps = append(b.n.states[a].eps, acc)
+		again := b.gap(a)
+		b.n.states[again].eps = append(b.n.states[again].eps, s)
 		return start, acc
 	}
-	for i := 0; i < q.Max-q.Min; i++ {
-		s, a := b.term(q.Term)
+	for i := q.Min; i < q.Max; i++ {
 		acc := b.n.st()
-		b.n.states[cur].eps = append(b.n.states[cur].eps, s, acc)
+		b.n.states[cur].eps = append(b.n.states[cur].eps, acc)
+		entry := cur
+		if i > 0 {
+			entry = b.gap(cur)
+		}
+		s, a := b.term(q.Term)
+		b.n.states[entry].eps = append(b.n.states[entry].eps, s)
 		b.n.states[a].eps = append(b.n.states[a].eps, acc)
 		cur = acc
 	}
@@ -408,24 +437,19 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 	if len(d.alts) > 0 {
 		return d.matchAlts(input, pos)
 	}
-	if d.hasCall() {
+	if d.calls {
 		return d.matchCalls(input, pos)
 	}
-	st := d.state(d.start)
+	st := d.initial()
 	cur := pos
 	end = pos
 	labels = st.labels
 	ok = st.acc
 	for cur < len(input) {
 		r, n := utf8.DecodeRuneInString(input[cur:])
-		nx := st.trans[r]
+		nx := d.step(st, r)
 		if nx == nil {
-			mv := d.move(st.set, r)
-			if len(mv) == 0 {
-				break
-			}
-			nx = d.state(mv)
-			st.trans[r] = nx
+			break
 		}
 		st = nx
 		cur += n
@@ -436,6 +460,81 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 		}
 	}
 	return end, labels, ok
+}
+
+func (d *dfa) initial() *dfaState {
+	if d.start0 == nil {
+		d.start0 = d.state(d.start)
+	}
+	return d.start0
+}
+
+// step returns the state after consuming r from st, or nil. Misses are cached.
+func (d *dfa) step(st *dfaState, r rune) *dfaState {
+	nx := st.trans[r]
+	if nx == nil {
+		mv := d.move(st.set, r)
+		if len(mv) == 0 {
+			st.trans[r] = dead
+			return nil
+		}
+		nx = d.state(mv)
+		st.trans[r] = nx
+	}
+	if nx == dead {
+		return nil
+	}
+	return nx
+}
+
+// canStart reports whether some match of d can begin with r. Conservative:
+// DFAs that call other rules answer true.
+func (d *dfa) canStart(r rune) bool {
+	if len(d.ordered) > 0 {
+		for _, a := range d.ordered {
+			if a.canStart(r) {
+				return true
+			}
+		}
+		return false
+	}
+	if len(d.alts) > 0 {
+		for _, a := range d.alts {
+			if a.d.canStart(r) {
+				return true
+			}
+		}
+		return false
+	}
+	if d.calls {
+		return true
+	}
+	return d.step(d.initial(), r) != nil
+}
+
+// nullable reports whether d can match the empty string. Conservative in the
+// same way as canStart.
+func (d *dfa) nullable() bool {
+	if len(d.ordered) > 0 {
+		for _, a := range d.ordered {
+			if a.nullable() {
+				return true
+			}
+		}
+		return false
+	}
+	if len(d.alts) > 0 {
+		for _, a := range d.alts {
+			if a.d.nullable() {
+				return true
+			}
+		}
+		return false
+	}
+	if d.calls {
+		return true
+	}
+	return d.initial().acc
 }
 
 func (d *dfa) matchAlts(input string, pos int) (end int, labels []string, ok bool) {

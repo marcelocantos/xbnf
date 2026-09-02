@@ -31,15 +31,17 @@ type prod struct {
 
 // Compiled is a grammar compiled to GLL slots and DFAs.
 type Compiled struct {
-	first    string
-	regular  map[string]bool
-	dfa      map[string]*dfa
-	prods    []prod
-	ntProds  map[string][]int
-	wrap     grammar.Term
-	wrapDFA  *dfa
-	rules    map[string]grammar.Rule
-	Warnings []string
+	first   string
+	regular map[string]bool
+	dfa     map[string]*dfa
+	prods   []prod
+	ntProds map[string][]int
+	wrap    grammar.Term
+	wrapDFA *dfa
+	rules   map[string]grammar.Rule
+	// slotFirst[pid][ip] is the FIRST set of prods[pid].rhs[ip:].
+	slotFirst [][]firstInfo
+	Warnings  []string
 }
 
 func Compile(g *grammar.Grammar) (*Compiled, error) {
@@ -115,6 +117,7 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 		out.dfa[name] = d
 	}
 	bindDFAOwner(out)
+	out.computeFirst()
 	return out, nil
 }
 
@@ -397,9 +400,14 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 func (c *compiler) quantNT(inner []elem, min, max int) string {
 	h := c.fresh("q")
 	star := c.fresh("qs")
-	// star ::= ε | inner star
+	// star ::= ε | star inner
+	//
+	// Loops are left-recursive on purpose. A right-recursive tail
+	// (star ::= inner star) can complete at every later position, which
+	// makes GLL quadratic in the number of iterations. Left recursion
+	// completes each prefix once.
 	c.addProd(star, nil)
-	c.addProd(star, append(append([]elem{}, inner...), elem{kind: ekNT, nt: star}))
+	c.addProd(star, append([]elem{{kind: ekNT, nt: star}}, inner...))
 	var rhs []elem
 	for i := 0; i < min; i++ {
 		rhs = append(rhs, inner...)
@@ -423,23 +431,22 @@ func (c *compiler) delimNT(d grammar.Delim) string {
 	h := c.fresh("d")
 	term := c.flatten(d.Term)
 	sep := c.flatten(d.Sep)
-	tail := c.fresh("dt")
-	c.addProd(tail, nil)
-	c.addProd(tail, append(append([]elem{}, sep...), append(term, elem{kind: ekNT, nt: tail})...))
-	body := append(append([]elem{}, term...), elem{kind: ekNT, nt: tail})
+	// list ::= term | list sep term   (left-recursive, see quantNT)
+	list := c.fresh("dl")
+	c.addProd(list, term)
+	c.addProd(list, append(append([]elem{{kind: ekNT, nt: list}}, sep...), term...))
+	body := []elem{{kind: ekNT, nt: list}}
 	if d.Leading {
-		lead := c.fresh("dl")
-		c.addProd(lead, body)
-		c.addProd(lead, append(append([]elem{}, sep...), body...))
-		body = []elem{{kind: ekNT, nt: lead}}
+		lead := c.fresh("dlead")
+		c.addProd(lead, nil)
+		c.addProd(lead, sep)
+		body = append([]elem{{kind: ekNT, nt: lead}}, body...)
 	}
 	if d.Trailing {
-		body = append(body, sep...)
-		opt := c.fresh("dtr")
-		c.addProd(opt, nil)
-		c.addProd(opt, body)
-		c.addProd(h, []elem{{kind: ekNT, nt: opt}})
-		return h
+		trail := c.fresh("dtrail")
+		c.addProd(trail, nil)
+		c.addProd(trail, sep)
+		body = append(body, elem{kind: ekNT, nt: trail})
 	}
 	c.addProd(h, body)
 	return h
