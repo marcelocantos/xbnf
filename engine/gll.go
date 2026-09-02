@@ -55,11 +55,17 @@ type gll struct {
 	gss     []gssNode
 	gssAt   map[gssKey]int
 	sym     map[famKey][]int // prod ids completing (nt,l,r)
-	packed  int
 	start   string
 	fail    failInfo
 	wrapEnd []int // memoised skipWrap per position; -1 = unknown
-	steps   int   // descriptors processed
+	work    int   // descriptors processed
+	trace   []step
+}
+
+// step records that element ip of production pid, in the instance that
+// started at l, matched input[i:end]. The tree is rebuilt from these.
+type step struct {
+	pid, ip, l, i, end int
 }
 
 func newGLL(c *Compiled, input, start string) *gll {
@@ -96,7 +102,7 @@ func (p *gll) drain() {
 	for len(p.R) > 0 {
 		d := p.R[len(p.R)-1]
 		p.R = p.R[:len(p.R)-1]
-		p.steps++
+		p.work++
 		p.process(d)
 	}
 }
@@ -130,58 +136,52 @@ func (c *Compiled) run(start, input string) (*Result, *gll) {
 			msg := formatExpect(input, pos, []string{displayNT(start)}, start, true)
 			return &Result{Error: msg}, p
 		}
+		tree := c.dfaNode(input, start, pos, end)
 		end = c.skipWrap(input, end)
 		if end != len(input) {
 			line, col := lineCol(input, end)
 			return &Result{
 				Error: fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, end),
 				End:   end,
+				Tree:  tree,
 			}, p
 		}
-		return &Result{OK: true, End: end, Tree: c.buildTree(start, input, pos)}, p
+		return &Result{OK: true, End: end, Tree: tree}, p
 	}
 	for _, pid := range c.ntProds[start] {
 		p.add(slot{pid: pid, ip: 0}, dummy, pos)
 	}
 	p.drain()
 	end := -1
-	var packs int
-	for k, prods := range p.sym {
-		if k.nt == start && k.l == pos {
-			if k.r > end {
-				end = k.r
-				packs = extraPacks(prods)
-			} else if k.r == end {
-				packs += extraPacks(prods)
-			}
+	for k := range p.sym {
+		if k.nt == start && k.l == pos && k.r > end {
+			end = k.r
 		}
 	}
 	if end < 0 {
 		return &Result{Error: p.failMessage()}, p
 	}
+	b := newBuilder(p)
+	tree := b.root(start, pos, end)
 	endw := c.skipWrap(input, end)
 	if endw != len(input) {
 		line, col := lineCol(input, endw)
 		return &Result{
 			Error:  fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, endw),
 			End:    endw,
-			Packed: p.packed,
-			Tree:   c.buildTree(start, input, pos),
+			Packed: b.packed,
+			Tree:   tree,
 		}, p
+	}
+	if b.err != "" {
+		return &Result{Error: b.err, End: endw, Packed: b.packed, Tree: tree}, p
 	}
 	return &Result{
 		OK:     true,
 		End:    endw,
-		Packed: p.packed + packs,
-		Tree:   c.buildTree(start, input, pos),
+		Packed: b.packed,
+		Tree:   tree,
 	}, p
-}
-
-func extraPacks(prods []int) int {
-	if len(prods) <= 1 {
-		return 0
-	}
-	return len(prods) - 1
 }
 
 func (p *gll) noteFail(pos int, want, rule string, dfa bool) {
@@ -266,6 +266,13 @@ func (p *gll) admits(sl slot, i int) bool {
 	return false
 }
 
+// advance records that the element before slot next matched input[i:end]
+// and enqueues next.
+func (p *gll) advance(next slot, u, i, end int) {
+	p.trace = append(p.trace, step{pid: next.pid, ip: next.ip - 1, l: p.gss[u].i, i: i, end: end})
+	p.add(next, u, end)
+}
+
 func (p *gll) gssNode(sl slot, i int) int {
 	k := gssKey{pid: sl.pid, ip: sl.ip, i: i}
 	if id, ok := p.gssAt[k]; ok {
@@ -289,7 +296,7 @@ func (p *gll) create(ret slot, u, i int) int {
 	if !found {
 		p.gss[v].edges = append(p.gss[v].edges, gssEdge{to: u})
 		for _, pop := range p.gss[v].pops {
-			p.add(ret, u, pop.i)
+			p.advance(ret, u, i, pop.i)
 		}
 	}
 	return v
@@ -302,8 +309,9 @@ func (p *gll) pop(u, i int) {
 	}
 	p.gss[u].pops = append(p.gss[u].pops, gssPop{i: i})
 	ret := p.gss[u].sl
+	from := p.gss[u].i
 	for _, e := range p.gss[u].edges {
-		p.add(ret, e.to, i)
+		p.advance(ret, e.to, from, i)
 	}
 }
 
@@ -321,7 +329,7 @@ func (p *gll) process(d desc) {
 		j := p.skip(d.i)
 		end, ok := matchTerminal(e.term, p.input, j)
 		if ok {
-			p.add(next, d.u, end)
+			p.advance(next, d.u, d.i, end)
 		} else {
 			p.noteFail(j, describeElem(e), pr.nt, false)
 		}
@@ -340,13 +348,13 @@ func (p *gll) process(d desc) {
 			p.noteFail(j, describeElem(e), pr.nt, true)
 			return
 		}
-		p.add(next, d.u, end)
+		p.advance(next, d.u, d.i, end)
 	case ekNT:
 		if p.c.IsDFA(e.nt) {
 			j := p.skip(d.i)
 			end, labs, ok := p.c.dfa[e.nt].match(p.input, j)
 			if ok && hasLabel(labs, e.label) {
-				p.add(next, d.u, end)
+				p.advance(next, d.u, d.i, end)
 			} else {
 				p.noteFail(j, describeElem(e), pr.nt, true)
 			}
@@ -358,11 +366,11 @@ func (p *gll) process(d desc) {
 		}
 	case ekLook:
 		if p.succeeds(e.nt, d.i) {
-			p.add(next, d.u, d.i)
+			p.advance(next, d.u, d.i, d.i)
 		}
 	case ekNegLook:
 		if !p.succeeds(e.nt, d.i) {
-			p.add(next, d.u, d.i)
+			p.advance(next, d.u, d.i, d.i)
 		}
 	}
 }
@@ -373,9 +381,6 @@ func (p *gll) complete(nt string, pid, left, right int) {
 		if old == pid {
 			return
 		}
-	}
-	if len(p.sym[k]) >= 1 {
-		p.packed++
 	}
 	p.sym[k] = append(p.sym[k], pid)
 }

@@ -115,13 +115,13 @@ func TestListDescriptorsLinear(t *testing.T) {
 				t.Fatalf("%s %d: %s", gen.name, n, res.Error)
 			}
 			if prev > 0 {
-				ratio := float64(p.steps) / float64(prev)
+				ratio := float64(p.work) / float64(prev)
 				if ratio > descriptorGrowthBound {
 					t.Fatalf("%s: %d bytes took %d descriptors, %.1fx the previous 4x-smaller input (bound %.0fx)",
-						gen.name, len(in), p.steps, ratio, descriptorGrowthBound)
+						gen.name, len(in), p.work, ratio, descriptorGrowthBound)
 				}
 			}
-			prev = p.steps
+			prev = p.work
 		}
 	}
 }

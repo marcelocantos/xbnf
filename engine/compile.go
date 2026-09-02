@@ -5,6 +5,7 @@ package engine
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/marcelocantos/xbnf/grammar"
 )
@@ -21,12 +22,43 @@ type elem struct {
 	kind  int
 	nt    string
 	label string
+	name  string // `name=` label from grammar.Named
 	term  grammar.Term
 }
 
 type prod struct {
-	nt  string
-	rhs []elem
+	nt   string
+	rhs  []elem
+	dirs prodDirs
+	// fallback marks the synthetic `level ::= tighter` alternative of a
+	// precedence stack. It loses to any other derivation of the same span.
+	fallback bool
+}
+
+// prodDirs is the disambiguation vocabulary attached to one production.
+type prodDirs struct {
+	prefer   bool
+	avoid    bool
+	priority int
+	assoc    string // "left", "right", "none", or ""
+}
+
+func parseDirs(ds []grammar.Directive) prodDirs {
+	var d prodDirs
+	for _, x := range ds {
+		switch x.Name {
+		case "prefer":
+			d.prefer = true
+		case "avoid":
+			d.avoid = true
+		case "priority":
+			n, _ := strconv.Atoi(x.Value)
+			d.priority = n
+		case "assoc":
+			d.assoc = x.Value
+		}
+	}
+	return d
 }
 
 // Compiled is a grammar compiled to GLL slots and DFAs.
@@ -173,6 +205,10 @@ type compiler struct {
 	prods    []prod
 	hid      int
 	extraDFA map[string]*dfa
+	// stackTighter is the next-tighter stack level while emitRule runs for
+	// a level. An infix @:sep whose term rewrote to this ident must consume
+	// a separator; the zero-operator case is the level's fallback.
+	stackTighter string
 }
 
 func (c *compiler) analyzeRegular() {
@@ -313,9 +349,29 @@ func (c *compiler) addProd(nt string, rhs []elem) {
 	c.prods = append(c.prods, prod{nt: nt, rhs: rhs})
 }
 
+func (c *compiler) addProdDirs(nt string, rhs []elem, dirs []grammar.Directive) {
+	c.prods = append(c.prods, prod{nt: nt, rhs: rhs, dirs: parseDirs(dirs)})
+}
+
+// emitRule adds one production per alternative of body. Directives written
+// on an alternative, or on a sequence that wraps the whole alternation,
+// attach to the productions they govern.
 func (c *compiler) emitRule(name string, body grammar.Term) {
+	var inherited []grammar.Directive
+	for {
+		sq, ok := body.(grammar.Seq)
+		if !ok || len(sq.Terms) != 1 {
+			break
+		}
+		inherited = append(inherited, sq.Directives...)
+		body = sq.Terms[0]
+	}
 	for _, a := range splitAlt(body) {
-		c.addProd(name, c.flatten(a))
+		dirs := inherited
+		if sq, ok := a.(grammar.Seq); ok && len(sq.Directives) > 0 {
+			dirs = append(append([]grammar.Directive{}, inherited...), sq.Directives...)
+		}
+		c.addProdDirs(name, c.flatten(a), dirs)
 	}
 }
 
@@ -352,6 +408,13 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 	case grammar.Seq:
 		var out []elem
 		for _, s := range x.Terms {
+			if sq, ok := s.(grammar.Seq); ok && len(sq.Directives) > 0 {
+				// A directive on a nested group governs that group only.
+				h := c.fresh("grp")
+				c.addProdDirs(h, c.flatten(sq), sq.Directives)
+				out = append(out, elem{kind: ekNT, nt: h})
+				continue
+			}
 			out = append(out, c.flatten(s)...)
 		}
 		return out
@@ -367,7 +430,14 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 		}
 		return []elem{{kind: ekNT, nt: x.Name, label: x.Label}}
 	case grammar.Named:
-		return c.flatten(x.Term)
+		out := c.flatten(x.Term)
+		if len(out) == 1 {
+			out[0].name = x.Name
+			return out
+		}
+		h := c.fresh("nm")
+		c.addProd(h, out)
+		return []elem{{kind: ekNT, nt: h, name: x.Name}}
 	case grammar.Leaf:
 		return []elem{{kind: ekDFA, nt: c.leafDFA(x)}}
 	case grammar.Quant:
@@ -448,8 +518,21 @@ func (c *compiler) delimNT(d grammar.Delim) string {
 		c.addProd(trail, sep)
 		body = append(body, elem{kind: ekNT, nt: trail})
 	}
+	if !d.Leading && !d.Trailing && c.stackInfix(d) {
+		// term sep list — at least one separator. A single term is the
+		// stack fallback; leaving it on $d lets @:op="?" @:op=":" match
+		// any two juxtaposed tighter expressions.
+		rhs := append(append(append([]elem{}, term...), sep...), elem{kind: ekNT, nt: list})
+		c.addProd(h, rhs)
+		return h
+	}
 	c.addProd(h, body)
 	return h
+}
+
+func (c *compiler) stackInfix(d grammar.Delim) bool {
+	id, ok := d.Term.(grammar.Ident)
+	return ok && c.stackTighter != "" && id.Name == c.stackTighter
 }
 
 func (c *compiler) stackNT(st grammar.Stack) string {
@@ -463,13 +546,14 @@ func (c *compiler) stackNT(st grammar.Stack) string {
 			tighter = names[i+1]
 		}
 		body := rewriteSelf(lev, tighter)
-		if tighter != "" {
-			body = grammar.Alt{Terms: []grammar.Term{
-				body,
-				grammar.Ident{Name: tighter},
-			}}
-		}
+		prev := c.stackTighter
+		c.stackTighter = tighter
 		c.emitRule(names[i], body)
+		c.stackTighter = prev
+		if tighter != "" {
+			c.addProd(names[i], []elem{{kind: ekNT, nt: tighter}})
+			c.prods[len(c.prods)-1].fallback = true
+		}
 	}
 	if len(names) == 0 {
 		h := c.fresh("st")

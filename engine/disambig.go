@@ -391,6 +391,11 @@ func (c *compiler) checkAlt(rule string, alts []grammar.Term, dirs []grammar.Dir
 		}
 	}
 	has := disambigNames(dirs)
+	for _, a := range alts {
+		if sq, ok := a.(grammar.Seq); ok && disambigNames(sq.Directives) {
+			has = true
+		}
+	}
 	if overlap && !has {
 		if !regular {
 			*errs = append(*errs, fmt.Sprintf("ambiguous decision in rule %s: alternatives starting with %s", rule, tag))
