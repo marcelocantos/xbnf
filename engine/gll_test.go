@@ -64,6 +64,20 @@ func TestGLLRecursiveGreekProperty(t *testing.T) {
 	}
 }
 
+func TestGLLRecursiveDFAClassMacron(t *testing.T) {
+	t.Parallel()
+	g, err := syntax.Parse([]byte("S -> I S | \".\" ;\nI -> [ā]+ ;\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{"ā.", "āā."} {
+		res := engine.Parse(g, "S", in)
+		if !res.OK {
+			t.Fatalf("%q: %s", in, res.Error)
+		}
+	}
+}
+
 func TestGLLDirectRecursion(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{

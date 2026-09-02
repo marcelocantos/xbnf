@@ -4,7 +4,6 @@
 package engine
 
 import (
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/marcelocantos/xbnf/grammar"
@@ -335,9 +334,17 @@ func dfaBeyondASCII(d *dfa) bool {
 		st := d.nfa.states[si]
 		for _, tr := range st.trans {
 			if tr.call != "" {
+				if d.owner != nil {
+					if cd := d.owner.dfa[tr.call]; cd != nil {
+						if dfaBeyondASCII(cd) {
+							return true
+						}
+						continue
+					}
+				}
 				return true
 			}
-			if tr.pred != nil && predBeyondASCII(tr.pred) {
+			if tr.beyondASCII {
 				return true
 			}
 		}
@@ -345,8 +352,20 @@ func dfaBeyondASCII(d *dfa) bool {
 	return false
 }
 
-func predBeyondASCII(pred func(rune) bool) bool {
-	return pred(0x0100) || pred(0x03B1) || pred(0x4E00) || pred(unicode.MaxRune)
+func termBeyondASCII(t grammar.Term) bool {
+	switch x := t.(type) {
+	case grammar.AnyChar:
+		return true
+	case grammar.Escape:
+		return escapeBeyondASCII(x.Code)
+	case grammar.CharClass:
+		return classBeyondASCII(x)
+	case grammar.String:
+		r, _ := utf8.DecodeRuneInString(x.Text)
+		return r > 255
+	default:
+		return false
+	}
 }
 
 func (c *Compiled) computeBytePred() {

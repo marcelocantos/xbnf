@@ -10,10 +10,11 @@ import (
 )
 
 type nfaTrans struct {
-	pred      func(rune) bool
-	to        int
-	call      string // regular rule invoked as an atomic longest-match DFA
-	callLabel string // required ::label of that call, if any
+	pred        func(rune) bool
+	beyondASCII bool // pred can match a rune > 255 (from the original term)
+	to          int
+	call        string // regular rule invoked as an atomic longest-match DFA
+	callLabel   string // required ::label of that call, if any
 }
 
 type nfaState struct {
@@ -123,7 +124,9 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 	case grammar.CharClass, grammar.Escape, grammar.AnyChar:
 		s := b.n.st()
 		a := b.n.st()
-		b.n.states[s].trans = append(b.n.states[s].trans, nfaTrans{pred: runePred(x), to: a})
+		b.n.states[s].trans = append(b.n.states[s].trans, nfaTrans{
+			pred: runePred(x), beyondASCII: termBeyondASCII(x), to: a,
+		})
 		return s, a
 	case grammar.Empty:
 		s := b.n.st()
@@ -300,8 +303,9 @@ func (b *nfaB) lit(s string) (int, int) {
 		nx := b.n.st()
 		rr := r
 		b.n.states[cur].trans = append(b.n.states[cur].trans, nfaTrans{
-			pred: func(x rune) bool { return x == rr },
-			to:   nx,
+			pred:        func(x rune) bool { return x == rr },
+			beyondASCII: rr > 255,
+			to:          nx,
 		})
 		cur = nx
 	}
