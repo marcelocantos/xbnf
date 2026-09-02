@@ -211,6 +211,29 @@ func filter(xs []int, keep func(int) bool) []int {
 	return out
 }
 
+// splices reports whether a synthetic nonterminal is transparent: its
+// children are returned as-is instead of being wrapped in a rule/quant/delim/seq
+// node. Named rules and the $q/$d/$st wrappers are not spliced.
+func splices(nt string) bool {
+	if !strings.HasPrefix(nt, "$") {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(nt, "$q") && !strings.HasPrefix(nt, "$qs") && !strings.HasPrefix(nt, "$qo"):
+		return false
+	case strings.HasPrefix(nt, "$d") && !strings.HasPrefix(nt, "$dl") && !strings.HasPrefix(nt, "$dtrail"):
+		return false
+	case strings.HasPrefix(nt, "$st"):
+		return false
+	default:
+		return true
+	}
+}
+
+func leftRec(pr prod) bool {
+	return len(pr.rhs) > 0 && pr.rhs[0].kind == ekNT && pr.rhs[0].nt == pr.nt
+}
+
 // derive returns the nodes for nonterminal nt over input[l:r]. Synthetic
 // nonterminals introduced by compilation are transparent, or become the
 // quant / delim / seq node their construct calls for.
@@ -225,7 +248,14 @@ func (b *builder) derive(nt string, l, r int) []Node {
 		return []Node{{Kind: "rule", Name: nt, Text: b.text(l, r)}}
 	}
 	pid := b.pick(pids)
-	kids := b.prodKids(pid, l, r)
+	// Transparent left-recursive lists ($dl, $qs) must not append the prefix
+	// children at every spine node — that is O(n²) Node copies.
+	var kids []Node
+	if splices(nt) && leftRec(c.prods[pid]) {
+		kids = b.leftRecKids(nt, l, r)
+	} else {
+		kids = b.prodKids(pid, l, r)
+	}
 	switch {
 	case !strings.HasPrefix(nt, "$"):
 		return []Node{{Kind: "rule", Name: nt, Text: b.text(l, r), Children: kids}}
@@ -249,6 +279,53 @@ func (b *builder) derive(nt string, l, r int) []Node {
 	}
 }
 
+// leftRecKids walks a transparent left-recursive spine N ::= N rest | base
+// once, then concatenates base+rest in a single slice. User-level left
+// recursion is not spliced and still nests via prodKids.
+func (b *builder) leftRecKids(nt string, l, r int) []Node {
+	var tails [][]Node
+	curR := r
+	for {
+		pids := b.p.sym[famKey{nt: nt, l: l, r: curR}]
+		if len(pids) == 0 {
+			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
+			return joinSpine(nil, tails)
+		}
+		pid := b.pick(pids)
+		pr := b.p.c.prods[pid]
+		if !leftRec(pr) {
+			return joinSpine(b.prodKids(pid, l, curR), tails)
+		}
+		pos, ok := b.path(pid, l, curR)
+		if !ok {
+			b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
+			return joinSpine(nil, tails)
+		}
+		if pos[1] >= curR {
+			b.fail(fmt.Sprintf("internal: left-recursive %s did not shrink over %s", displayNT(nt), b.where(l)))
+			return joinSpine(nil, tails)
+		}
+		tails = append(tails, b.rhsNodes(pr, pos, 1))
+		curR = pos[1]
+	}
+}
+
+func joinSpine(base []Node, tails [][]Node) []Node {
+	n := len(base)
+	for _, t := range tails {
+		n += len(t)
+	}
+	if len(tails) == 0 {
+		return base
+	}
+	out := make([]Node, 0, n)
+	out = append(out, base...)
+	for i := len(tails) - 1; i >= 0; i-- {
+		out = append(out, tails[i]...)
+	}
+	return out
+}
+
 func (b *builder) prodKids(pid, l, r int) []Node {
 	pr := b.p.c.prods[pid]
 	pos, ok := b.path(pid, l, r)
@@ -256,41 +333,48 @@ func (b *builder) prodKids(pid, l, r int) []Node {
 		b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
 		return nil
 	}
+	return b.rhsNodes(pr, pos, 0)
+}
+
+func (b *builder) rhsNodes(pr prod, pos []int, from int) []Node {
 	var kids []Node
-	for ip, e := range pr.rhs {
-		i, end := pos[ip], pos[ip+1]
-		var nodes []Node
-		switch e.kind {
-		case ekTerm:
-			switch e.term.(type) {
-			case grammar.Empty:
-				continue
-			case grammar.String:
-				nodes = []Node{{Kind: "string", Text: b.text(i, end)}}
-			default:
-				nodes = []Node{{Kind: "char", Text: b.text(i, end)}}
-			}
-		case ekDFA:
-			if strings.HasPrefix(e.nt, "$lf") {
-				nodes = []Node{{Kind: "leaf", Text: b.text(i, end)}}
-			} else {
-				nodes = []Node{b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)}
-			}
-		case ekNT:
-			nodes = b.derive(e.nt, i, end)
-		default:
-			continue
-		}
-		if e.name != "" {
-			if len(nodes) == 1 {
-				nodes[0].Name = e.name
-			} else {
-				nodes = []Node{{Kind: "seq", Name: e.name, Text: b.text(i, end), Children: nodes}}
-			}
-		}
-		kids = append(kids, nodes...)
+	for ip := from; ip < len(pr.rhs); ip++ {
+		kids = append(kids, b.elemNodes(pr.rhs[ip], pos[ip], pos[ip+1])...)
 	}
 	return kids
+}
+
+func (b *builder) elemNodes(e elem, i, end int) []Node {
+	var nodes []Node
+	switch e.kind {
+	case ekTerm:
+		switch e.term.(type) {
+		case grammar.Empty:
+			return nil
+		case grammar.String:
+			nodes = []Node{{Kind: "string", Text: b.text(i, end)}}
+		default:
+			nodes = []Node{{Kind: "char", Text: b.text(i, end)}}
+		}
+	case ekDFA:
+		if strings.HasPrefix(e.nt, "$lf") {
+			nodes = []Node{{Kind: "leaf", Text: b.text(i, end)}}
+		} else {
+			nodes = []Node{b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)}
+		}
+	case ekNT:
+		nodes = b.derive(e.nt, i, end)
+	default:
+		return nil
+	}
+	if e.name != "" {
+		if len(nodes) == 1 {
+			nodes[0].Name = e.name
+		} else {
+			nodes = []Node{{Kind: "seq", Name: e.name, Text: b.text(i, end), Children: nodes}}
+		}
+	}
+	return nodes
 }
 
 // dfaNode is the node for a regular rule matched over input[l:r]. A /leaf/

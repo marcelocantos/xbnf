@@ -126,6 +126,28 @@ func TestListDescriptorsLinear(t *testing.T) {
 	}
 }
 
+func TestTreeBuildLinearAlloc(t *testing.T) {
+	c := compileDoc(t, "docs/examples/json.xbnf")
+	in4 := nestedJSON(4 << 10)
+	in16 := nestedJSON(16 << 10)
+	if res := c.Parse("json", in4); !res.OK {
+		t.Fatal(res.Error)
+	}
+	if res := c.Parse("json", in16); !res.OK {
+		t.Fatal(res.Error)
+	}
+	a4 := testing.AllocsPerRun(10, func() { c.Parse("json", in4) })
+	a16 := testing.AllocsPerRun(10, func() { c.Parse("json", in16) })
+	if a4 < 1 {
+		t.Fatalf("4 KB parsed with no allocations")
+	}
+	ratio := a16 / a4
+	if ratio > 6 {
+		t.Fatalf("nested JSON allocs: %.0f at %d bytes, %.0f at %d bytes (%.1fx, bound 6x for 4x input)",
+			a4, len(in4), a16, len(in16), ratio)
+	}
+}
+
 func BenchmarkJSON64K(b *testing.B) {
 	c := compileDoc(b, "docs/examples/json.xbnf")
 	in := nestedJSON(64 << 10)
