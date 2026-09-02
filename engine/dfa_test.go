@@ -19,6 +19,30 @@ func digitPlus() grammar.Term {
 	}
 }
 
+func TestUnicodePropertyEscape(t *testing.T) {
+	t.Parallel()
+	g := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Escape{Code: "p{Greek}"}},
+		grammar.Wrap{Body: grammar.Empty{}},
+	}}
+	if !engine.Parse(g, "S", "α").OK {
+		t.Fatal("α should match \\p{Greek}")
+	}
+	if engine.Parse(g, "S", "a").OK {
+		t.Fatal("a should not match \\p{Greek}")
+	}
+	neg := &grammar.Grammar{Stmts: []grammar.Stmt{
+		grammar.Rule{Name: "S", Body: grammar.Escape{Code: "P{Greek}"}},
+		grammar.Wrap{Body: grammar.Empty{}},
+	}}
+	if !engine.Parse(neg, "S", "a").OK {
+		t.Fatal("a should match \\P{Greek}")
+	}
+	if engine.Parse(neg, "S", "α").OK {
+		t.Fatal("α should not match \\P{Greek}")
+	}
+}
+
 func TestDFARegularPromoted(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{

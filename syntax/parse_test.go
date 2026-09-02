@@ -161,6 +161,18 @@ foo -> /[a-z]+/ ;
 	}
 }
 
+func TestParseUnicodePropertyEscape(t *testing.T) {
+	t.Parallel()
+	g, err := syntax.Parse([]byte("c -> \\p{Greek} ;\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	esc, ok := rule(t, g, "c").Body.(grammar.Escape)
+	if !ok || esc.Code != "p{Greek}" {
+		t.Fatalf("escape: %#v", rule(t, g, "c").Body)
+	}
+}
+
 func TestParseClassNewlineEscape(t *testing.T) {
 	t.Parallel()
 	g, err := syntax.Parse([]byte("c -> [^\\n] ;\n"))

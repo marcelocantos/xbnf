@@ -100,9 +100,43 @@ func escapeMatch(code string, r rune) bool {
 	case "r":
 		return r == '\r'
 	default:
+		if tab, neg, ok := unicodeEscape(code); ok {
+			return unicode.Is(tab, r) != neg
+		}
 		ch, _ := utf8.DecodeRuneInString(code)
 		return r == ch
 	}
+}
+
+func unicodeEscape(code string) (*unicode.RangeTable, bool, bool) {
+	if code == "" {
+		return nil, false, false
+	}
+	neg := false
+	switch code[0] {
+	case 'p':
+	case 'P':
+		neg = true
+	default:
+		return nil, false, false
+	}
+	name := code[1:]
+	if len(name) >= 2 && name[0] == '{' && name[len(name)-1] == '}' {
+		name = name[1 : len(name)-1]
+	}
+	if name == "" {
+		return nil, false, false
+	}
+	if tab := unicode.Categories[name]; tab != nil {
+		return tab, neg, true
+	}
+	if tab := unicode.Scripts[name]; tab != nil {
+		return tab, neg, true
+	}
+	if tab := unicode.Properties[name]; tab != nil {
+		return tab, neg, true
+	}
+	return nil, false, false
 }
 
 func runePred(t grammar.Term) func(rune) bool {

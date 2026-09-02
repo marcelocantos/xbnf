@@ -516,7 +516,25 @@ func (p *parser) parseAtom() (grammar.Term, error) {
 		}
 		r, n := utf8.DecodeRune(p.src[p.pos:])
 		p.pos += n
-		return grammar.Escape{Code: string(r)}, nil
+		code := string(r)
+		if (r == 'p' || r == 'P') && p.peek() == '{' {
+			p.pos++
+			start := p.pos
+			for p.pos < len(p.src) {
+				rr, nn := utf8.DecodeRune(p.src[p.pos:])
+				if rr != '_' && !unicode.IsLetter(rr) && !unicode.IsDigit(rr) {
+					break
+				}
+				p.pos += nn
+			}
+			if p.peek() != '}' {
+				return nil, p.err("expected } after \\p{")
+			}
+			name := string(p.src[start:p.pos])
+			p.pos++
+			code = code + "{" + name + "}"
+		}
+		return grammar.Escape{Code: code}, nil
 	case p.peek() == '/':
 		return p.parseLeaf()
 	case p.peek() == '.':

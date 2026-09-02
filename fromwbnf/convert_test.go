@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marcelocantos/xbnf/engine"
 	"github.com/marcelocantos/xbnf/fromwbnf"
 	"github.com/marcelocantos/xbnf/grammar"
 	"github.com/marcelocantos/xbnf/syntax"
@@ -163,15 +164,13 @@ func TestConvertLeftoverKinds(t *testing.T) {
 		"regex-anchor":     true,
 		"regex-flag":       true,
 		"regex":            true,
-		"lazy-quant":       true,
 		"posix-class":      true,
 	}
 	snippets := []string{
-		`n -> \p{Greek};`,
+		`n -> \p{NotAUnicodeProperty};`,
 		`n -> \b;`,
-		`n -> /{(?i:x)};`,
-		`n -> /{a*?};`,
-		`n -> /{\QA\E};`,
+		`n -> /{(?u:x)};`,
+		`n -> \x;`,
 		`n -> [[:foo:]];`,
 	}
 	seen := map[string]bool{}
@@ -195,9 +194,82 @@ func TestConvertLeftoverKinds(t *testing.T) {
 	}
 }
 
+func TestConvertUnicodeProperty(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte("n -> \\p{Greek};\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, `\p{Greek}`) {
+		t.Fatalf("want \\p{Greek}: %s", src)
+	}
+	g, err := syntax.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := rule(t, g, "n").Body
+	if leaf, ok := body.(grammar.Leaf); ok {
+		body = leaf.Term
+	}
+	esc, ok := body.(grammar.Escape)
+	if !ok || esc.Code != "p{Greek}" {
+		t.Fatalf("escape: %#v", rule(t, g, "n").Body)
+	}
+	if !engine.Parse(g, "n", "α").OK {
+		t.Fatal("α should match \\p{Greek}")
+	}
+	if engine.Parse(g, "n", "a").OK {
+		t.Fatal("latin a should not match \\p{Greek}")
+	}
+}
+
+func TestConvertQuotedRE(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`n -> /{\Q.*\E};`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, `".*"`) && !strings.Contains(src, `'.*'`) {
+		t.Fatalf("quoted: %s", src)
+	}
+}
+
+func TestConvertLazyQuant(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`n -> /{a*?};`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, "a*") && !strings.Contains(src, `"a"*`) {
+		t.Fatalf("lazy: %s", src)
+	}
+}
+
+func TestConvertCaseFold(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`n -> /{(?i:x)};`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, "x") || !strings.Contains(src, "X") {
+		t.Fatalf("case fold: %s", src)
+	}
+}
+
+func TestConvertPOSIXNegClass(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`n -> [[:^digit:]];`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(src, "[^") || !strings.Contains(src, "0-9") {
+		t.Fatalf("posix neg: %s", src)
+	}
+}
+
 func TestConvertNamesUntranslatable(t *testing.T) {
 	t.Parallel()
-	_, err := fromwbnf.Convert([]byte(`n -> \p{Greek};`))
+	_, err := fromwbnf.Convert([]byte(`n -> \p{NotAUnicodeProperty};`))
 	if err == nil {
 		t.Fatal("expected untranslatable unicode property")
 	}

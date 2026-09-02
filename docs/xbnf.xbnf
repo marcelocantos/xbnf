@@ -109,7 +109,8 @@ CHARCLASS -> /{ #wrap -> () ;
 }/ ;
 
 ESCAPE -> /{ #wrap -> () ;
-    "\\" [a-zA-Z0-9] ;
+    "\\" [pP] "{" [A-Za-z] [A-Za-z0-9_]* "}"
+  | "\\" [a-zA-Z0-9] ;
 }/ ;
 
 REF -> /{ #wrap -> () ;
