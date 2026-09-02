@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/marcelocantos/xbnf/grammar"
@@ -214,10 +215,10 @@ func (f *firstInfo) buildASCII() {
 
 func fillASCII(f firstInfo, seen *[256]bool) bool {
 	for _, a := range f.atoms {
+		if atomBeyondASCII(a) {
+			return false
+		}
 		if a.dfa != nil {
-			if a.dfa.calls {
-				return false
-			}
 			for b := 0; b < 256; b++ {
 				if a.dfa.canStart(rune(b)) {
 					seen[b] = true
@@ -226,8 +227,6 @@ func fillASCII(f firstInfo, seen *[256]bool) bool {
 			continue
 		}
 		switch x := a.term.(type) {
-		case grammar.AnyChar:
-			return false
 		case grammar.String:
 			if x.Text == "" {
 				return false
@@ -254,6 +253,100 @@ func fillASCII(f firstInfo, seen *[256]bool) bool {
 		}
 	}
 	return true
+}
+
+// atomBeyondASCII reports whether a can begin with a rune > 255. The ASCII
+// bitset in admits must not be used in that case: it would reject those runes.
+func atomBeyondASCII(a firstAtom) bool {
+	if a.dfa != nil {
+		return dfaBeyondASCII(a.dfa)
+	}
+	switch x := a.term.(type) {
+	case grammar.AnyChar:
+		return true
+	case grammar.String:
+		r, _ := utf8.DecodeRuneInString(x.Text)
+		return r > 255
+	case grammar.Escape:
+		return escapeBeyondASCII(x.Code)
+	case grammar.CharClass:
+		return classBeyondASCII(x)
+	default:
+		return true
+	}
+}
+
+func escapeBeyondASCII(code string) bool {
+	switch code {
+	case "d", "n", "t", "r":
+		return false
+	case "s", "S", "w", "W", "D":
+		return true
+	}
+	if _, _, ok := unicodeEscape(code); ok {
+		return true
+	}
+	ch, _ := utf8.DecodeRuneInString(code)
+	return ch > 255
+}
+
+func classBeyondASCII(c grammar.CharClass) bool {
+	if c.Negated {
+		return true
+	}
+	for _, e := range c.Elems {
+		lo, _ := utf8.DecodeRuneInString(e.Lo)
+		if lo > 255 {
+			return true
+		}
+		if e.Hi != "" {
+			hi, _ := utf8.DecodeRuneInString(e.Hi)
+			if hi > 255 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func dfaBeyondASCII(d *dfa) bool {
+	if d == nil {
+		return false
+	}
+	for _, o := range d.ordered {
+		if dfaBeyondASCII(o) {
+			return true
+		}
+	}
+	for _, a := range d.alts {
+		if dfaBeyondASCII(a.d) {
+			return true
+		}
+	}
+	if d.nfa == nil {
+		return false
+	}
+	// FIRST only: epsilon-closure of the start set, not later body states
+	// (JSON STR's [^"\\] is unicode but does not begin the rule).
+	for _, si := range d.start {
+		if si < 0 || si >= len(d.nfa.states) {
+			continue
+		}
+		st := d.nfa.states[si]
+		for _, tr := range st.trans {
+			if tr.call != "" {
+				return true
+			}
+			if tr.pred != nil && predBeyondASCII(tr.pred) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func predBeyondASCII(pred func(rune) bool) bool {
+	return pred(0x0100) || pred(0x03B1) || pred(0x4E00) || pred(unicode.MaxRune)
 }
 
 func (c *Compiled) computeBytePred() {

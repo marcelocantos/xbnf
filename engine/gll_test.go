@@ -36,6 +36,34 @@ func TestGLLLeftRecursiveExpr(t *testing.T) {
 	}
 }
 
+func TestGLLRecursiveWordUnicode(t *testing.T) {
+	t.Parallel()
+	g, err := syntax.Parse([]byte(`S -> \w S | "." ;`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{"a.", "α.", "aa.", "αβ."} {
+		res := engine.Parse(g, "S", in)
+		if !res.OK {
+			t.Fatalf("%q: %s", in, res.Error)
+		}
+	}
+}
+
+func TestGLLRecursiveGreekProperty(t *testing.T) {
+	t.Parallel()
+	g, err := syntax.Parse([]byte(`S -> "(" S ")" | \p{Greek} ;`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{"α", "(α)", "((α))"} {
+		res := engine.Parse(g, "S", in)
+		if !res.OK {
+			t.Fatalf("%q: %s", in, res.Error)
+		}
+	}
+}
+
 func TestGLLDirectRecursion(t *testing.T) {
 	t.Parallel()
 	g := &grammar.Grammar{Stmts: []grammar.Stmt{
