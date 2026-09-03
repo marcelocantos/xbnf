@@ -6,7 +6,7 @@ export GOWORK := off
 
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all build test vet clean smoke sandbox bullseye
+.PHONY: all build test vet clean smoke sandbox bullseye bench-json
 
 all: build
 
@@ -31,6 +31,10 @@ smoke: build
 
 sandbox: build
 	bin/xbnf sandbox
+
+# JSON 64 KB parse speed vs encoding/json. Record the output in docs/parse-speed.md.
+bench-json:
+	go test ./engine/ -run '^$' -bench 'BenchmarkJSON64K' -benchmem -benchtime=2s -count=3
 
 # Standing invariants hook read by /cv (bullseye_convergence).
 bullseye:

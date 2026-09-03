@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -194,5 +195,28 @@ func BenchmarkJSON64K(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		c.Parse("json", in)
+	}
+}
+
+func BenchmarkJSON64K_stdlibUnmarshal(b *testing.B) {
+	in := []byte(nestedJSON(64 << 10))
+	b.SetBytes(int64(len(in)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		var v any
+		if err := json.Unmarshal(in, &v); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkJSON64K_stdlibValid(b *testing.B) {
+	in := []byte(nestedJSON(64 << 10))
+	b.SetBytes(int64(len(in)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if !json.Valid(in) {
+			b.Fatal("invalid")
+		}
 	}
 }

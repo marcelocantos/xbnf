@@ -17,6 +17,7 @@ The parse engine is not written yet.
 - [`docs/xbnf.xbnf`](docs/xbnf.xbnf) — the language, defined in itself
 - [`docs/examples/`](docs/examples/) — JSON, calc, and larger sketches
 - [`docs/plan.md`](docs/plan.md) — locked decisions and work graph
+- [`docs/parse-speed.md`](docs/parse-speed.md) — JSON 64 KB parse speed vs `encoding/json`
 - [`docs/toward-a-universal-grammar.md`](docs/toward-a-universal-grammar.md) —
   design origin (written against wbnf; see the lineage note at the top)
 
