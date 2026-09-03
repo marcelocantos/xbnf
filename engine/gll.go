@@ -6,6 +6,7 @@ package engine
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -70,22 +71,83 @@ type step struct {
 	pid, ip, l, i, end int
 }
 
+var gllPool = sync.Pool{New: func() any { return new(gll) }}
+
 func newGLL(c *Compiled, input, start string) *gll {
 	n := len(input) + 1
-	p := &gll{
-		c:     c,
-		input: input,
-		R:     make([]desc, 0, 64),
-		U:     make(map[uint64]struct{}, n*2),
-		gss:   make([]gssNode, 0, n/2+1),
-		gssAt: make(map[uint64]int, n),
-		sym:   make(map[famKey]int, n),
-		start: start,
-		fail:  failInfo{pos: -1, want: map[string]bool{}},
-		steps: make(map[instKey][]step, n),
+	p := gllPool.Get().(*gll)
+	p.c = c
+	p.input = input
+	p.start = start
+	p.work = 0
+	p.Ubig = nil
+	p.gssBig = nil
+	p.symMore = nil
+	p.fail.pos = -1
+	p.fail.rule = ""
+	p.fail.dfa = false
+	if p.fail.want != nil {
+		clear(p.fail.want)
 	}
-	p.wrapEnd = make([]int, n) // 0 = unknown; stored values are end+1
+	p.R = p.R[:0]
+	if cap(p.R) < 64 {
+		p.R = make([]desc, 0, 64)
+	}
+	if p.U == nil {
+		p.U = make(map[uint64]struct{}, n*2)
+	} else {
+		clear(p.U)
+	}
+	p.gss = p.gss[:0]
+	if cap(p.gss) < n/2+1 {
+		p.gss = make([]gssNode, 0, n/2+1)
+	}
+	if p.gssAt == nil {
+		p.gssAt = make(map[uint64]int, n)
+	} else {
+		clear(p.gssAt)
+	}
+	if p.sym == nil {
+		p.sym = make(map[famKey]int, n)
+	} else {
+		clear(p.sym)
+	}
+	if p.steps == nil {
+		p.steps = make(map[instKey][]step, n)
+	} else {
+		clear(p.steps)
+	}
+	if cap(p.wrapEnd) < n {
+		p.wrapEnd = make([]int, n)
+	} else {
+		p.wrapEnd = p.wrapEnd[:n]
+		clear(p.wrapEnd)
+	}
 	return p
+}
+
+func (p *gll) release() {
+	p.c = nil
+	p.input = ""
+	p.start = ""
+	p.R = p.R[:0]
+	clear(p.U)
+	p.gss = p.gss[:0]
+	clear(p.gssAt)
+	clear(p.sym)
+	clear(p.steps)
+	p.Ubig = nil
+	p.gssBig = nil
+	p.symMore = nil
+	p.wrapEnd = p.wrapEnd[:0]
+	p.work = 0
+	p.fail.pos = -1
+	p.fail.rule = ""
+	p.fail.dfa = false
+	if p.fail.want != nil {
+		clear(p.fail.want)
+	}
+	gllPool.Put(p)
 }
 
 // skip is skipWrap memoised per position.
@@ -115,7 +177,10 @@ type gssKey struct {
 }
 
 func (c *Compiled) gll(start, input string) *Result {
-	res, _ := c.run(start, input)
+	res, p := c.run(start, input)
+	if p != nil {
+		p.release()
+	}
 	return res
 }
 
@@ -485,15 +550,20 @@ func (p *gll) succeeds(nt string, i int) bool {
 		return ok
 	}
 	q := newGLL(p.c, p.input, nt)
+	saved := q.wrapEnd
 	q.wrapEnd = p.wrapEnd
 	dummy := q.gssNode(slot{pid: -1, ip: 0}, i)
 	q.fork(nt, dummy, i)
 	q.drain()
 	nid := q.c.ntNID[nt]
+	ok := false
 	for k := range q.sym {
 		if k.nid == nid && k.l == i {
-			return true
+			ok = true
+			break
 		}
 	}
-	return false
+	q.wrapEnd = saved
+	q.release()
+	return ok
 }

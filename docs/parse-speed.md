@@ -48,6 +48,7 @@ recorded run.
 | 2026-09-02 | `6d9786d` | 24e6 | 48e6 | — | — | — | FIRST jump table, chart reuse, packed U/GSS, alloc cuts |
 | 2026-09-03 | `c077348` | 31.7e6 | 48.07e6 | 25.7e6 | 0.667e6 | 0.172e6 | Unicode FIRST fix; first stdlib+wbnf side-by-side on `nestedJSON` |
 | 2026-09-03 | `dbe1b6a` | 23.1e6 | 44.29e6 | — | — | — | Dedicated BenchmarkJSON64K: first prod per span (no []int), stack path buf, pre-sized GLL maps. 228k allocs (was 295k). Median of 21.0/23.1/25.4 ms |
+| 2026-09-03 | (pool) | 27.5e6 | 22.04e6 | — | — | — | sync.Pool for GLL charts on Parse. B/op is repeated-parse (bench/server). One-shot still ~44 MB. Inline first GSS edge discarded (time up, B/op flat). |
 
 ## Probe harness (`genJSON`, 64 KB)
 
