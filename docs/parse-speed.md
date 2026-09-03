@@ -17,11 +17,8 @@ bytes). Append a row under [History](#history) with the median ns/op and
 B/op, the commit SHA, machine, and a one-line note.
 
 Keep [Probe harness](#probe-harness-genjson-64-kb) separate: those rows used
-a different `genJSON` helper, not `nestedJSON`. That harness also ran
-[mna/pigeon](https://github.com/mna/pigeon) v1.3.0 (generated Go PEG, with
-and without `Memoize`). Pigeon is codegen, not a dynamic interpreter; it is
-logged here only as a peer from that evaluation. `make bench-json` does not
-rebuild it.
+a different `genJSON` helper, not `nestedJSON`. Pigeon numbers in that
+section are a frozen record from the evaluation, not something to re-run.
 
 ## Latest (2026-09-03, Apple M4 Max)
 
@@ -72,5 +69,4 @@ after T16; `json.Valid` after T16 was 0.19e6 ns.
 
 Pigeon (no memo) was the fastest generic parser in that harness: ~13–19 ms
 vs wbnf ~24–36 ms vs xbnf 1.3 s → 29 ms → 120 ms. Memoize made pigeon
-slower and fatter on this grammar. Pigeon is generated Go, not a runtime
-grammar interpreter; it is not in `make bench-json`.
+slower and fatter on this grammar. Frozen snapshot; do not re-measure.
