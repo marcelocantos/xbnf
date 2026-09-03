@@ -17,7 +17,11 @@ bytes). Append a row under [History](#history) with the median ns/op and
 B/op, the commit SHA, machine, and a one-line note.
 
 Keep [Probe harness](#probe-harness-genjson-64-kb) separate: those rows used
-a different `genJSON` helper, not `nestedJSON`.
+a different `genJSON` helper, not `nestedJSON`. That harness also ran
+[mna/pigeon](https://github.com/mna/pigeon) v1.3.0 (generated Go PEG, with
+and without `Memoize`). Pigeon is codegen, not a dynamic interpreter; it is
+logged here only as a peer from that evaluation. `make bench-json` does not
+rebuild it.
 
 ## Latest (2026-09-03, Apple M4 Max)
 
@@ -49,16 +53,24 @@ recorded run.
 
 ## Probe harness (`genJSON`, 64 KB)
 
-2026-09-02 quality evaluation, Apple M4 Max. Scratch module compiled
-`json.wbnf` (now `engine/testdata/json.wbnf`) with wbnf v0.41.0 and the
-same `genJSON` as the xbnf/pigeon/stdlib benches in that harness. **Not**
-`nestedJSON`. Do not merge these ns/op values into the table above.
+2026-09-02 quality evaluation, Apple M4 Max. Scratch module: xbnf, wbnf
+v0.41.0 on `json.wbnf` (now `engine/testdata/json.wbnf`), mna/pigeon v1.3.0
+generated JSON PEG (`Parse`; `Memoize(true)` is the memo column), and
+`encoding/json`. **Not** `nestedJSON`. Do not merge these ns/op values into
+the table above.
 
-| When | xbnf ns/op | xbnf B/op | wbnf ns/op | wbnf B/op | Note |
-|---|---:|---:|---:|---:|---|
-| Before 🎯T15 | 1341e6 | 1293e6 | 24.4e6 | 22.71e6 | xbnf quadratic; wbnf 2.69 MB/s, 598426 allocs. pigeon 13.5e6 ns, 9.58e6 B; stdlib Unmarshal ~0.65e6 ns |
-| After 🎯T15 (`9b65539` era) | 28.9e6 | 43.2e6 | 25.4e6 | — | xbnf 2.27 MB/s, 198074 allocs; wbnf 25.383e6 ns (B/op not kept) |
-| After 🎯T16 trees | 120.5e6 | 580.9e6 | 36.0e6 | 22.81e6 | xbnf 0.54 MB/s, 544152 allocs; wbnf 1.82 MB/s, 598566 allocs. pigeon 18.8e6 ns / 9.59e6 B |
+| When | xbnf ns/op | xbnf B/op | wbnf ns/op | wbnf B/op | pigeon ns/op | pigeon B/op | pigeon+memo ns/op |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Before 🎯T15 | 1341e6 | 1293e6 | 24.4e6 | 22.71e6 | 13.5e6 | 9.58e6 | 48.9e6 |
+| After 🎯T15 (`9b65539` era) | 28.9e6 | 43.2e6 | 25.4e6 | — | — | — | — |
+| After 🎯T16 trees | 120.5e6 | 580.9e6 | 36.0e6 | 22.81e6 | 18.8e6 | 9.59e6 | 58.0e6 |
 
-wbnf stayed ~24–36 ms on this input while xbnf moved from 1.3 s → 29 ms →
-120 ms (tree-builder copy) and later back to ~25–32 ms on `nestedJSON`.
+Allocs on the pre-T15 64 KB run: xbnf 3.80M, wbnf 598k, pigeon 282k,
+pigeon+memo 439k. After T16: xbnf 544k, wbnf 599k, pigeon 282k, pigeon+memo
+439k. Stdlib Unmarshal on this input was ~0.65e6 ns before T15 and 0.78e6 ns
+after T16; `json.Valid` after T16 was 0.19e6 ns.
+
+Pigeon (no memo) was the fastest generic parser in that harness: ~13–19 ms
+vs wbnf ~24–36 ms vs xbnf 1.3 s → 29 ms → 120 ms. Memoize made pigeon
+slower and fatter on this grammar. Pigeon is generated Go, not a runtime
+grammar interpreter; it is not in `make bench-json`.
