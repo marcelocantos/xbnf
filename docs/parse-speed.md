@@ -35,13 +35,12 @@ wbnf: same machine and input, `BenchmarkJSON64K_wbnf` count=2 (25.7 ms).
 xbnf is ~1.2× wbnf, ~47× `Unmarshal`, ~180× `Valid`. A dedicated xbnf-only
 run at `c077348` was ~23–25 ms/op / 48 MB.
 
-Current xbnf-only (`7504667`, 🎯T19, 3 s × 5 on the same machine): median **22.9 ms** /
-**6.85 MB** / 137314 allocs. Same-session pool-only baseline (`498a9b3`) was
-median **27.2 ms** / **22.0 MB** / 226920 allocs. Node arena + bump-allocated
-GLL charts cut repeated-parse B/op ~3× and allocs ~40%. One-shot still fills
-the maps and charts (~44 MB TotalAlloc on a cold `sync.Pool`); B/op is the
-repeated-`Parse` path. Remaining heap is the public `Node` tree (`materialize`)
-and `instIndex`.
+Current xbnf-only (post-🎯T20 stack-cands + wrap reuse, 3 s × 5 on the same
+machine): median **13.4 ms** / **2.51 MB** / 12 allocs. 🎯T20 was median
+**19.0 ms** / **4.00 MB** / 23338 allocs. `candBuf` no longer escapes
+(`orderCands` inlined to min/max), small step runs are scanned unsorted,
+and `wrapEnd` is reused when `Parse` sees the same input. Remaining B/op is
+the public `Node` tree (one backing array; `Children` is read-only).
 
 ## History
 
@@ -58,6 +57,8 @@ recorded run.
 | 2026-09-03 | `dbe1b6a` | 35.3e6 | 44.29e6 | — | — | — | 3s×5 same-session vs pool: 32.1/32.3/35.3/35.9/36.8 ms, 228223 allocs. Earlier 2s×3 21.0/23.1/25.4 was underpowered. First prod per span, stack path buf, pre-sized maps. |
 | 2026-09-03 | `498a9b3` | 27.2e6 | 22.04e6 | — | — | — | 3s×5: 24.5/25.1/27.2/27.5/30.5 ms, 226920 allocs. ~23% faster than same-session no-pool, not a regression. CPU `runtime.madvise` 17.6%→8.6% (GC returning ~44 MB charts). `newGLL` 49% of alloc_space before, gone after. B/op is repeated-parse; one-shot still ~44 MB. Inline first GSS edge discarded earlier (time up, B/op flat). |
 | 2026-09-03 | `7504667` | 22.9e6 | 6.85e6 | — | — | — | 3s×5: 20.0/21.3/22.9/23.6/24.0 ms, 137314 allocs. Node arena (int kids, materialize once) + bump GSS edges/pops/steps. Chart slice allocs gone from pprof (advance/pop ~6 objects). |
+| 2026-09-03 | T20 | 19.0e6 | 4.00e6 | — | — | — | 3s×5: 20.4/19.0/19.2/17.1/17.5 ms, 23338 allocs. Kept: contiguous per-instKey steps + stack cands (pred-map index dropped), derive scratch, packed Node array, describe intern, pooled reach memo. Discarded: custom U set (2.2 s/op), further skip (already memoised). |
+| 2026-09-03 | T20+ | 13.4e6 | 2.51e6 | — | — | — | 3s×5: 13.2/14.2/13.3/13.4/14.1 ms, 12 allocs. Kept: candBuf on stack (was heap via orderCands), linear matchSteps + no sort for n≤32, wrapEnd reuse on same input. Left materialize as []Node API floor. |
 
 ## Probe harness (`genJSON`, 64 KB)
 

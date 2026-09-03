@@ -45,6 +45,7 @@ type bytePred struct {
 type firstAtom struct {
 	term grammar.Term // String, CharClass, Escape, or AnyChar
 	name string       // rule name when dfa is set
+	desc string       // interned by computeFirst
 	dfa  *dfa
 }
 
@@ -67,10 +68,21 @@ func (a firstAtom) starts(r rune) bool {
 }
 
 func (a firstAtom) describe() string {
+	if a.desc != "" {
+		return a.desc
+	}
 	if a.dfa != nil {
 		return displayNT(a.name)
 	}
 	return describeTerm(a.term)
+}
+
+func (a *firstAtom) internDesc() {
+	if a.dfa != nil {
+		a.desc = displayNT(a.name)
+		return
+	}
+	a.desc = describeTerm(a.term)
 }
 
 func (a firstAtom) eq(b firstAtom) bool {
@@ -191,6 +203,14 @@ func (c *Compiled) computeFirst() {
 			f := c.seqFirst(pr.rhs[ip:], nt)
 			f.buildASCII()
 			c.slotFirst[i][ip] = f
+		}
+	}
+	for i := range c.slotFirst {
+		for ip := range c.slotFirst[i] {
+			atoms := c.slotFirst[i][ip].atoms
+			for j := range atoms {
+				atoms[j].internDesc()
+			}
 		}
 	}
 	c.computeBytePred()

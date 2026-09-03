@@ -5,6 +5,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -23,9 +24,11 @@ type builder struct {
 	p      *gll
 	packed int
 	err    string
-	inst   map[instKey]*instIndex
 	nodes  []inode
 	kids   []int
+	run    []step
+	runK   instKey
+	hasRun bool
 }
 
 type inode struct {
@@ -35,13 +38,8 @@ type inode struct {
 
 type instKey struct{ pid, l int }
 
-// instIndex indexes one production instance's steps by (element, end).
-type instIndex struct {
-	pred []map[int][]int // pred[ip][end] = starts i with a step (ip, i → end)
-	back map[[2]int]bool // memo: is (ip, pos) reachable from (0, l)?
-}
-
 func newBuilder(p *gll) *builder {
+	p.packSteps()
 	n := len(p.input) + 1
 	nodes := p.tnodes[:0]
 	if cap(nodes) < n/2 {
@@ -51,7 +49,74 @@ func newBuilder(p *gll) *builder {
 	if cap(kids) < n {
 		kids = make([]int, 0, n)
 	}
-	return &builder{p: p, inst: map[instKey]*instIndex{}, nodes: nodes, kids: kids}
+	return &builder{p: p, nodes: nodes, kids: kids}
+}
+
+// packSteps copies each instance's linked steps into a contiguous run
+// sorted by (ip, end). Advance only mutates a slab entry; the map is
+// written once per instance, not on every step.
+func (p *gll) packSteps() {
+	packed := p.stepPack[:0]
+	if cap(packed) < len(p.steps)-1 {
+		packed = make([]step, 0, len(p.steps)-1)
+	}
+	for i := 1; i < len(p.slabs); i++ {
+		sl := &p.slabs[i]
+		start := len(packed)
+		for id := sl.head; id != 0; id = p.steps[id].next {
+			packed = append(packed, p.steps[id])
+		}
+		n := len(packed) - start
+		if n > pathScanCutoff {
+			slices.SortFunc(packed[start:start+n], func(a, b step) int {
+				if a.ip != b.ip {
+					return a.ip - b.ip
+				}
+				return a.end - b.end
+			})
+		}
+		sl.head = start
+		sl.n = n
+	}
+	p.stepPack = packed
+}
+
+func (b *builder) stepRun(pid, l int) []step {
+	k := instKey{pid: pid, l: l}
+	if b.hasRun && b.runK == k {
+		return b.run
+	}
+	var run []step
+	if id := b.p.stepAt[k]; id != 0 {
+		sl := b.p.slabs[id]
+		if sl.n > 0 {
+			run = b.p.stepPack[sl.head : sl.head+sl.n]
+		}
+	}
+	b.runK = k
+	b.hasRun = true
+	b.run = run
+	return run
+}
+
+func matchSteps(run []step, ip, end int) []step {
+	if len(run) <= pathScanCutoff {
+		return nil
+	}
+	i := sort.Search(len(run), func(i int) bool {
+		if run[i].ip != ip {
+			return run[i].ip >= ip
+		}
+		return run[i].end >= end
+	})
+	if i >= len(run) || run[i].ip != ip || run[i].end != end {
+		return nil
+	}
+	j := i + 1
+	for j < len(run) && run[j].ip == ip && run[j].end == end {
+		j++
+	}
+	return run[i:j]
 }
 
 func (b *builder) keepArena() {
@@ -79,15 +144,29 @@ func (b *builder) intern(n Node) int {
 }
 
 func (b *builder) materialize(id int) Node {
-	n := b.nodes[id]
-	var children []Node
-	if n.kn > n.k0 {
-		children = make([]Node, n.kn-n.k0)
-		for i, k := range b.kids[n.k0:n.kn] {
-			children[i] = b.materialize(k)
+	n := len(b.nodes)
+	if n == 0 {
+		return Node{}
+	}
+	out := make([]Node, n)
+	next := 1
+	var fill func(inodeID, outIdx int)
+	fill = func(inodeID, outIdx int) {
+		in := b.nodes[inodeID]
+		nk := in.kn - in.k0
+		child0 := next
+		next += nk
+		var children []Node
+		if nk > 0 {
+			children = out[child0 : child0+nk]
+		}
+		out[outIdx] = Node{Kind: in.kind, Name: in.name, Text: in.text, Children: children}
+		for i, k := range b.kids[in.k0:in.kn] {
+			fill(k, child0+i)
 		}
 	}
-	return Node{Kind: n.kind, Name: n.name, Text: n.text, Children: children}
+	fill(id, 0)
+	return out[0]
 }
 
 func (b *builder) text(l, r int) string {
@@ -101,64 +180,23 @@ func (b *builder) text(l, r int) string {
 // root builds the tree for the start rule over input[pos:end].
 func (b *builder) root(start string, pos, end int) Node {
 	defer b.keepArena()
-	kids := b.derive(start, pos, end)
+	mark := len(b.p.kscratch)
+	b.p.kscratch = b.deriveInto(b.p.kscratch[:mark], start, pos, end)
+	kids := b.p.kscratch[mark:]
 	if len(kids) == 1 {
-		return b.materialize(kids[0])
+		n := b.materialize(kids[0])
+		b.p.kscratch = b.p.kscratch[:mark]
+		return n
 	}
-	return b.materialize(b.addNode("rule", start, b.text(pos, end), kids))
+	id := b.addNode("rule", start, b.text(pos, end), kids)
+	b.p.kscratch = b.p.kscratch[:mark]
+	return b.materialize(id)
 }
 
-func (b *builder) index(k instKey) *instIndex {
-	if idx, ok := b.inst[k]; ok {
-		return idx
-	}
-	n := len(b.p.c.prods[k.pid].rhs)
-	idx := &instIndex{pred: make([]map[int][]int, n), back: map[[2]int]bool{}}
-	for ip := range idx.pred {
-		idx.pred[ip] = map[int][]int{}
-	}
-	for id := b.p.stepAt[k].head; id != 0; id = b.p.steps[id].next {
-		st := b.p.steps[id]
-		if st.ip < 0 || st.ip >= n {
-			continue
-		}
-		list := idx.pred[st.ip][st.end]
-		dup := false
-		for _, i := range list {
-			if i == st.i {
-				dup = true
-				break
-			}
-		}
-		if !dup {
-			idx.pred[st.ip][st.end] = append(list, st.i)
-		}
-	}
-	b.inst[k] = idx
-	return idx
-}
-
-// reachable reports whether element boundary (ip, pos) of the instance can be
-// reached from its start.
-func (b *builder) reachable(idx *instIndex, l, ip, pos int) bool {
-	if ip == 0 {
-		return pos == l
-	}
-	key := [2]int{ip, pos}
-	if v, ok := idx.back[key]; ok {
-		return v
-	}
-	idx.back[key] = false // cycle guard
-	out := false
-	for _, i := range idx.pred[ip-1][pos] {
-		if b.reachable(idx, l, ip-1, i) {
-			out = true
-			break
-		}
-	}
-	idx.back[key] = out
-	return out
-}
+// pathScanCutoff is the step-run size above which the run is sorted by
+// (ip, end), matchSteps binary-searches, and reachability is memoised.
+// Smaller runs stay unsorted and are scanned linearly.
+const pathScanCutoff = 32
 
 // path returns the element boundaries of one derivation of production pid
 // over input[l:r]: positions[0] == l and positions[len(rhs)] == r.
@@ -175,66 +213,75 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 	if n == 0 {
 		return pos, l == r
 	}
-	k := instKey{pid: pid, l: l}
-	sl := b.p.stepAt[k]
-	if sl.n <= 32 {
-		return b.pathScan(pr, sl.head, l, pos)
+	run := b.stepRun(pid, l)
+	var memo map[reachKey]bool
+	if len(run) > pathScanCutoff {
+		memo = b.p.reach
 	}
-	idx := b.index(k)
 	ambiguous := false
+	var candBuf [8]int
+	assoc := pr.dirs.assoc
 	for ip := n; ip >= 1; ip-- {
-		var cands []int
-		for _, i := range idx.pred[ip-1][pos[ip]] {
-			if b.reachable(idx, l, ip-1, i) {
-				cands = append(cands, i)
-			}
-		}
-		if len(cands) == 0 {
-			return nil, false
-		}
-		ambiguous = b.orderCands(pr, cands, l) || ambiguous
-		pos[ip-1] = cands[0]
-	}
-	if pos[0] != l {
-		return nil, false
-	}
-	if ambiguous {
-		b.packed++
-	}
-	return pos, true
-}
-
-func (b *builder) pathScan(pr prod, head, l int, pos []int) ([]int, bool) {
-	n := len(pr.rhs)
-	log := b.p.steps
-	ambiguous := false
-	for ip := n; ip >= 1; ip-- {
-		var cands []int
+		cands := candBuf[:0]
 		end := pos[ip]
-		for id := head; id != 0; id = log[id].next {
-			st := log[id]
-			if st.ip != ip-1 || st.end != end {
-				continue
-			}
-			if !scanReach(log, head, l, ip-1, st.i) {
-				continue
-			}
-			dup := false
-			for _, c := range cands {
-				if c == st.i {
-					dup = true
-					break
+		if len(run) > pathScanCutoff {
+			for _, st := range matchSteps(run, ip-1, end) {
+				if stepReach(run, pid, l, ip-1, st.i, memo) {
+					dup := false
+					for _, c := range cands {
+						if c == st.i {
+							dup = true
+							break
+						}
+					}
+					if !dup {
+						cands = append(cands, st.i)
+					}
 				}
 			}
-			if !dup {
-				cands = append(cands, st.i)
+		} else {
+			for _, st := range run {
+				if st.ip != ip-1 || st.end != end || !stepReach(run, pid, l, ip-1, st.i, memo) {
+					continue
+				}
+				dup := false
+				for _, c := range cands {
+					if c == st.i {
+						dup = true
+						break
+					}
+				}
+				if !dup {
+					cands = append(cands, st.i)
+				}
 			}
 		}
 		if len(cands) == 0 {
 			return nil, false
 		}
-		ambiguous = b.orderCands(pr, cands, l) || ambiguous
-		pos[ip-1] = cands[0]
+		best := cands[0]
+		if len(cands) > 1 {
+			if assoc == "right" {
+				for _, c := range cands[1:] {
+					if c < best {
+						best = c
+					}
+				}
+			} else {
+				for _, c := range cands[1:] {
+					if c > best {
+						best = c
+					}
+				}
+				if assoc == "none" {
+					b.fail(fmt.Sprintf("ambiguous derivation of %s at %s: #assoc=none forbids chaining",
+						displayNT(pr.nt), b.where(l)))
+				} else if assoc != "left" {
+					ambiguous = true
+				}
+			}
+		}
+		pos[ip-1] = best
 	}
 	if pos[0] != l {
 		return nil, false
@@ -245,40 +292,38 @@ func (b *builder) pathScan(pr prod, head, l int, pos []int) ([]int, bool) {
 	return pos, true
 }
 
-func scanReach(log []step, head, l, ip, pos int) bool {
+func stepReach(run []step, pid, l, ip, pos int, memo map[reachKey]bool) bool {
 	if ip == 0 {
 		return pos == l
 	}
-	for id := head; id != 0; id = log[id].next {
-		st := log[id]
-		if st.ip == ip-1 && st.end == pos && scanReach(log, head, l, ip-1, st.i) {
+	if memo != nil {
+		key := reachKey{pid: pid, l: l, ip: ip, pos: pos}
+		if v, ok := memo[key]; ok {
+			return v
+		}
+		memo[key] = false // cycle guard
+		out := stepReachOnce(run, pid, l, ip, pos, memo)
+		memo[key] = out
+		return out
+	}
+	return stepReachOnce(run, pid, l, ip, pos, nil)
+}
+
+func stepReachOnce(run []step, pid, l, ip, pos int, memo map[reachKey]bool) bool {
+	if len(run) > pathScanCutoff {
+		for _, st := range matchSteps(run, ip-1, pos) {
+			if stepReach(run, pid, l, ip-1, st.i, memo) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, st := range run {
+		if st.ip == ip-1 && st.end == pos && stepReach(run, pid, l, ip-1, st.i, memo) {
 			return true
 		}
 	}
 	return false
-}
-
-func (b *builder) orderCands(pr prod, cands []int, l int) bool {
-	if len(cands) <= 1 {
-		return false
-	}
-	// Larger start = shorter final operand = left nesting.
-	switch pr.dirs.assoc {
-	case "right":
-		sort.Ints(cands)
-		return false
-	case "none":
-		b.fail(fmt.Sprintf("ambiguous derivation of %s at %s: #assoc=none forbids chaining",
-			displayNT(pr.nt), b.where(l)))
-		sort.Sort(sort.Reverse(sort.IntSlice(cands)))
-		return false
-	case "left":
-		sort.Sort(sort.Reverse(sort.IntSlice(cands)))
-		return false
-	default:
-		sort.Sort(sort.Reverse(sort.IntSlice(cands)))
-		return true
-	}
 }
 
 func (b *builder) fail(msg string) {
@@ -368,114 +413,132 @@ func leftRec(pr prod) bool {
 	return len(pr.rhs) > 0 && pr.rhs[0].kind == ekNT && pr.rhs[0].nt == pr.nt
 }
 
-// derive returns the nodes for nonterminal nt over input[l:r]. Synthetic
-// nonterminals introduced by compilation are transparent, or become the
-// quant / delim / seq node their construct calls for.
-func (b *builder) derive(nt string, l, r int) []int {
+// deriveInto appends the nodes for nonterminal nt over input[l:r] onto dst.
+// Synthetic nonterminals are transparent, or become the quant / delim / seq
+// node their construct calls for. dst is the builder scratch (same backing
+// across recursive calls) so kid lists are not allocated per node.
+func (b *builder) deriveInto(dst []int, nt string, l, r int) []int {
 	c := b.p.c
 	if c.IsDFA(nt) {
-		return []int{b.intern(c.dfaNode(b.p.input, nt, b.p.skip(l), r))}
+		return append(dst, b.intern(c.dfaNode(b.p.input, nt, b.p.skip(l), r)))
 	}
 	pid := b.pickAt(nt, l, r)
 	if pid < 0 {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
-		return []int{b.addNode("rule", nt, b.text(l, r), nil)}
+		return append(dst, b.addNode("rule", nt, b.text(l, r), nil))
 	}
+	kidStart := len(dst)
 	// Transparent left-recursive lists ($dl, $qs) must not append the prefix
 	// children at every spine node — that is O(n²) Node copies.
-	var kids []int
 	if splices(nt) && leftRec(c.prods[pid]) {
-		kids = b.leftRecKids(nt, l, r)
+		dst = b.leftRecKidsInto(dst, nt, l, r)
 	} else {
-		kids = b.prodKids(pid, l, r)
+		dst = b.prodKidsInto(dst, pid, l, r)
 	}
+	kids := dst[kidStart:]
 	switch {
 	case !strings.HasPrefix(nt, "$"):
-		return []int{b.addNode("rule", nt, b.text(l, r), kids)}
+		id := b.addNode("rule", nt, b.text(l, r), kids)
+		return append(dst[:kidStart], id)
 	case strings.HasPrefix(nt, "$q") && !strings.HasPrefix(nt, "$qs") && !strings.HasPrefix(nt, "$qo"):
 		if len(kids) == 0 {
-			return nil
+			return dst[:kidStart]
 		}
-		return []int{b.addNode("quant", "", b.text(l, r), kids)}
+		id := b.addNode("quant", "", b.text(l, r), kids)
+		return append(dst[:kidStart], id)
 	case strings.HasPrefix(nt, "$d") && !strings.HasPrefix(nt, "$dl") && !strings.HasPrefix(nt, "$dtrail"):
 		if len(kids) == 1 {
-			return kids
+			return dst[:kidStart+1]
 		}
-		return []int{b.addNode("delim", "", b.text(l, r), kids)}
+		id := b.addNode("delim", "", b.text(l, r), kids)
+		return append(dst[:kidStart], id)
 	case strings.HasPrefix(nt, "$st"):
 		if len(kids) == 1 {
-			return kids
+			return dst[:kidStart+1]
 		}
-		return []int{b.addNode("seq", "", b.text(l, r), kids)}
+		id := b.addNode("seq", "", b.text(l, r), kids)
+		return append(dst[:kidStart], id)
 	default:
-		return kids
+		return dst
 	}
 }
 
-// leftRecKids walks a transparent left-recursive spine N ::= N rest | base
-// once, then concatenates base+rest in a single slice. User-level left
-// recursion is not spliced and still nests via prodKids.
-func (b *builder) leftRecKids(nt string, l, r int) []int {
-	var tails [][]int
+type kidSpan struct{ start, n int }
+
+// leftRecKidsInto walks a transparent left-recursive spine N ::= N rest | base
+// once and appends base+rest onto dst. User-level left recursion is not
+// spliced and still nests via prodKidsInto.
+func (b *builder) leftRecKidsInto(dst []int, nt string, l, r int) []int {
+	var spanBuf [32]kidSpan
+	spans := spanBuf[:0]
+	start := len(dst)
 	curR := r
 	for {
 		pid := b.pickAt(nt, l, curR)
 		if pid < 0 {
 			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
-			return joinSpine(nil, tails)
+			return dst[:start]
 		}
 		pr := b.p.c.prods[pid]
 		if !leftRec(pr) {
-			return joinSpine(b.prodKids(pid, l, curR), tails)
+			dst = b.prodKidsInto(dst, pid, l, curR)
+			return reorderSpine(dst, start, spans)
 		}
 		var buf [8]int
 		pos, ok := b.path(pid, l, curR, buf[:])
 		if !ok {
 			b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
-			return joinSpine(nil, tails)
+			return dst[:start]
 		}
 		if pos[1] >= curR {
 			b.fail(fmt.Sprintf("internal: left-recursive %s did not shrink over %s", displayNT(nt), b.where(l)))
-			return joinSpine(nil, tails)
+			return dst[:start]
 		}
-		tails = append(tails, b.rhsNodes(pr, pos, 1))
+		restStart := len(dst)
+		dst = b.rhsNodesInto(dst, pr, pos, 1)
+		spans = append(spans, kidSpan{start: restStart, n: len(dst) - restStart})
 		curR = pos[1]
 	}
 }
 
-func joinSpine(base []int, tails [][]int) []int {
-	n := len(base)
-	for _, t := range tails {
-		n += len(t)
+func reorderSpine(dst []int, start int, spans []kidSpan) []int {
+	if len(spans) == 0 {
+		return dst
 	}
-	if len(tails) == 0 {
-		return base
+	n := len(dst) - start
+	var small [64]int
+	var out []int
+	if n <= len(small) {
+		out = small[:n]
+	} else {
+		out = make([]int, n)
 	}
-	out := make([]int, 0, n)
-	out = append(out, base...)
-	for i := len(tails) - 1; i >= 0; i-- {
-		out = append(out, tails[i]...)
+	baseStart := spans[len(spans)-1].start + spans[len(spans)-1].n
+	w := copy(out, dst[baseStart:])
+	for i := len(spans) - 1; i >= 0; i-- {
+		s := spans[i]
+		w += copy(out[w:], dst[s.start:s.start+s.n])
 	}
-	return out
+	copy(dst[start:], out[:n])
+	return dst[:start+n]
 }
 
-func (b *builder) prodKids(pid, l, r int) []int {
+func (b *builder) prodKidsInto(dst []int, pid, l, r int) []int {
 	pr := b.p.c.prods[pid]
 	var buf [8]int
 	pos, ok := b.path(pid, l, r, buf[:])
 	if !ok {
 		b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
-		return nil
+		return dst
 	}
-	return b.rhsNodes(pr, pos, 0)
+	return b.rhsNodesInto(dst, pr, pos, 0)
 }
 
-func (b *builder) rhsNodes(pr prod, pos []int, from int) []int {
-	var kids []int
+func (b *builder) rhsNodesInto(dst []int, pr prod, pos []int, from int) []int {
 	for ip := from; ip < len(pr.rhs); ip++ {
-		kids = b.appendElem(kids, pr.rhs[ip], pos[ip], pos[ip+1])
+		dst = b.appendElem(dst, pr.rhs[ip], pos[ip], pos[ip+1])
 	}
-	return kids
+	return dst
 }
 
 func (b *builder) appendElem(kids []int, e elem, i, end int) []int {
@@ -499,15 +562,18 @@ func (b *builder) appendElem(kids []int, e elem, i, end int) []int {
 		}
 		return append(kids, b.intern(n))
 	case ekNT:
-		nodes := b.derive(e.nt, i, end)
+		start := len(kids)
+		kids = b.deriveInto(kids, e.nt, i, end)
 		if e.name != "" {
-			if len(nodes) == 1 {
-				b.nodes[nodes[0]].name = e.name
-			} else {
-				nodes = []int{b.addNode("seq", e.name, b.text(i, end), nodes)}
+			added := kids[start:]
+			if len(added) == 1 {
+				b.nodes[added[0]].name = e.name
+			} else if len(added) > 1 {
+				id := b.addNode("seq", e.name, b.text(i, end), added)
+				kids = append(kids[:start], id)
 			}
 		}
-		return append(kids, nodes...)
+		return kids
 	default:
 		return kids
 	}

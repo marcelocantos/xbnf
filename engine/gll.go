@@ -48,27 +48,34 @@ type failInfo struct {
 }
 
 type gll struct {
-	c       *Compiled
-	input   string
-	R       []desc
-	U       map[uint64]struct{}
-	Ubig    map[desc]bool // used when pid/u/i do not pack into 64 bits
-	gss     []gssNode
-	gssAt   map[uint64]int
-	gssBig  map[gssKey]int
-	sym     map[famKey]int   // first completing prod+1; 0 = none
-	symMore map[famKey][]int // extra prods when a span is packed
-	start   string
-	fail    failInfo
-	wrapEnd []int // memoised skipWrap per position; 0 = unknown, else end+1
-	work    int   // descriptors processed
-	stepAt  map[instKey]stepList
-	steps   []step // dummy at 0 so 0 means "no step"
-	edges   []gssEdge
-	pops    []gssPop
-	tnodes  []inode
-	tkids   []int
+	c        *Compiled
+	input    string
+	R        []desc
+	U        map[uint64]struct{}
+	Ubig     map[desc]bool // used when pid/u/i do not pack into 64 bits
+	gss      []gssNode
+	gssAt    map[uint64]int
+	gssBig   map[gssKey]int
+	sym      map[famKey]int   // first completing prod+1; 0 = none
+	symMore  map[famKey][]int // extra prods when a span is packed
+	start    string
+	fail     failInfo
+	wrapEnd  []int           // memoised skipWrap per position; 0 = unknown, else end+1
+	wrapIn   string          // input wrapEnd was filled for; reused on the same string
+	work     int             // descriptors processed
+	stepAt   map[instKey]int // 1-based index into slabs; 0 = none
+	slabs    []stepList      // dummy at 0
+	steps    []step          // dummy at 0; linked per instance during parse
+	stepPack []step          // contiguous runs after packSteps
+	edges    []gssEdge
+	pops     []gssPop
+	tnodes   []inode
+	tkids    []int
+	kscratch []int
+	reach    map[reachKey]bool
 }
+
+type reachKey struct{ pid, l, ip, pos int }
 
 type stepList struct {
 	head, n int
@@ -76,6 +83,8 @@ type stepList struct {
 
 // step records that element ip of production pid, in the instance that
 // started at l, matched input[i:end]. The tree is rebuilt from these.
+// During parse, next links steps of one instance. packSteps copies each
+// instance into a contiguous run in stepPack, sorted by (ip, end).
 type step struct {
 	pid, ip, l, i, end int
 	next               int
@@ -108,6 +117,11 @@ func newGLL(c *Compiled, input, start string) *gll {
 	} else {
 		clear(p.U)
 	}
+	if p.reach == nil {
+		p.reach = make(map[reachKey]bool)
+	} else {
+		clear(p.reach)
+	}
 	p.gss = p.gss[:0]
 	if cap(p.gss) < n/2+1 {
 		p.gss = make([]gssNode, 0, n/2+1)
@@ -123,18 +137,24 @@ func newGLL(c *Compiled, input, start string) *gll {
 		clear(p.sym)
 	}
 	if p.stepAt == nil {
-		p.stepAt = make(map[instKey]stepList, n)
+		p.stepAt = make(map[instKey]int)
 	} else {
 		clear(p.stepAt)
 	}
+	p.slabs = keepDummy(p.slabs, n/8)
 	p.steps = keepDummy(p.steps, n)
+	p.stepPack = keepCap(p.stepPack, n)
 	p.edges = keepDummy(p.edges, n/2+1)
 	p.pops = keepDummy(p.pops, n/2+1)
-	if cap(p.wrapEnd) < n {
+	if p.wrapIn == input && len(p.wrapEnd) == n {
+		// same input: skipWrap results are unchanged
+	} else if cap(p.wrapEnd) < n {
 		p.wrapEnd = make([]int, n)
+		p.wrapIn = input
 	} else {
 		p.wrapEnd = p.wrapEnd[:n]
 		clear(p.wrapEnd)
+		p.wrapIn = input
 	}
 	return p
 }
@@ -149,19 +169,31 @@ func keepDummy[T any](s []T, hint int) []T {
 	return s
 }
 
+func keepCap[T any](s []T, hint int) []T {
+	if cap(s) < hint {
+		return make([]T, 0, hint)
+	}
+	return s[:0]
+}
+
 func (p *gll) release() {
 	p.c = nil
 	p.input = ""
 	p.start = ""
 	p.R = p.R[:0]
 	clear(p.U)
+	clear(p.reach)
 	p.gss = p.gss[:0]
 	clear(p.gssAt)
 	clear(p.sym)
 	clear(p.stepAt)
+	if cap(p.slabs) > 0 {
+		p.slabs = p.slabs[:1]
+	}
 	if cap(p.steps) > 0 {
 		p.steps = p.steps[:1]
 	}
+	p.stepPack = p.stepPack[:0]
 	if cap(p.edges) > 0 {
 		p.edges = p.edges[:1]
 	}
@@ -170,10 +202,10 @@ func (p *gll) release() {
 	}
 	p.tnodes = p.tnodes[:0]
 	p.tkids = p.tkids[:0]
+	p.kscratch = p.kscratch[:0]
 	p.Ubig = nil
 	p.gssBig = nil
 	p.symMore = nil
-	p.wrapEnd = p.wrapEnd[:0]
 	p.work = 0
 	p.fail.pos = -1
 	p.fail.rule = ""
@@ -423,9 +455,16 @@ func (p *gll) admits(sl slot, i int) bool {
 func (p *gll) advance(next slot, u, i, end int) {
 	l := p.gss[u].i
 	k := instKey{pid: next.pid, l: l}
-	sl := p.stepAt[k]
+	id := p.stepAt[k]
+	if id == 0 {
+		id = len(p.slabs)
+		p.slabs = append(p.slabs, stepList{})
+		p.stepAt[k] = id
+	}
+	sl := &p.slabs[id]
 	p.steps = append(p.steps, step{pid: next.pid, ip: next.ip - 1, l: l, i: i, end: end, next: sl.head})
-	p.stepAt[k] = stepList{head: len(p.steps) - 1, n: sl.n + 1}
+	sl.head = len(p.steps) - 1
+	sl.n++
 	p.add(next, u, end)
 }
 

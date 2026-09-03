@@ -20,7 +20,10 @@ type Result struct {
 	Packed int    `json:"packed,omitempty"`
 }
 
-// Node is a sandbox-facing parse tree.
+// Node is a sandbox-facing parse tree. Children of a tree from Parse, when
+// non-empty, are a subslice of one backing array shared by that tree. Treat
+// the tree as read-only: do not append to Children or retain a child slice
+// after discarding the Result.
 type Node struct {
 	Kind     string `json:"kind"`
 	Name     string `json:"name,omitempty"`
