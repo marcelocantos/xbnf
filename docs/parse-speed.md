@@ -35,6 +35,14 @@ wbnf: same machine and input, `BenchmarkJSON64K_wbnf` count=2 (25.7 ms).
 xbnf is ~1.2× wbnf, ~47× `Unmarshal`, ~180× `Valid`. A dedicated xbnf-only
 run at `c077348` was ~23–25 ms/op / 48 MB.
 
+Current xbnf-only (`498a9b3`, `sync.Pool` of GLL charts, 3 s × 5 on the same
+machine): median **27.2 ms** / **22.0 MB** / 226920 allocs. Same-session
+no-pool (`dbe1b6a`) was median **35.3 ms** / **44.3 MB** / 228223 allocs.
+The pool is ~23% faster and half B/op on repeated `Parse`; one-shot still
+pays ~44 MB. Short 2 s × 3 runs at those SHAs were underpowered (lucky
+no-pool 23.1 ms vs pool 27.5 ms) and are superseded by the 3 s × 5 + pprof
+pair below.
+
 ## History
 
 `nestedJSON` / `BenchmarkJSON64K` unless noted. Times are median of the
@@ -47,8 +55,8 @@ recorded run.
 | 2026-09-02 | `351a4a8` | 53e6 | 95e6 | — | — | — | 🎯T18 linear tree flatten; attested 51–55 ms. Same-day re-run 42–45 ms / 95 MB |
 | 2026-09-02 | `6d9786d` | 24e6 | 48e6 | — | — | — | FIRST jump table, chart reuse, packed U/GSS, alloc cuts |
 | 2026-09-03 | `c077348` | 31.7e6 | 48.07e6 | 25.7e6 | 0.667e6 | 0.172e6 | Unicode FIRST fix; first stdlib+wbnf side-by-side on `nestedJSON` |
-| 2026-09-03 | `dbe1b6a` | 23.1e6 | 44.29e6 | — | — | — | Dedicated BenchmarkJSON64K: first prod per span (no []int), stack path buf, pre-sized GLL maps. 228k allocs (was 295k). Median of 21.0/23.1/25.4 ms |
-| 2026-09-03 | `498a9b3` | 27.5e6 | 22.04e6 | — | — | — | sync.Pool for GLL charts on Parse. B/op is repeated-parse (bench/server). One-shot still ~44 MB. Inline first GSS edge discarded (time up, B/op flat). |
+| 2026-09-03 | `dbe1b6a` | 35.3e6 | 44.29e6 | — | — | — | 3s×5 same-session vs pool: 32.1/32.3/35.3/35.9/36.8 ms, 228223 allocs. Earlier 2s×3 21.0/23.1/25.4 was underpowered. First prod per span, stack path buf, pre-sized maps. |
+| 2026-09-03 | `498a9b3` | 27.2e6 | 22.04e6 | — | — | — | 3s×5: 24.5/25.1/27.2/27.5/30.5 ms, 226920 allocs. ~23% faster than same-session no-pool, not a regression. CPU `runtime.madvise` 17.6%→8.6% (GC returning ~44 MB charts). `newGLL` 49% of alloc_space before, gone after. B/op is repeated-parse; one-shot still ~44 MB. Inline first GSS edge discarded earlier (time up, B/op flat). |
 
 ## Probe harness (`genJSON`, 64 KB)
 
