@@ -24,16 +24,16 @@ type desc struct {
 type gssNode struct {
 	sl    slot
 	i     int
-	edges []gssEdge
-	pops  []gssPop
+	ehead int // 0 = none; index into gll.edges
+	phead int // 0 = none; index into gll.pops
 }
 
 type gssEdge struct {
-	to int
+	to, next int
 }
 
 type gssPop struct {
-	i int
+	i, next int
 }
 
 type famKey struct {
@@ -62,13 +62,23 @@ type gll struct {
 	fail    failInfo
 	wrapEnd []int // memoised skipWrap per position; 0 = unknown, else end+1
 	work    int   // descriptors processed
-	steps   map[instKey][]step
+	stepAt  map[instKey]stepList
+	steps   []step // dummy at 0 so 0 means "no step"
+	edges   []gssEdge
+	pops    []gssPop
+	tnodes  []inode
+	tkids   []int
+}
+
+type stepList struct {
+	head, n int
 }
 
 // step records that element ip of production pid, in the instance that
 // started at l, matched input[i:end]. The tree is rebuilt from these.
 type step struct {
 	pid, ip, l, i, end int
+	next               int
 }
 
 var gllPool = sync.Pool{New: func() any { return new(gll) }}
@@ -112,11 +122,14 @@ func newGLL(c *Compiled, input, start string) *gll {
 	} else {
 		clear(p.sym)
 	}
-	if p.steps == nil {
-		p.steps = make(map[instKey][]step, n)
+	if p.stepAt == nil {
+		p.stepAt = make(map[instKey]stepList, n)
 	} else {
-		clear(p.steps)
+		clear(p.stepAt)
 	}
+	p.steps = keepDummy(p.steps, n)
+	p.edges = keepDummy(p.edges, n/2+1)
+	p.pops = keepDummy(p.pops, n/2+1)
 	if cap(p.wrapEnd) < n {
 		p.wrapEnd = make([]int, n)
 	} else {
@@ -124,6 +137,16 @@ func newGLL(c *Compiled, input, start string) *gll {
 		clear(p.wrapEnd)
 	}
 	return p
+}
+
+func keepDummy[T any](s []T, hint int) []T {
+	if cap(s) < hint+1 {
+		return make([]T, 1, hint+1)
+	}
+	s = s[:1]
+	var z T
+	s[0] = z
+	return s
 }
 
 func (p *gll) release() {
@@ -135,7 +158,18 @@ func (p *gll) release() {
 	p.gss = p.gss[:0]
 	clear(p.gssAt)
 	clear(p.sym)
-	clear(p.steps)
+	clear(p.stepAt)
+	if cap(p.steps) > 0 {
+		p.steps = p.steps[:1]
+	}
+	if cap(p.edges) > 0 {
+		p.edges = p.edges[:1]
+	}
+	if cap(p.pops) > 0 {
+		p.pops = p.pops[:1]
+	}
+	p.tnodes = p.tnodes[:0]
+	p.tkids = p.tkids[:0]
 	p.Ubig = nil
 	p.gssBig = nil
 	p.symMore = nil
@@ -389,7 +423,9 @@ func (p *gll) admits(sl slot, i int) bool {
 func (p *gll) advance(next slot, u, i, end int) {
 	l := p.gss[u].i
 	k := instKey{pid: next.pid, l: l}
-	p.steps[k] = append(p.steps[k], step{pid: next.pid, ip: next.ip - 1, l: l, i: i, end: end})
+	sl := p.stepAt[k]
+	p.steps = append(p.steps, step{pid: next.pid, ip: next.ip - 1, l: l, i: i, end: end, next: sl.head})
+	p.stepAt[k] = stepList{head: len(p.steps) - 1, n: sl.n + 1}
 	p.add(next, u, end)
 }
 
@@ -426,18 +462,15 @@ func (p *gll) gssNode(sl slot, i int) int {
 
 func (p *gll) create(ret slot, u, i int) int {
 	v := p.gssNode(ret, i)
-	found := false
-	for _, e := range p.gss[v].edges {
-		if e.to == u {
-			found = true
-			break
+	for e := p.gss[v].ehead; e != 0; e = p.edges[e].next {
+		if p.edges[e].to == u {
+			return v
 		}
 	}
-	if !found {
-		p.gss[v].edges = append(p.gss[v].edges, gssEdge{to: u})
-		for _, pop := range p.gss[v].pops {
-			p.advance(ret, u, i, pop.i)
-		}
+	p.edges = append(p.edges, gssEdge{to: u, next: p.gss[v].ehead})
+	p.gss[v].ehead = len(p.edges) - 1
+	for pop := p.gss[v].phead; pop != 0; pop = p.pops[pop].next {
+		p.advance(ret, u, i, p.pops[pop].i)
 	}
 	return v
 }
@@ -447,11 +480,12 @@ func (p *gll) pop(u, i int) {
 		// dummy GSS: completing start production
 		return
 	}
-	p.gss[u].pops = append(p.gss[u].pops, gssPop{i: i})
+	p.pops = append(p.pops, gssPop{i: i, next: p.gss[u].phead})
+	p.gss[u].phead = len(p.pops) - 1
 	ret := p.gss[u].sl
 	from := p.gss[u].i
-	for _, e := range p.gss[u].edges {
-		p.advance(ret, e.to, from, i)
+	for e := p.gss[u].ehead; e != 0; e = p.edges[e].next {
+		p.advance(ret, p.edges[e].to, from, i)
 	}
 }
 

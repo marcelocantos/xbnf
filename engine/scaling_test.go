@@ -159,10 +159,49 @@ func TestJSON16KParseCost(t *testing.T) {
 		t.Fatalf("16 KB nested JSON work=%d, bound %d", p.work, workBound)
 	}
 	allocs := testing.AllocsPerRun(10, func() { c.Parse("json", in) })
-	const allocBound = 85000
+	const allocBound = 40000
 	if allocs > allocBound {
 		t.Fatalf("16 KB nested JSON allocs=%.0f, bound %d", allocs, allocBound)
 	}
+}
+
+func TestPooledParseStable(t *testing.T) {
+	c := compileDoc(t, "docs/examples/json.xbnf")
+	in := nestedJSON(1 << 10)
+	first := c.Parse("json", in)
+	if !first.OK {
+		t.Fatal(first.Error)
+	}
+	second := c.Parse("json", in)
+	if !second.OK {
+		t.Fatal(second.Error)
+	}
+	if !nodesEqual(first.Tree, second.Tree) {
+		t.Fatal("second Parse on a pooled GLL disagreed with the first tree")
+	}
+	other := c.Parse("json", `{"a": [true, false, null]}`)
+	if !other.OK {
+		t.Fatal(other.Error)
+	}
+	again := c.Parse("json", in)
+	if !again.OK {
+		t.Fatal(again.Error)
+	}
+	if !nodesEqual(first.Tree, again.Tree) {
+		t.Fatal("Parse after a different input leaked into the original tree")
+	}
+}
+
+func nodesEqual(a, b Node) bool {
+	if a.Kind != b.Kind || a.Name != b.Name || a.Text != b.Text || len(a.Children) != len(b.Children) {
+		return false
+	}
+	for i := range a.Children {
+		if !nodesEqual(a.Children[i], b.Children[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestTreeBuildLinearAlloc(t *testing.T) {

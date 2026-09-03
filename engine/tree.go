@@ -24,7 +24,13 @@ type builder struct {
 	packed int
 	err    string
 	inst   map[instKey]*instIndex
-	steps  map[instKey][]step
+	nodes  []inode
+	kids   []int
+}
+
+type inode struct {
+	kind, name, text string
+	k0, kn           int
 }
 
 type instKey struct{ pid, l int }
@@ -36,7 +42,52 @@ type instIndex struct {
 }
 
 func newBuilder(p *gll) *builder {
-	return &builder{p: p, inst: map[instKey]*instIndex{}, steps: p.steps}
+	n := len(p.input) + 1
+	nodes := p.tnodes[:0]
+	if cap(nodes) < n/2 {
+		nodes = make([]inode, 0, n/2)
+	}
+	kids := p.tkids[:0]
+	if cap(kids) < n {
+		kids = make([]int, 0, n)
+	}
+	return &builder{p: p, inst: map[instKey]*instIndex{}, nodes: nodes, kids: kids}
+}
+
+func (b *builder) keepArena() {
+	b.p.tnodes = b.nodes
+	b.p.tkids = b.kids
+}
+
+func (b *builder) addNode(kind, name, text string, kids []int) int {
+	k0 := len(b.kids)
+	b.kids = append(b.kids, kids...)
+	id := len(b.nodes)
+	b.nodes = append(b.nodes, inode{kind: kind, name: name, text: text, k0: k0, kn: k0 + len(kids)})
+	return id
+}
+
+func (b *builder) intern(n Node) int {
+	if len(n.Children) == 0 {
+		return b.addNode(n.Kind, n.Name, n.Text, nil)
+	}
+	ids := make([]int, len(n.Children))
+	for i, c := range n.Children {
+		ids[i] = b.intern(c)
+	}
+	return b.addNode(n.Kind, n.Name, n.Text, ids)
+}
+
+func (b *builder) materialize(id int) Node {
+	n := b.nodes[id]
+	var children []Node
+	if n.kn > n.k0 {
+		children = make([]Node, n.kn-n.k0)
+		for i, k := range b.kids[n.k0:n.kn] {
+			children[i] = b.materialize(k)
+		}
+	}
+	return Node{Kind: n.kind, Name: n.name, Text: n.text, Children: children}
 }
 
 func (b *builder) text(l, r int) string {
@@ -49,11 +100,12 @@ func (b *builder) text(l, r int) string {
 
 // root builds the tree for the start rule over input[pos:end].
 func (b *builder) root(start string, pos, end int) Node {
+	defer b.keepArena()
 	kids := b.derive(start, pos, end)
 	if len(kids) == 1 {
-		return kids[0]
+		return b.materialize(kids[0])
 	}
-	return Node{Kind: "rule", Name: start, Text: b.text(pos, end), Children: kids}
+	return b.materialize(b.addNode("rule", start, b.text(pos, end), kids))
 }
 
 func (b *builder) index(k instKey) *instIndex {
@@ -65,7 +117,8 @@ func (b *builder) index(k instKey) *instIndex {
 	for ip := range idx.pred {
 		idx.pred[ip] = map[int][]int{}
 	}
-	for _, st := range b.steps[k] {
+	for id := b.p.stepAt[k].head; id != 0; id = b.p.steps[id].next {
+		st := b.p.steps[id]
 		if st.ip < 0 || st.ip >= n {
 			continue
 		}
@@ -123,9 +176,9 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 		return pos, l == r
 	}
 	k := instKey{pid: pid, l: l}
-	steps := b.steps[k]
-	if len(steps) <= 32 {
-		return b.pathScan(pr, steps, l, pos)
+	sl := b.p.stepAt[k]
+	if sl.n <= 32 {
+		return b.pathScan(pr, sl.head, l, pos)
 	}
 	idx := b.index(k)
 	ambiguous := false
@@ -151,17 +204,19 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 	return pos, true
 }
 
-func (b *builder) pathScan(pr prod, steps []step, l int, pos []int) ([]int, bool) {
+func (b *builder) pathScan(pr prod, head, l int, pos []int) ([]int, bool) {
 	n := len(pr.rhs)
+	log := b.p.steps
 	ambiguous := false
 	for ip := n; ip >= 1; ip-- {
 		var cands []int
 		end := pos[ip]
-		for _, st := range steps {
+		for id := head; id != 0; id = log[id].next {
+			st := log[id]
 			if st.ip != ip-1 || st.end != end {
 				continue
 			}
-			if !scanReach(steps, l, ip-1, st.i) {
+			if !scanReach(log, head, l, ip-1, st.i) {
 				continue
 			}
 			dup := false
@@ -190,12 +245,13 @@ func (b *builder) pathScan(pr prod, steps []step, l int, pos []int) ([]int, bool
 	return pos, true
 }
 
-func scanReach(steps []step, l, ip, pos int) bool {
+func scanReach(log []step, head, l, ip, pos int) bool {
 	if ip == 0 {
 		return pos == l
 	}
-	for _, st := range steps {
-		if st.ip == ip-1 && st.end == pos && scanReach(steps, l, ip-1, st.i) {
+	for id := head; id != 0; id = log[id].next {
+		st := log[id]
+		if st.ip == ip-1 && st.end == pos && scanReach(log, head, l, ip-1, st.i) {
 			return true
 		}
 	}
@@ -315,19 +371,19 @@ func leftRec(pr prod) bool {
 // derive returns the nodes for nonterminal nt over input[l:r]. Synthetic
 // nonterminals introduced by compilation are transparent, or become the
 // quant / delim / seq node their construct calls for.
-func (b *builder) derive(nt string, l, r int) []Node {
+func (b *builder) derive(nt string, l, r int) []int {
 	c := b.p.c
 	if c.IsDFA(nt) {
-		return []Node{c.dfaNode(b.p.input, nt, b.p.skip(l), r)}
+		return []int{b.intern(c.dfaNode(b.p.input, nt, b.p.skip(l), r))}
 	}
 	pid := b.pickAt(nt, l, r)
 	if pid < 0 {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
-		return []Node{{Kind: "rule", Name: nt, Text: b.text(l, r)}}
+		return []int{b.addNode("rule", nt, b.text(l, r), nil)}
 	}
 	// Transparent left-recursive lists ($dl, $qs) must not append the prefix
 	// children at every spine node — that is O(n²) Node copies.
-	var kids []Node
+	var kids []int
 	if splices(nt) && leftRec(c.prods[pid]) {
 		kids = b.leftRecKids(nt, l, r)
 	} else {
@@ -335,22 +391,22 @@ func (b *builder) derive(nt string, l, r int) []Node {
 	}
 	switch {
 	case !strings.HasPrefix(nt, "$"):
-		return []Node{{Kind: "rule", Name: nt, Text: b.text(l, r), Children: kids}}
+		return []int{b.addNode("rule", nt, b.text(l, r), kids)}
 	case strings.HasPrefix(nt, "$q") && !strings.HasPrefix(nt, "$qs") && !strings.HasPrefix(nt, "$qo"):
 		if len(kids) == 0 {
 			return nil
 		}
-		return []Node{{Kind: "quant", Text: b.text(l, r), Children: kids}}
+		return []int{b.addNode("quant", "", b.text(l, r), kids)}
 	case strings.HasPrefix(nt, "$d") && !strings.HasPrefix(nt, "$dl") && !strings.HasPrefix(nt, "$dtrail"):
 		if len(kids) == 1 {
 			return kids
 		}
-		return []Node{{Kind: "delim", Text: b.text(l, r), Children: kids}}
+		return []int{b.addNode("delim", "", b.text(l, r), kids)}
 	case strings.HasPrefix(nt, "$st"):
 		if len(kids) == 1 {
 			return kids
 		}
-		return []Node{{Kind: "seq", Text: b.text(l, r), Children: kids}}
+		return []int{b.addNode("seq", "", b.text(l, r), kids)}
 	default:
 		return kids
 	}
@@ -359,8 +415,8 @@ func (b *builder) derive(nt string, l, r int) []Node {
 // leftRecKids walks a transparent left-recursive spine N ::= N rest | base
 // once, then concatenates base+rest in a single slice. User-level left
 // recursion is not spliced and still nests via prodKids.
-func (b *builder) leftRecKids(nt string, l, r int) []Node {
-	var tails [][]Node
+func (b *builder) leftRecKids(nt string, l, r int) []int {
+	var tails [][]int
 	curR := r
 	for {
 		pid := b.pickAt(nt, l, curR)
@@ -387,7 +443,7 @@ func (b *builder) leftRecKids(nt string, l, r int) []Node {
 	}
 }
 
-func joinSpine(base []Node, tails [][]Node) []Node {
+func joinSpine(base []int, tails [][]int) []int {
 	n := len(base)
 	for _, t := range tails {
 		n += len(t)
@@ -395,7 +451,7 @@ func joinSpine(base []Node, tails [][]Node) []Node {
 	if len(tails) == 0 {
 		return base
 	}
-	out := make([]Node, 0, n)
+	out := make([]int, 0, n)
 	out = append(out, base...)
 	for i := len(tails) - 1; i >= 0; i-- {
 		out = append(out, tails[i]...)
@@ -403,7 +459,7 @@ func joinSpine(base []Node, tails [][]Node) []Node {
 	return out
 }
 
-func (b *builder) prodKids(pid, l, r int) []Node {
+func (b *builder) prodKids(pid, l, r int) []int {
 	pr := b.p.c.prods[pid]
 	var buf [8]int
 	pos, ok := b.path(pid, l, r, buf[:])
@@ -414,43 +470,41 @@ func (b *builder) prodKids(pid, l, r int) []Node {
 	return b.rhsNodes(pr, pos, 0)
 }
 
-func (b *builder) rhsNodes(pr prod, pos []int, from int) []Node {
-	var kids []Node
+func (b *builder) rhsNodes(pr prod, pos []int, from int) []int {
+	var kids []int
 	for ip := from; ip < len(pr.rhs); ip++ {
 		kids = b.appendElem(kids, pr.rhs[ip], pos[ip], pos[ip+1])
 	}
 	return kids
 }
 
-func (b *builder) appendElem(kids []Node, e elem, i, end int) []Node {
+func (b *builder) appendElem(kids []int, e elem, i, end int) []int {
 	switch e.kind {
 	case ekTerm:
 		switch e.term.(type) {
 		case grammar.Empty:
 			return kids
 		case grammar.String:
-			return append(kids, Node{Kind: "string", Name: e.name, Text: b.text(i, end)})
+			return append(kids, b.addNode("string", e.name, b.text(i, end), nil))
 		default:
-			return append(kids, Node{Kind: "char", Name: e.name, Text: b.text(i, end)})
+			return append(kids, b.addNode("char", e.name, b.text(i, end), nil))
 		}
 	case ekDFA:
-		var n Node
 		if strings.HasPrefix(e.nt, "$lf") {
-			n = Node{Kind: "leaf", Text: b.text(i, end)}
-		} else {
-			n = b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)
+			return append(kids, b.addNode("leaf", e.name, b.text(i, end), nil))
 		}
+		n := b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)
 		if e.name != "" {
 			n.Name = e.name
 		}
-		return append(kids, n)
+		return append(kids, b.intern(n))
 	case ekNT:
 		nodes := b.derive(e.nt, i, end)
 		if e.name != "" {
 			if len(nodes) == 1 {
-				nodes[0].Name = e.name
+				b.nodes[nodes[0]].name = e.name
 			} else {
-				nodes = []Node{{Kind: "seq", Name: e.name, Text: b.text(i, end), Children: nodes}}
+				nodes = []int{b.addNode("seq", e.name, b.text(i, end), nodes)}
 			}
 		}
 		return append(kids, nodes...)
