@@ -32,7 +32,7 @@ smoke: build
 sandbox: build
 	bin/xbnf sandbox
 
-# JSON 64 KB parse speed vs encoding/json. Record the output in docs/parse-speed.md.
+# JSON 64 KB parse speed vs encoding/json and wbnf. Record the output in docs/parse-speed.md.
 bench-json:
 	go test ./engine/ -run '^$' -bench 'BenchmarkJSON64K' -benchmem -benchtime=2s -count=3
 

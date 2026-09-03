@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	wparser "github.com/arr-ai/wbnf/parser"
+	"github.com/arr-ai/wbnf/wbnf"
 	"github.com/marcelocantos/xbnf/syntax"
 )
 
@@ -217,6 +219,28 @@ func BenchmarkJSON64K_stdlibValid(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if !json.Valid(in) {
 			b.Fatal("invalid")
+		}
+	}
+}
+
+func BenchmarkJSON64K_wbnf(b *testing.B) {
+	src, err := os.ReadFile("testdata/json.wbnf")
+	if err != nil {
+		b.Fatal(err)
+	}
+	p, err := wbnf.Compile(string(src), nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	in := nestedJSON(64 << 10)
+	if _, err := p.Parse(wparser.Rule("json"), wparser.NewScanner(in)); err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(int64(len(in)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := p.Parse(wparser.Rule("json"), wparser.NewScanner(in)); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

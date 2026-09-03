@@ -1,0 +1,8 @@
+json -> value;
+value -> object | array | STR | NUMBER | "true" | "false" | "null";
+object -> "{" (member:",")? "}";
+member -> STR ":" value;
+array -> "[" (value:",")? "]";
+STR -> /{"(?:\\.|[^"\\])*"};
+NUMBER -> /{-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?};
+.wrapRE -> /{\s*()\s*};
