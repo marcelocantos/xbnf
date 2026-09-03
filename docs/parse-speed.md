@@ -35,7 +35,7 @@ wbnf: same machine and input, `BenchmarkJSON64K_wbnf` count=2 (25.7 ms).
 xbnf is ~1.2× wbnf, ~47× `Unmarshal`, ~180× `Valid`. A dedicated xbnf-only
 run at `c077348` was ~23–25 ms/op / 48 MB.
 
-Current xbnf-only (🎯T19, 3 s × 5 on the same machine): median **22.9 ms** /
+Current xbnf-only (`7504667`, 🎯T19, 3 s × 5 on the same machine): median **22.9 ms** /
 **6.85 MB** / 137314 allocs. Same-session pool-only baseline (`498a9b3`) was
 median **27.2 ms** / **22.0 MB** / 226920 allocs. Node arena + bump-allocated
 GLL charts cut repeated-parse B/op ~3× and allocs ~40%. One-shot still fills
@@ -57,7 +57,7 @@ recorded run.
 | 2026-09-03 | `c077348` | 31.7e6 | 48.07e6 | 25.7e6 | 0.667e6 | 0.172e6 | Unicode FIRST fix; first stdlib+wbnf side-by-side on `nestedJSON` |
 | 2026-09-03 | `dbe1b6a` | 35.3e6 | 44.29e6 | — | — | — | 3s×5 same-session vs pool: 32.1/32.3/35.3/35.9/36.8 ms, 228223 allocs. Earlier 2s×3 21.0/23.1/25.4 was underpowered. First prod per span, stack path buf, pre-sized maps. |
 | 2026-09-03 | `498a9b3` | 27.2e6 | 22.04e6 | — | — | — | 3s×5: 24.5/25.1/27.2/27.5/30.5 ms, 226920 allocs. ~23% faster than same-session no-pool, not a regression. CPU `runtime.madvise` 17.6%→8.6% (GC returning ~44 MB charts). `newGLL` 49% of alloc_space before, gone after. B/op is repeated-parse; one-shot still ~44 MB. Inline first GSS edge discarded earlier (time up, B/op flat). |
-| 2026-09-03 | T19 | 22.9e6 | 6.85e6 | — | — | — | 3s×5: 20.0/21.3/22.9/23.6/24.0 ms, 137314 allocs. Node arena (int kids, materialize once) + bump GSS edges/pops/steps. Chart slice allocs gone from pprof (advance/pop ~6 objects). SHA filled on the follow-up stamp commit. |
+| 2026-09-03 | `7504667` | 22.9e6 | 6.85e6 | — | — | — | 3s×5: 20.0/21.3/22.9/23.6/24.0 ms, 137314 allocs. Node arena (int kids, materialize once) + bump GSS edges/pops/steps. Chart slice allocs gone from pprof (advance/pop ~6 objects). |
 
 ## Probe harness (`genJSON`, 64 KB)
 
