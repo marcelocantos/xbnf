@@ -109,10 +109,15 @@ func (b *builder) reachable(idx *instIndex, l, ip, pos int) bool {
 
 // path returns the element boundaries of one derivation of production pid
 // over input[l:r]: positions[0] == l and positions[len(rhs)] == r.
-func (b *builder) path(pid, l, r int) ([]int, bool) {
+func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 	pr := b.p.c.prods[pid]
 	n := len(pr.rhs)
-	pos := make([]int, n+1)
+	var pos []int
+	if n+1 <= len(buf) {
+		pos = buf[:n+1]
+	} else {
+		pos = make([]int, n+1)
+	}
 	pos[n] = r
 	if n == 0 {
 		return pos, l == r
@@ -233,6 +238,20 @@ func (b *builder) where(pos int) string {
 
 // pick chooses among productions that all span the same input. Priority is
 // compared first, then #prefer / #avoid. Stack fallbacks lose to anything.
+func (b *builder) pickAt(nt string, l, r int) int {
+	pid, extra := b.p.pidsAt(b.p.c.ntNID[nt], l, r)
+	if pid < 0 {
+		return -1
+	}
+	if extra == nil {
+		return pid
+	}
+	pids := make([]int, 1, 1+len(extra))
+	pids[0] = pid
+	pids = append(pids, extra...)
+	return b.pick(pids)
+}
+
 func (b *builder) pick(pids []int) int {
 	if len(pids) == 1 {
 		return pids[0]
@@ -301,12 +320,11 @@ func (b *builder) derive(nt string, l, r int) []Node {
 	if c.IsDFA(nt) {
 		return []Node{c.dfaNode(b.p.input, nt, b.p.skip(l), r)}
 	}
-	pids := b.p.sym[famKey{nid: c.ntNID[nt], l: l, r: r}]
-	if len(pids) == 0 {
+	pid := b.pickAt(nt, l, r)
+	if pid < 0 {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 		return []Node{{Kind: "rule", Name: nt, Text: b.text(l, r)}}
 	}
-	pid := b.pick(pids)
 	// Transparent left-recursive lists ($dl, $qs) must not append the prefix
 	// children at every spine node — that is O(n²) Node copies.
 	var kids []Node
@@ -345,17 +363,17 @@ func (b *builder) leftRecKids(nt string, l, r int) []Node {
 	var tails [][]Node
 	curR := r
 	for {
-		pids := b.p.sym[famKey{nid: b.p.c.ntNID[nt], l: l, r: curR}]
-		if len(pids) == 0 {
+		pid := b.pickAt(nt, l, curR)
+		if pid < 0 {
 			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 			return joinSpine(nil, tails)
 		}
-		pid := b.pick(pids)
 		pr := b.p.c.prods[pid]
 		if !leftRec(pr) {
 			return joinSpine(b.prodKids(pid, l, curR), tails)
 		}
-		pos, ok := b.path(pid, l, curR)
+		var buf [8]int
+		pos, ok := b.path(pid, l, curR, buf[:])
 		if !ok {
 			b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
 			return joinSpine(nil, tails)
@@ -387,7 +405,8 @@ func joinSpine(base []Node, tails [][]Node) []Node {
 
 func (b *builder) prodKids(pid, l, r int) []Node {
 	pr := b.p.c.prods[pid]
-	pos, ok := b.path(pid, l, r)
+	var buf [8]int
+	pos, ok := b.path(pid, l, r, buf[:])
 	if !ok {
 		b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
 		return nil

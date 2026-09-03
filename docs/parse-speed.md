@@ -47,6 +47,7 @@ recorded run.
 | 2026-09-02 | `351a4a8` | 53e6 | 95e6 | — | — | — | 🎯T18 linear tree flatten; attested 51–55 ms. Same-day re-run 42–45 ms / 95 MB |
 | 2026-09-02 | `6d9786d` | 24e6 | 48e6 | — | — | — | FIRST jump table, chart reuse, packed U/GSS, alloc cuts |
 | 2026-09-03 | `c077348` | 31.7e6 | 48.07e6 | 25.7e6 | 0.667e6 | 0.172e6 | Unicode FIRST fix; first stdlib+wbnf side-by-side on `nestedJSON` |
+| 2026-09-03 | `172feac` | 23.1e6 | 44.29e6 | — | — | — | Dedicated BenchmarkJSON64K: first prod per span (no []int), stack path buf, pre-sized GLL maps. 228k allocs (was 295k). Median of 21.0/23.1/25.4 ms |
 
 ## Probe harness (`genJSON`, 64 KB)
 

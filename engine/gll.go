@@ -55,7 +55,8 @@ type gll struct {
 	gss     []gssNode
 	gssAt   map[uint64]int
 	gssBig  map[gssKey]int
-	sym     map[famKey][]int // prod ids completing (nt,l,r)
+	sym     map[famKey]int   // first completing prod+1; 0 = none
+	symMore map[famKey][]int // extra prods when a span is packed
 	start   string
 	fail    failInfo
 	wrapEnd []int // memoised skipWrap per position; 0 = unknown, else end+1
@@ -70,17 +71,20 @@ type step struct {
 }
 
 func newGLL(c *Compiled, input, start string) *gll {
+	n := len(input) + 1
 	p := &gll{
 		c:     c,
 		input: input,
-		U:     map[uint64]struct{}{},
-		gssAt: map[uint64]int{},
-		sym:   map[famKey][]int{},
+		R:     make([]desc, 0, 64),
+		U:     make(map[uint64]struct{}, n*2),
+		gss:   make([]gssNode, 0, n/2+1),
+		gssAt: make(map[uint64]int, n),
+		sym:   make(map[famKey]int, n),
 		start: start,
 		fail:  failInfo{pos: -1, want: map[string]bool{}},
-		steps: map[instKey][]step{},
+		steps: make(map[instKey][]step, n),
 	}
-	p.wrapEnd = make([]int, len(input)+1) // 0 = unknown; stored values are end+1
+	p.wrapEnd = make([]int, n) // 0 = unknown; stored values are end+1
 	return p
 }
 
@@ -296,7 +300,12 @@ func (p *gll) admits(sl slot, i int) bool {
 	}
 	j := p.skip(i)
 	if j < len(p.input) {
-		r, _ := utf8.DecodeRuneInString(p.input[j:])
+		var r rune
+		if p.input[j] < 0x80 {
+			r = rune(p.input[j])
+		} else {
+			r, _ = utf8.DecodeRuneInString(p.input[j:])
+		}
 		if f.admits(r) {
 			return true
 		}
@@ -441,12 +450,33 @@ func (p *gll) process(d desc) {
 
 func (p *gll) complete(pid, left, right int) {
 	k := famKey{nid: p.c.prods[pid].nid, l: left, r: right}
-	for _, old := range p.sym[k] {
+	cur := p.sym[k]
+	if cur == 0 {
+		p.sym[k] = pid + 1
+		return
+	}
+	if cur-1 == pid {
+		return
+	}
+	extra := p.symMore[k]
+	for _, old := range extra {
 		if old == pid {
 			return
 		}
 	}
-	p.sym[k] = append(p.sym[k], pid)
+	if p.symMore == nil {
+		p.symMore = map[famKey][]int{}
+	}
+	p.symMore[k] = append(extra, pid)
+}
+
+func (p *gll) pidsAt(nid, l, r int) (int, []int) {
+	k := famKey{nid: nid, l: l, r: r}
+	cur := p.sym[k]
+	if cur == 0 {
+		return -1, nil
+	}
+	return cur - 1, p.symMore[k]
 }
 
 func (p *gll) succeeds(nt string, i int) bool {
