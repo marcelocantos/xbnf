@@ -192,6 +192,72 @@ func TestPooledParseStable(t *testing.T) {
 	}
 }
 
+func compileSrc(t testing.TB, src string) *Compiled {
+	t.Helper()
+	g, err := syntax.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := Compile(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// TestPooledWrapAcrossGrammars is 🎯T21: wrapEnd must not follow the pooled gll
+// onto a different Compiled that shares the input string.
+func TestPooledWrapAcrossGrammars(t *testing.T) {
+	ws := compileSrc(t, "s -> \"a\" ;\n#wrap -> \\s* ;\n")
+	bare := compileSrc(t, "s -> \"a\" ;\n#wrap -> () ;\n")
+	const in = " a"
+
+	freshWS := ws.Parse("s", in)
+	freshBare := bare.Parse("s", in)
+	if !freshWS.OK {
+		t.Fatalf("fresh whitespace grammar should accept %q: %s", in, freshWS.Error)
+	}
+	if freshBare.OK {
+		t.Fatalf("fresh no-wrap grammar should reject %q", in)
+	}
+
+	orders := []struct {
+		name        string
+		first, next *Compiled
+		firstOK     bool
+	}{
+		{"ws then no-wrap", ws, bare, true},
+		{"no-wrap then ws", bare, ws, false},
+	}
+	for _, o := range orders {
+		t.Run(o.name, func(t *testing.T) {
+			// One *gll, both Compileds: bind is what newGLL does after Get.
+			p := new(gll)
+			p.bind(o.first, in, "s")
+			first, _ := o.first.runOn(p, "s", in)
+			if first.OK != o.firstOK {
+				t.Fatalf("first: OK=%v want %v err=%s", first.OK, o.firstOK, first.Error)
+			}
+			p.bind(o.next, in, "s")
+			next, _ := o.next.runOn(p, "s", in)
+			wantNext := !o.firstOK
+			if next.OK != wantNext {
+				t.Fatalf("reused gll: OK=%v want %v err=%s", next.OK, wantNext, next.Error)
+			}
+
+			// Same sequence through the global pool (release + Get).
+			a := o.first.Parse("s", in)
+			b := o.next.Parse("s", in)
+			if a.OK != o.firstOK {
+				t.Fatalf("pooled first: OK=%v want %v err=%s", a.OK, o.firstOK, a.Error)
+			}
+			if b.OK != wantNext {
+				t.Fatalf("pooled next: OK=%v want %v err=%s", b.OK, wantNext, b.Error)
+			}
+		})
+	}
+}
+
 func nodesEqual(a, b Node) bool {
 	if a.Kind != b.Kind || a.Name != b.Name || a.Text != b.Text || len(a.Children) != len(b.Children) {
 		return false

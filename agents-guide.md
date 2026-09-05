@@ -15,7 +15,8 @@ The engine is GLL with a DFA terminal layer for regular-fragment rules.
 The CLI supports `--version`, `--help`, `--help-agent`, `sandbox`
 (also `-sandbox`) to host the cheat sheet and a syntax reference,
 `from-wbnf` (also `-from-wbnf`) to emit xbnf for an old wbnf grammar,
-`parse <grammar.xbnf> <input>` to parse with the GLL+DFA engine, and
+`parse <grammar.xbnf> <input>` to parse with the GLL+DFA engine,
+`eval <manifest.json>` for the T22 corpus harness, and
 `--explain <grammar.xbnf>` to list DFA-promoted rules vs GLL forking.
 Sandbox `POST /run` parses xbnf with the bootstrap parser and matches
 input with that engine. Compile-time disambiguation (T6) and self-host
@@ -49,3 +50,5 @@ lazy-quant, posix-class, malformed regex) — never silent; see 🎯T14.
 3. Construct grammar IR in tests for engine work; do not block GLL on the
    bootstrap parser.
 4. A test that depends on alternative order is wrong.
+5. Keep or discard a `BenchmarkJSON64K` change with `make bench-stable`, not a
+   same-session median of sequential 3 s × 5 runs. See `docs/parse-speed.md`.

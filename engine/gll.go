@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/marcelocantos/xbnf/grammar"
 )
 
 type slot struct {
@@ -55,13 +57,15 @@ type gll struct {
 	gss      []gssNode
 	gssAt    uMap
 	gssBig   map[gssKey]genID
-	sym      map[uint64]genID // packFam(nid,l,r) → first prod+1 this generation
+	sym      uMap // packFam(nid,l,r) → first prod+1 this generation
+	endAt    uMap // packNidLeft(nid,l) → max right this generation
 	symBig   map[famKey]genID
 	symMore  map[famKey][]int // extra prods when a span is packed
 	start    string
 	fail     failInfo
 	wrapEnd  []int      // memoised skipWrap per position; 0 = unknown, else end+1
-	wrapIn   string     // input wrapEnd was filled for; reused on the same string
+	wrapIn   string     // input wrapEnd was filled for
+	wrapC    *Compiled  // #wrap that wrapEnd was filled for; reuse needs both
 	work     int        // descriptors processed
 	stepAt   uMap       // packInst(pid,l) → slab this generation
 	slabs    []stepList // dummy at 0
@@ -73,7 +77,7 @@ type gll struct {
 	tnodes   []inode
 	tkids    []int
 	kscratch []int
-	reach    map[uint64]reachVal
+	reach    uMap // packReach → 0 false / 1 true this generation
 	spineBuf []kidSpan
 	spineOut []int
 	stepAtK  instKey
@@ -88,18 +92,9 @@ func packFam(nid, l, r int) (uint64, bool) {
 	return uint64(nid)<<40 | uint64(l)<<20 | uint64(r), true
 }
 
-func unpackFam(k uint64) (nid, l, r int) {
-	return int(k >> 40), int(k>>20) & 0xFFFFF, int(k) & 0xFFFFF
-}
-
 type genID struct {
 	gen uint32
 	id  int
-}
-
-type reachVal struct {
-	gen uint32
-	v   bool
 }
 
 type stepList struct {
@@ -119,6 +114,10 @@ func packInst(pid, l int) uint64 {
 	return uint64(uint32(pid))<<32 | uint64(uint32(l))
 }
 
+func packNidLeft(nid, l int) uint64 {
+	return uint64(uint32(nid))<<32 | uint64(uint32(l))
+}
+
 func packReach(pid, l, ip, pos int) (uint64, bool) {
 	if pid < 0 || pid > 0xFFF || ip < 0 || ip > 0xF || l < 0 || l > 0xFFFFF || pos < 0 || pos > 0xFFFFF {
 		return 0, false
@@ -129,8 +128,13 @@ func packReach(pid, l, ip, pos int) (uint64, bool) {
 var gllPool = sync.Pool{New: func() any { return new(gll) }}
 
 func newGLL(c *Compiled, input, start string) *gll {
-	n := len(input) + 1
 	p := gllPool.Get().(*gll)
+	p.bind(c, input, start)
+	return p
+}
+
+func (p *gll) bind(c *Compiled, input, start string) {
+	n := len(input) + 1
 	p.c = c
 	p.input = input
 	p.start = start
@@ -153,18 +157,21 @@ func newGLL(c *Compiled, input, start string) *gll {
 		p.uset.clear()
 		p.gssAt.clear()
 		p.stepAt.clear()
-		clear(p.reach)
-		clear(p.sym)
+		p.reach.clear()
+		p.sym.clear()
+		p.endAt.clear()
 		clear(p.symBig)
 		p.gen = 1
 	}
 	if p.uset.slots == nil {
-		p.uset.init(n * 2)
+		p.uset.init(n * 4)
 	} else {
 		p.uset.reset()
 	}
-	if p.reach == nil {
-		p.reach = make(map[uint64]reachVal)
+	if p.reach.slots == nil {
+		p.reach.init(n)
+	} else {
+		p.reach.reset()
 	}
 	p.gss = p.gss[:0]
 	if cap(p.gss) < n/2+1 {
@@ -175,10 +182,15 @@ func newGLL(c *Compiled, input, start string) *gll {
 	} else {
 		p.gssAt.reset()
 	}
-	if p.sym == nil {
-		p.sym = make(map[uint64]genID, n)
-	} else if p.wrapIn != input {
-		clear(p.sym)
+	if p.sym.slots == nil {
+		p.sym.init(n)
+	} else {
+		p.sym.reset()
+	}
+	if p.endAt.slots == nil {
+		p.endAt.init(n / 4)
+	} else {
+		p.endAt.reset()
 	}
 	if p.stepAt.slots == nil {
 		p.stepAt.init(n / 8)
@@ -193,17 +205,18 @@ func newGLL(c *Compiled, input, start string) *gll {
 	p.stepPack = keepCap(p.stepPack, n)
 	p.edges = keepDummy(p.edges, n/2+1)
 	p.pops = keepDummy(p.pops, n/2+1)
-	if p.wrapIn == input && len(p.wrapEnd) == n {
-		// same input: skipWrap results are unchanged
+	if p.wrapC == c && p.wrapIn == input && len(p.wrapEnd) == n {
+		// same Compiled and input: skipWrap results are unchanged
 	} else if cap(p.wrapEnd) < n {
 		p.wrapEnd = make([]int, n)
 		p.wrapIn = input
+		p.wrapC = c
 	} else {
 		p.wrapEnd = p.wrapEnd[:n]
 		clear(p.wrapEnd)
 		p.wrapIn = input
+		p.wrapC = c
 	}
-	return p
 }
 
 func keepDummy[T any](s []T, hint int) []T {
@@ -261,6 +274,107 @@ func (p *gll) release() {
 }
 
 // skip is skipWrap memoised per position.
+// lineIndent is the column of the first non-space on the line containing i.
+// @col compares this indent, not the cursor, so a constraint can sit at the
+// beginning of the line while wrap still skips the indent for the next token.
+func lineIndent(input string, i int) int {
+	if i < 0 {
+		i = 0
+	}
+	if i > len(input) {
+		i = len(input)
+	}
+	start := i
+	for start > 0 && input[start-1] != '\n' {
+		start--
+	}
+	col := 0
+	for start < len(input) {
+		switch input[start] {
+		case ' ':
+			col++
+			start++
+		case '\t':
+			col += 8 - col%8
+			start++
+		default:
+			return col
+		}
+	}
+	return col
+}
+
+func colOK(input string, i int, p grammar.PosProp) bool {
+	if p.Name != "col" {
+		return false
+	}
+	col := lineIndent(input, i)
+	n := 0
+	if p.Arg != "parent" && p.Arg != "" {
+		for _, c := range p.Arg {
+			if c < '0' || c > '9' {
+				return false
+			}
+			n = n*10 + int(c-'0')
+		}
+	}
+	switch p.Op {
+	case "", "=":
+		return col == n
+	case ">":
+		return col > n
+	case "<":
+		return col < n
+	case ">=":
+		return col >= n
+	case "<=":
+		return col <= n
+	case "!=":
+		return col != n
+	default:
+		return false
+	}
+}
+
+func (p *gll) boundText(pid, left int, name string) (string, bool) {
+	pr := p.c.prods[pid]
+	ip := -1
+	for i, e := range pr.rhs {
+		if e.name == name {
+			ip = i
+			break
+		}
+	}
+	if ip < 0 {
+		return "", false
+	}
+	id, ok := p.stepAt.get(packInst(pid, left), p.gen)
+	if !ok || id <= 0 || id >= len(p.slabs) {
+		return "", false
+	}
+	for h := p.slabs[id].head; h != 0; h = p.steps[h].next {
+		st := p.steps[h]
+		if st.ip != ip {
+			continue
+		}
+		a := st.i
+		if a < 0 {
+			a = 0
+		}
+		if e := p.skip(a); e <= st.end {
+			a = e
+		}
+		if a > st.end {
+			a = st.end
+		}
+		if st.end > len(p.input) {
+			return "", false
+		}
+		return p.input[a:st.end], true
+	}
+	return "", false
+}
+
 func (p *gll) skip(i int) int {
 	if i < 0 || i > len(p.input) {
 		return i
@@ -306,6 +420,10 @@ func (c *Compiled) run(start, input string) (*Result, *gll) {
 		return &Result{Error: "unknown rule " + start}, nil
 	}
 	p := newGLL(c, input, start)
+	return c.runOn(p, start, input)
+}
+
+func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 	pos := p.skip(0)
 	dummy := p.gssNode(slot{pid: -1, ip: 0}, pos)
 	if c.IsDFA(start) {
@@ -614,12 +732,32 @@ func (p *gll) process(d desc) {
 	next := slot{pid: d.sl.pid, ip: d.sl.ip + 1}
 	switch e.kind {
 	case ekTerm:
-		j := p.skip(d.i)
-		end, ok := matchTerminal(e.term, p.input, j)
-		if ok {
-			p.advance(next, d.u, d.i, end)
-		} else {
-			p.noteFail(j, describeElem(e), pr.nt, false)
+		switch x := e.term.(type) {
+		case grammar.PosProp:
+			if colOK(p.input, d.i, x) {
+				p.advance(next, d.u, d.i, d.i)
+			} else {
+				p.noteFail(d.i, describeElem(e), pr.nt, false)
+			}
+		case grammar.Ref:
+			j := p.skip(d.i)
+			want, ok := p.boundText(d.sl.pid, p.gss[d.u].i, x.Name)
+			if !ok && x.HasDefault {
+				want, ok = x.Default, true
+			}
+			if ok && j+len(want) <= len(p.input) && p.input[j:j+len(want)] == want {
+				p.advance(next, d.u, d.i, j+len(want))
+			} else {
+				p.noteFail(j, "%"+x.Name, pr.nt, false)
+			}
+		default:
+			j := p.skip(d.i)
+			end, ok := matchTerminal(e.term, p.input, j)
+			if ok {
+				p.advance(next, d.u, d.i, end)
+			} else {
+				p.noteFail(j, describeElem(e), pr.nt, false)
+			}
 		}
 	case ekDFA:
 		j := p.skip(d.i)
@@ -663,16 +801,17 @@ func (p *gll) complete(pid, left, right int) {
 }
 
 func (p *gll) recordProd(nid, left, right, pid int) {
+	p.noteEnd(nid, left, right)
 	fk := famKey{nid: nid, l: left, r: right}
 	if key, ok := packFam(nid, left, right); ok {
-		if ref, hit := p.sym[key]; hit && ref.gen == p.gen {
-			if ref.id-1 == pid {
+		if id, hit := p.sym.get(key, p.gen); hit {
+			if id-1 == pid {
 				return
 			}
 			p.addSymMore(fk, pid)
 			return
 		}
-		p.sym[key] = genID{gen: p.gen, id: pid + 1}
+		p.sym.put(key, p.gen, pid+1)
 		return
 	}
 	if ref, hit := p.symBig[fk]; hit && ref.gen == p.gen {
@@ -686,6 +825,13 @@ func (p *gll) recordProd(nid, left, right, pid int) {
 		p.symBig = map[famKey]genID{}
 	}
 	p.symBig[fk] = genID{gen: p.gen, id: pid + 1}
+}
+
+func (p *gll) noteEnd(nid, left, right int) {
+	k := packNidLeft(nid, left)
+	if cur, ok := p.endAt.get(k, p.gen); !ok || right > cur {
+		p.endAt.put(k, p.gen, right)
+	}
 }
 
 func (p *gll) addSymMore(k famKey, pid int) {
@@ -704,8 +850,8 @@ func (p *gll) addSymMore(k famKey, pid int) {
 func (p *gll) pidsAt(nid, l, r int) (int, []int) {
 	fk := famKey{nid: nid, l: l, r: r}
 	if key, ok := packFam(nid, l, r); ok {
-		if ref, hit := p.sym[key]; hit && ref.gen == p.gen {
-			return ref.id - 1, p.symMore[fk]
+		if id, hit := p.sym.get(key, p.gen); hit {
+			return id - 1, p.symMore[fk]
 		}
 		return -1, nil
 	}
@@ -716,16 +862,10 @@ func (p *gll) pidsAt(nid, l, r int) (int, []int) {
 }
 
 func (p *gll) maxRight(nid, left int) int {
-	end := -1
-	for k, v := range p.sym {
-		if v.gen != p.gen {
-			continue
-		}
-		kn, kl, kr := unpackFam(k)
-		if kn == nid && kl == left && kr > end {
-			end = kr
-		}
+	if end, ok := p.endAt.get(packNidLeft(nid, left), p.gen); ok {
+		return end
 	}
+	end := -1
 	for k, v := range p.symBig {
 		if v.gen != p.gen {
 			continue
@@ -738,14 +878,8 @@ func (p *gll) maxRight(nid, left int) int {
 }
 
 func (p *gll) hasLeft(nid, left int) bool {
-	for k, v := range p.sym {
-		if v.gen != p.gen {
-			continue
-		}
-		kn, kl, _ := unpackFam(k)
-		if kn == nid && kl == left {
-			return true
-		}
+	if _, ok := p.endAt.get(packNidLeft(nid, left), p.gen); ok {
+		return true
 	}
 	for k, v := range p.symBig {
 		if v.gen != p.gen {

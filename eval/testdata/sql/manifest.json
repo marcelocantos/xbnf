@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "language": "sql",
+  "dialect": "PostgreSQL SQL",
+  "dialect_version": "subset",
+  "source": {
+    "name": "xbnf standing SQL subset fixtures",
+    "revision": "in-repo",
+    "license": "Apache-2.0",
+    "url": "https://github.com/marcelocantos/xbnf"
+  },
+  "grammar": "grammar.xbnf",
+  "start": "query",
+  "selection": "Both listed files; no sampling.",
+  "coverage": "Uppercase-keyword SELECT with FROM/WHERE, arithmetic, AND/OR, function calls with expr args (not COUNT(*)). No joins, DDL, subqueries, windows.",
+  "exclusions": [],
+  "reference": {
+    "name": "PostgreSQL raw parser (libpg_query / pg_query)",
+    "work": "parse analysis only, not query execution"
+  },
+  "oracle_cmd": [
+    "pg_query"
+  ],
+  "files": [
+    {
+      "path": "accept.sql",
+      "sha256": "c8c8cc574f87a28ab1b48f47b97f074d407af7f153d393dc181e7e0775d6c959",
+      "expect": "accept",
+      "class": "syntax"
+    },
+    {
+      "path": "reject.sql",
+      "sha256": "d27973f8d0d2b0b61a39e226cf574d775b8089f82284a0c7d334edf0291cf896",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "WHERE clause with a bare = and no operand"
+    }
+  ]
+}

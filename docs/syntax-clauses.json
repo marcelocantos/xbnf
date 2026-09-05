@@ -274,9 +274,9 @@
     "group": "Atoms",
     "title": "Back-reference",
     "syntax": "%name",
-    "blurb": "Match a previously captured string. Not executed in the first-slice runner.",
-    "slice": "later",
-    "grammar": "start -> tag=/[A-Z]+/ %tag ;\n#wrap -> () ;\n",
+    "blurb": "Match a previously captured string from a named sibling in the same production.",
+    "slice": "core",
+    "grammar": "start -> tag=/[A-Z]{3}/ %tag ;\n#wrap -> () ;\n",
     "input": "ABCABC"
   },
   {
@@ -334,8 +334,8 @@
     "group": "Atoms",
     "title": "Positional @col",
     "syntax": "@col  @col(=0)",
-    "blurb": "Column/line predicates. Designed, not first slice.",
-    "slice": "later",
+    "blurb": "Line-indent predicate. @col(=0) / @col(>0) compare the indent of the current line, not wrap-skipped cursor column.",
+    "slice": "core",
     "grammar": "start -> stmt @col(=0) ;\nstmt -> \"pass\" ;\n#wrap -> () ;\n",
     "input": "pass"
   },

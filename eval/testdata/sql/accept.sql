@@ -1,0 +1,3 @@
+SELECT a, b FROM t WHERE a = 1 AND b <> 2;
+SELECT COUNT(1) FROM t;
+SELECT x + 1 AS y FROM t;

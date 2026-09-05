@@ -68,6 +68,7 @@ grammar/      IR: Rule, Term (seq, alt, quant, stack, named, …)
 syntax/       bootstrap parser: xbnf source → grammar.Grammar
 engine/       GLL parse functions + DFA runner + SPPF/tree construction
 fromwbnf/     parse old .wbnf into an IR of meaning; Convert emits xbnf
+eval/         corpus harness: manifests, correctness, cold/warm, diagnostics
 ast/          committed parse tree (after disambiguation)
 ```
 

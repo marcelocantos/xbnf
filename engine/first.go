@@ -144,8 +144,12 @@ func (c *Compiled) elemFirst(e elem, nt map[string]firstInfo) firstInfo {
 	switch e.kind {
 	case ekTerm:
 		switch x := e.term.(type) {
-		case grammar.Empty:
+		case grammar.Empty, grammar.PosProp:
 			return firstInfo{nullable: true}
+		case grammar.Ref:
+			// Bound text consumes input. Treating it as ε leaks FIRST of
+			// what follows (e.g. ">" after "</" %n ">").
+			return firstInfo{atoms: []firstAtom{{term: grammar.AnyChar{}}}}
 		case grammar.String:
 			if x.Text == "" {
 				return firstInfo{nullable: true}

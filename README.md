@@ -18,6 +18,8 @@ The parse engine is not written yet.
 - [`docs/examples/`](docs/examples/) — JSON, calc, and larger sketches
 - [`docs/plan.md`](docs/plan.md) — locked decisions and work graph
 - [`docs/parse-speed.md`](docs/parse-speed.md) — JSON 64 KB parse speed vs wbnf and `encoding/json`
+- [`docs/eval/contract.md`](docs/eval/contract.md) — T22 corpus evaluation contract
+- [`docs/eval/T22.md`](docs/eval/T22.md) — seven-language evaluation report
 - [`docs/toward-a-universal-grammar.md`](docs/toward-a-universal-grammar.md) —
   design origin (written against wbnf; see the lineage note at the top)
 
@@ -35,6 +37,8 @@ xbnf --help-agent
 xbnf sandbox          # http://127.0.0.1:7373/docs/index.html
 xbnf -from-wbnf old.wbnf > old.xbnf
 xbnf parse docs/examples/json.xbnf input.json
+xbnf eval eval/testdata/json-smoke/manifest.json
+xbnf eval eval/testdata/sql/manifest.json
 xbnf --explain docs/examples/json.xbnf
 ```
 

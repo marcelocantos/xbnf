@@ -153,6 +153,19 @@ func TestRunHelpMentionsParse(t *testing.T) {
 	if !strings.Contains(stderr, "parse") || !strings.Contains(stderr, "explain") {
 		t.Fatalf("help missing parse/explain: %q", stderr)
 	}
+	if !strings.Contains(stderr, "eval") {
+		t.Fatalf("help missing eval: %q", stderr)
+	}
+}
+
+func TestRunEvalJSONSmoke(t *testing.T) {
+	code, stdout, stderr := capture(t, []string{"eval", "../../eval/testdata/json-smoke/manifest.json"})
+	if code != 0 {
+		t.Fatalf("eval exit %d stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, `"passed": 2`) {
+		t.Fatalf("eval stdout: %q", stdout)
+	}
 }
 
 func TestRunHelpMentionsFromWbnf(t *testing.T) {

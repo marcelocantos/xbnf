@@ -1,0 +1,26 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Coverage: well-formed elements with matching names via %n, text, comments.
+// No DTD, entities, processing instructions, CDATA, namespaces, or mixed
+// attribute quote styles beyond double quotes. Tag-name match is engine %ref.
+
+doc -> elem ;
+
+elem -> (empty_elem | pair_elem) #longest ;
+empty_elem -> "<" n=Name attrs? "/>" ;
+pair_elem -> "<" n=Name attrs? ">" content* "</" %n ">" ;
+content -> (comment | elem | text) #longest ;
+
+attrs -> attr+ ;
+attr -> Name "=" STR ;
+
+Name -> /{ #wrap -> () ; [A-Za-z_:] [A-Za-z0-9._:-]* ; }/ ;
+
+text -> /{ #wrap -> () ; [^<]+ ; }/ ;
+
+comment -> /{ #wrap -> () ; "<!--" ([^-] | "-" [^-])* "-->" ; }/ ;
+
+STR -> /{ #wrap -> () ; '"' [^"<]* '"' ; }/ ;
+
+#wrap -> \s* ;

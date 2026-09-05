@@ -6,6 +6,7 @@ package engine
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/marcelocantos/xbnf/grammar"
 )
@@ -109,6 +110,9 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 		}
 	}
 	c.analyzeRegular()
+	if err := c.checkDefined(); err != nil {
+		return nil, err
+	}
 	for _, name := range c.order {
 		r := c.rules[name]
 		if hasMod(r.Mods, "lex") && !c.regular[name] {
@@ -459,6 +463,96 @@ func splitAlt(t grammar.Term) []grammar.Term {
 	return []grammar.Term{t}
 }
 
+func (c *compiler) checkDefined() error {
+	var missing []string
+	seen := map[string]bool{}
+	note := func(name string) {
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		missing = append(missing, name)
+	}
+	var walk func(t grammar.Term, locals map[string]bool)
+	walk = func(t grammar.Term, locals map[string]bool) {
+		if t == nil {
+			return
+		}
+		switch x := t.(type) {
+		case grammar.Ident:
+			if _, ok := c.rules[x.Name]; ok {
+				return
+			}
+			if locals[x.Name] {
+				return
+			}
+			note(x.Name)
+		case grammar.Seq:
+			for _, s := range x.Terms {
+				walk(s, locals)
+			}
+		case grammar.Alt:
+			for _, s := range x.Terms {
+				walk(s, locals)
+			}
+		case grammar.OrderedAlt:
+			for _, s := range x.Terms {
+				walk(s, locals)
+			}
+		case grammar.Named:
+			walk(x.Term, locals)
+		case grammar.Leaf:
+			walk(x.Term, locals)
+		case grammar.Quant:
+			walk(x.Term, locals)
+		case grammar.Delim:
+			walk(x.Term, locals)
+			walk(x.Sep, locals)
+		case grammar.Stack:
+			for _, s := range x.Levels {
+				walk(s, locals)
+			}
+		case grammar.Scope:
+			loc := map[string]bool{}
+			for k, v := range locals {
+				loc[k] = v
+			}
+			for _, d := range x.Decls {
+				if r, ok := d.(grammar.Rule); ok {
+					loc[r.Name] = true
+				}
+			}
+			for _, d := range x.Decls {
+				switch st := d.(type) {
+				case grammar.Rule:
+					walk(st.Body, loc)
+				case grammar.Wrap:
+					walk(st.Body, loc)
+				}
+			}
+			walk(x.Term, loc)
+		case grammar.Lookahead:
+			walk(x.Term, locals)
+		case grammar.NegLookahead:
+			walk(x.Term, locals)
+		case grammar.MacroCall:
+			for _, a := range x.Args {
+				walk(a, locals)
+			}
+		}
+	}
+	for _, name := range c.order {
+		walk(c.rules[name].Body, nil)
+	}
+	if c.wrap != nil {
+		walk(c.wrap, nil)
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("undefined rule %s", strings.Join(missing, ", "))
+}
+
 func (c *compiler) flatten(t grammar.Term) []elem {
 	switch x := t.(type) {
 	case grammar.Seq:
@@ -514,6 +608,8 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 		return []elem{{kind: ekNegLook, nt: h}}
 	case grammar.Empty:
 		return nil
+	case grammar.PosProp, grammar.Ref:
+		return []elem{{kind: ekTerm, term: x}}
 	case grammar.String, grammar.CharClass, grammar.Escape, grammar.AnyChar:
 		return []elem{{kind: ekTerm, term: x}}
 	case grammar.Self:
@@ -665,37 +761,41 @@ func rewriteSelf(t grammar.Term, tighter string) grammar.Term {
 }
 
 func (c *compiler) scopeNT(sc grammar.Scope) string {
-	saved := map[string]grammar.Rule{}
-	savedReg := map[string]bool{}
+	type savedRule struct {
+		name string
+		r    grammar.Rule
+		ok   bool
+		reg  bool
+	}
+	var saved []savedRule
 	for _, d := range sc.Decls {
-		if r, ok := d.(grammar.Rule); ok {
-			saved[r.Name] = c.rules[r.Name]
-			savedReg[r.Name] = c.regular[r.Name]
-			c.rules[r.Name] = r
-			refs, bad := func() ([]string, bool) { return nil, false }()
-			_ = refs
-			c.regular[r.Name] = !bad && !c.regular[r.Name] && c.regular[r.Name]
-			// Local rules: recompute regularity simply — if body has no Ident cycles through parent.
-			c.regular[r.Name] = localRegular(r.Body)
-			if c.regular[r.Name] {
-				// leave for DFA at use via flatten Ident — but c.regular is used in flatten.
+		r, ok := d.(grammar.Rule)
+		if !ok {
+			continue
+		}
+		old, existed := c.rules[r.Name]
+		saved = append(saved, savedRule{name: r.Name, r: old, ok: existed, reg: c.regular[r.Name]})
+		c.rules[r.Name] = r
+		c.regular[r.Name] = localRegular(r.Body)
+		if c.regular[r.Name] {
+			if d, err := buildDFA(r.Body, c); err == nil {
+				if c.extraDFA == nil {
+					c.extraDFA = map[string]*dfa{}
+				}
+				c.extraDFA[r.Name] = d
 			}
-			c.order = append(c.order, r.Name)
-			if c.regular[r.Name] {
-				// DFA built later only in Compile loop over original order.
-			}
+		} else {
+			c.emitRule(r.Name, r.Body)
 		}
 	}
 	h := c.fresh("sc")
 	c.emitRule(h, sc.Term)
-	for name, r := range saved {
-		if r.Name == "" {
-			delete(c.rules, name)
-			delete(c.regular, name)
-			continue
+	for i := len(saved) - 1; i >= 0; i-- {
+		sr := saved[i]
+		if sr.ok {
+			c.rules[sr.name] = sr.r
+			c.regular[sr.name] = sr.reg
 		}
-		c.rules[name] = r
-		c.regular[name] = savedReg[name]
 	}
 	return h
 }

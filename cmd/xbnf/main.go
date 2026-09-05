@@ -22,6 +22,9 @@ func run(args []string) int {
 	if len(args) > 0 && args[0] == "parse" {
 		return runParse(args[1:])
 	}
+	if len(args) > 0 && args[0] == "eval" {
+		return runEval(args[1:])
+	}
 	sandboxCmd := false
 	if len(args) > 0 && args[0] == "sandbox" {
 		sandboxCmd = true
@@ -40,6 +43,7 @@ func run(args []string) int {
 		fmt.Fprintf(out, "  xbnf from-wbnf file.wbnf\n")
 		fmt.Fprintf(out, "  xbnf -from-wbnf file.wbnf\n")
 		fmt.Fprintf(out, "  xbnf parse grammar.xbnf input\n")
+		fmt.Fprintf(out, "  xbnf eval [-o report.json] [-self] manifest.json\n")
 		fmt.Fprintf(out, "  xbnf --explain grammar.xbnf\n\n")
 		fs.PrintDefaults()
 	}

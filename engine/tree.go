@@ -52,10 +52,13 @@ func newBuilder(p *gll) *builder {
 	return &builder{p: p, nodes: nodes, kids: kids}
 }
 
-// packSteps flattens and sorts only large instances. Small ones stay as
-// linked lists in p.steps and are copied into a stack buffer on first use.
+// packSteps flattens each instance into a contiguous run sorted by (ip, end).
 func (p *gll) packSteps() {
-	packed := p.stepPack[:0]
+	need := 0
+	for i := 1; i < len(p.slabs); i++ {
+		need += p.slabs[i].n
+	}
+	packed := keepCap(p.stepPack, need)
 	for i := 1; i < len(p.slabs); i++ {
 		sl := &p.slabs[i]
 		if sl.n == 0 {
@@ -66,9 +69,7 @@ func (p *gll) packSteps() {
 		for id := sl.head; id != 0; id = p.steps[id].next {
 			packed = append(packed, p.steps[id])
 		}
-		if sl.n > pathScanCutoff {
-			p.sortTmp = sortRunByIPEnd(packed[start:], p.sortTmp)
-		}
+		p.sortTmp = sortRunByIPEnd(packed[start:], p.sortTmp)
 		sl.head = start
 		sl.packed = true
 	}
@@ -238,7 +239,7 @@ func (b *builder) stepRun(pid, l int) []step {
 }
 
 func matchSteps(run []step, ip, end int) []step {
-	if len(run) <= pathScanCutoff {
+	if len(run) == 0 {
 		return nil
 	}
 	i := sort.Search(len(run), func(i int) bool {
@@ -331,9 +332,8 @@ func (b *builder) root(start string, pos, end int) Node {
 	return b.materialize(id)
 }
 
-// pathScanCutoff is the step-run size above which the run is sorted by
-// (ip, end), matchSteps binary-searches, and reachability is memoised.
-// Smaller runs stay unsorted and are scanned linearly.
+// pathScanCutoff is the step-run size above which reachability is memoised.
+// All runs are sorted by (ip, end) and matchSteps binary-searches.
 const pathScanCutoff = 32
 
 // path returns the element boundaries of one derivation of production pid
@@ -352,10 +352,10 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 		return pos, l == r
 	}
 	run := b.stepRun(pid, l)
-	var memo map[uint64]reachVal
+	var memo *uMap
 	gen := b.p.gen
 	if len(run) > pathScanCutoff {
-		memo = b.p.reach
+		memo = &b.p.reach
 	}
 	ambiguous := false
 	var candBuf [8]int
@@ -363,26 +363,8 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 	for ip := n; ip >= 1; ip-- {
 		cands := candBuf[:0]
 		end := pos[ip]
-		if len(run) > pathScanCutoff {
-			for _, st := range matchSteps(run, ip-1, end) {
-				if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
-					dup := false
-					for _, c := range cands {
-						if c == st.i {
-							dup = true
-							break
-						}
-					}
-					if !dup {
-						cands = append(cands, st.i)
-					}
-				}
-			}
-		} else {
-			for _, st := range run {
-				if st.ip != ip-1 || st.end != end || !stepReach(run, pid, l, ip-1, st.i, memo, gen) {
-					continue
-				}
+		for _, st := range matchSteps(run, ip-1, end) {
+			if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
 				dup := false
 				for _, c := range cands {
 					if c == st.i {
@@ -431,33 +413,27 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 	return pos, true
 }
 
-func stepReach(run []step, pid, l, ip, pos int, memo map[uint64]reachVal, gen uint32) bool {
+func stepReach(run []step, pid, l, ip, pos int, memo *uMap, gen uint32) bool {
 	if ip == 0 {
 		return pos == l
 	}
 	if key, ok := packReach(pid, l, ip, pos); ok && memo != nil {
-		if v, hit := memo[key]; hit && v.gen == gen {
-			return v.v
+		if v, hit := memo.get(key, gen); hit {
+			return v != 0
 		}
-		memo[key] = reachVal{gen: gen, v: false} // cycle guard
+		memo.put(key, gen, 0) // cycle guard
 		out := stepReachOnce(run, pid, l, ip, pos, memo, gen)
-		memo[key] = reachVal{gen: gen, v: out}
+		if out {
+			memo.put(key, gen, 1)
+		}
 		return out
 	}
 	return stepReachOnce(run, pid, l, ip, pos, nil, gen)
 }
 
-func stepReachOnce(run []step, pid, l, ip, pos int, memo map[uint64]reachVal, gen uint32) bool {
-	if len(run) > pathScanCutoff {
-		for _, st := range matchSteps(run, ip-1, pos) {
-			if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
-				return true
-			}
-		}
-		return false
-	}
-	for _, st := range run {
-		if st.ip == ip-1 && st.end == pos && stepReach(run, pid, l, ip-1, st.i, memo, gen) {
+func stepReachOnce(run []step, pid, l, ip, pos int, memo *uMap, gen uint32) bool {
+	for _, st := range matchSteps(run, ip-1, pos) {
+		if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
 			return true
 		}
 	}
@@ -687,8 +663,10 @@ func (b *builder) appendElem(kids []int, e elem, i, end int) []int {
 	switch e.kind {
 	case ekTerm:
 		switch e.term.(type) {
-		case grammar.Empty:
+		case grammar.Empty, grammar.PosProp:
 			return kids
+		case grammar.Ref:
+			return append(kids, b.addNode("ref", e.name, b.text(i, end), nil))
 		case grammar.String:
 			return append(kids, b.addNode("string", e.name, b.text(i, end), nil))
 		default:
@@ -847,8 +825,10 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 			return pos, Node{}, false
 		}
 		return end, Node{Kind: "char", Text: w.input[pos:end]}, true
-	case grammar.Empty:
+	case grammar.Empty, grammar.PosProp:
 		return pos, Node{Kind: "empty"}, true
+	case grammar.Ref:
+		return pos, Node{}, false
 	case grammar.Seq:
 		kids := make([]Node, 0, len(x.Terms))
 		cur := pos

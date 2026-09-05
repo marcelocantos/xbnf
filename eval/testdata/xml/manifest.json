@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "language": "xml",
+  "dialect": "XML 1.0 well-formedness",
+  "dialect_version": "1.0",
+  "source": {
+    "name": "xbnf standing XML well-formedness fixtures",
+    "revision": "in-repo",
+    "license": "Apache-2.0",
+    "url": "https://github.com/marcelocantos/xbnf"
+  },
+  "grammar": "grammar.xbnf",
+  "start": "doc",
+  "selection": "Both listed files; no sampling.",
+  "coverage": "Elements with matching names via %n, attributes, text, comments. No DTD, PI, CDATA, entities, namespaces.",
+  "exclusions": [],
+  "reference": {
+    "name": "libxml2 xmllint",
+    "work": "well-formedness (--noout); not schema/DTD"
+  },
+  "oracle_cmd": [
+    "xmllint",
+    "--noout",
+    "-"
+  ],
+  "files": [
+    {
+      "path": "accept.xml",
+      "sha256": "b09f4d760281abab718ec3f9aec279e0f48ab2557dc516f1a4b4e978cf5345ed",
+      "expect": "accept",
+      "class": "syntax"
+    },
+    {
+      "path": "reject.xml",
+      "sha256": "82112d986eb057730a2b2843271dd6b3393346ee3b05d0a5a53cb06964d6d948",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "unclosed root element"
+    }
+  ]
+}

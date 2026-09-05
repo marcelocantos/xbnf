@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "language": "c++",
+  "dialect": "C++ translation unit (preprocessed)",
+  "dialect_version": "preprocessed-subset",
+  "source": {
+    "name": "xbnf standing preprocessed C++ fixtures",
+    "revision": "in-repo",
+    "license": "Apache-2.0",
+    "url": "https://github.com/marcelocantos/xbnf"
+  },
+  "grammar": "grammar.xbnf",
+  "start": "tu",
+  "selection": "Both listed files; no sampling.",
+  "coverage": "Preprocessed functions/globals, if/return, int/void/bool. No templates, classes, preprocessor, or name lookup. Input is already preprocessed; clang -E cost is not in xbnf time.",
+  "exclusions": [],
+  "reference": {
+    "name": "Clang -fsyntax-only -x c++",
+    "work": "syntax+semantic analysis of Clang; not parse-only. Preprocessing is out of band."
+  },
+  "oracle_cmd": [
+    "clang",
+    "-fsyntax-only",
+    "-x",
+    "c++",
+    "-"
+  ],
+  "files": [
+    {
+      "path": "accept.ii",
+      "sha256": "43d475ce9d1d5266136e75b82d8d69e05782790154b04d25335c6f1ee928d811",
+      "expect": "accept",
+      "class": "syntax"
+    },
+    {
+      "path": "reject.ii",
+      "sha256": "e256c737caf741d2cbb46afab9a8e36f66b89dde0342c3014ffad1015b76a632",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "missing closing paren in parameter list"
+    }
+  ]
+}

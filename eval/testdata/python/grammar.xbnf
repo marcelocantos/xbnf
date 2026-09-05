@@ -1,0 +1,60 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Coverage: newline-sensitive subset with @col line-indent. Top-level stmts at
+// column 0; a block is NEWLINE then stmts at indent > 0. One indent level.
+// No implicit line joining beyond "\\ \n", no match/case, no async, no
+// decorators. CPython AST is the oracle (parse, not bytecode).
+
+file -> (@col(=0) stmt)* ;
+
+stmt -> (simple NEWLINE | compound) #longest ;
+
+simple -> ("pass"
+        | "return" expr?
+        | "break" | "continue"
+        | assign
+        | expr) #longest ;
+
+assign -> IDENT "=" expr ;
+
+compound -> ("if" expr ":" block ("else" ":" block)?
+          | "def" IDENT "(" params? ")" ":" block
+          | "while" expr ":" block) #longest ;
+
+params -> IDENT:"," ;
+
+block -> NEWLINE (@col(>0) stmt)+ ;
+
+expr -> @:op="or"
+      > @:op="and"
+      > "not" @
+      > @:op=("==" | "!=" | "<" | ">" | "+" | "-") #assoc=left
+      > @:op=("*" | "/") #assoc=left
+      > atom ;
+
+atom -> (IDENT ("(" (expr:",")? ")")?
+      | NUMBER
+      | STR
+      | "True" | "False" | "None"
+      | "(" expr ")") #longest ;
+
+IDENT -> /{ #wrap -> () ;
+    (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]* ;
+}/ ;
+
+KEYWORD -> /{ #wrap -> () ;
+    ("if" | "else" | "def" | "while" | "return" | "pass" | "break"
+    | "continue" | "and" | "or" | "not" | "True" | "False" | "None")
+    (?![A-Za-z0-9_]) ;
+}/ ;
+
+NUMBER -> /{ #wrap -> () ; [0-9]+ ; }/ ;
+
+STR -> /{ #wrap -> () ; '"' [^"\n]* '"' | "'" [^'\n]* "'" ; }/ ;
+
+NEWLINE -> /{ #wrap -> () ; \n ; }/ ;
+
+COMMENT -> /{ #wrap -> () ; "#" [^\n]* ; }/ ;
+
+#wrap -> ([ \t] | "\\" \n | COMMENT)* ;

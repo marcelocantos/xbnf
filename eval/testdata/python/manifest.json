@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "language": "python",
+  "dialect": "Python 3 subset",
+  "dialect_version": "3",
+  "source": {
+    "name": "xbnf standing Python layout fixtures",
+    "revision": "in-repo",
+    "license": "Apache-2.0",
+    "url": "https://github.com/marcelocantos/xbnf"
+  },
+  "grammar": "grammar.xbnf",
+  "start": "file",
+  "selection": "Both listed files; no sampling.",
+  "coverage": "@col line-indent: top-level col 0, one block indent >0. def/if/while, pass/return, calls. No async, decorators, implicit joining beyond backslash.",
+  "exclusions": [],
+  "reference": {
+    "name": "CPython ast.parse",
+    "work": "syntax to AST; not bytecode or execution"
+  },
+  "oracle_cmd": [
+    "python3",
+    "eval/oracles/cpython_ast.py"
+  ],
+  "files": [
+    {
+      "path": "accept.py",
+      "sha256": "3e22dd4aab95ac01a2d252fbfaa931b8648341c528a4bd548847c611cb7e4be0",
+      "expect": "accept",
+      "class": "syntax"
+    },
+    {
+      "path": "reject.py",
+      "sha256": "f6174ed4a0c7abd6f002ee7de4b9d210865d92ced2eab11365420b84595b436d",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "def header missing colon"
+    }
+  ]
+}

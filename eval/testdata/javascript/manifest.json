@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "language": "javascript",
+  "dialect": "ECMAScript Script",
+  "dialect_version": "subset",
+  "source": {
+    "name": "xbnf standing ECMAScript Script fixtures",
+    "revision": "in-repo",
+    "license": "Apache-2.0",
+    "url": "https://github.com/marcelocantos/xbnf"
+  },
+  "grammar": "grammar.xbnf",
+  "start": "script",
+  "selection": "Both listed files; no sampling.",
+  "coverage": "Script with required semicolons. function/let/const/if/return. No RegularExpressionLiteral (lexical / goal not implemented), no ASI, no JSX/TS, no modules.",
+  "exclusions": [],
+  "reference": {
+    "name": "Acorn",
+    "work": "ECMAScript Script parse; not JSX/TS"
+  },
+  "oracle_cmd": [
+    "acorn"
+  ],
+  "files": [
+    {
+      "path": "accept.js",
+      "sha256": "3aa6d667bf394fdbca9fc1134633017405ab074f2d9ccbe539cd704d1edf799f",
+      "expect": "accept",
+      "class": "syntax"
+    },
+    {
+      "path": "reject.js",
+      "sha256": "c8c957274d4c2e1af75f7d2b80532ca7966bae3f495d33e6276714b84771a4ad",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "broken function parameter list"
+    }
+  ]
+}

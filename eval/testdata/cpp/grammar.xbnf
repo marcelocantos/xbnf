@@ -1,0 +1,55 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Coverage: preprocessed C++ translation units of functions, globals, if/return,
+// int/void, and arithmetic. No templates, name lookup, preprocessor (input is
+// already preprocessed), classes, or overload resolution. Syntax only.
+
+tu -> decl+ ;
+
+decl -> (func | glob) #longest ;
+
+glob -> type IDENT "=" expr ";" ;
+
+func -> type IDENT "(" params? ")" block ;
+
+params -> param:"," ;
+param -> type IDENT ;
+
+type -> "int" | "void" | "bool" ;
+
+block -> "{" stmt* "}" ;
+
+stmt -> ("return" expr? ";"
+      | "if" "(" expr ")" stmt ("else" stmt)?
+      | block
+      | type IDENT "=" expr ";"
+      | expr ";") #longest ;
+
+relop -> ("==" | "!=" | "=" | "<" | ">") #longest ;
+
+expr -> @:op=("||" | "&&")
+      > @:op=relop
+      > @:op=("+" | "-") #assoc=left
+      > @:op=("*" | "/") #assoc=left
+      > atom ;
+
+atom -> (IDENT ("(" (expr:",")? ")")?
+      | NUMBER
+      | "(" expr ")"
+      | "true" | "false") #longest ;
+
+IDENT -> /{ #wrap -> () ;
+    (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]* ;
+}/ ;
+
+KEYWORD -> /{ #wrap -> () ;
+    ("int" | "void" | "bool" | "return" | "if" | "else" | "true" | "false")
+    (?![A-Za-z0-9_]) ;
+}/ ;
+
+NUMBER -> /{ #wrap -> () ; [0-9]+ ; }/ ;
+
+COMMENT -> /{ #wrap -> () ; "//" [^\n]* | "/*" ([^*] | "*" [^/])* "*/" ; }/ ;
+
+#wrap -> (\s | COMMENT)* ;

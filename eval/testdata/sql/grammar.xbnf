@@ -1,0 +1,54 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Coverage: uppercase-keyword SELECT with optional DISTINCT/ALL, FROM, WHERE,
+// comma-separated select list, dotted names, function calls, AND/OR, and
+// arithmetic. COUNT(*) is out (star-arg vs expr-list FIRST). Not DDL, joins,
+// subqueries, windows, or procedural bodies. (?!KEYWORD) on IDENT.
+
+query -> select_stmt (";" select_stmt)* ";"? ;
+
+select_stmt -> "SELECT" ("DISTINCT" | "ALL")?
+               select_list
+               ("FROM" from_clause)?
+               ("WHERE" expr)? ;
+
+select_list -> ("*" | select_item:",") #longest ;
+select_item -> expr (("AS")? IDENT)? ;
+
+from_clause -> IDENT (("AS")? IDENT)? ;
+
+relop -> (">=" | "<=" | "<>" | ">" | "<" | "=") #longest ;
+
+expr -> @:op="OR"
+      > @:op="AND"
+      > "NOT" @
+      > @:op=relop
+      > @:op=("+" | "-") #assoc=left
+      > @:op=("*" | "/" | "%") #assoc=left
+      > atom ;
+
+atom -> (IDENT ("(" (expr:",")? ")")? ("." IDENT)*
+      | "(" expr ")"
+      | NUMBER
+      | STR
+      | "NULL" | "TRUE" | "FALSE") #longest ;
+
+IDENT -> /{ #wrap -> () ;
+    (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]*
+  | '"' [^"]+ '"' ;
+}/ ;
+
+KEYWORD -> /{ #wrap -> () ;
+    ("SELECT" | "FROM" | "WHERE" | "DISTINCT" | "ALL" | "AS"
+    | "AND" | "OR" | "NOT" | "NULL" | "TRUE" | "FALSE")
+    (?![A-Za-z0-9_]) ;
+}/ ;
+
+NUMBER -> /{ #wrap -> () ; [0-9]+ ("." [0-9]+)? ; }/ ;
+
+STR -> /{ #wrap -> () ; "'" ("''" | [^'])* "'" ; }/ ;
+
+COMMENT -> /{ #wrap -> () ; "--" [^\n]* ; }/ ;
+
+#wrap -> (\s | COMMENT)* ;

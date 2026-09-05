@@ -93,8 +93,12 @@ func (s *uSet) probe(k uint64, gen uint32) (uint64, bool) {
 	}
 }
 
+const uLoad = 4 // grow when n*uLoad >= cap (load 1/4; 1/2 clustered on packed keys)
+
+func (s *uSet) crowded() bool { return s.n*uLoad >= len(s.slots) }
+
 func (s *uSet) add(k uint64, gen uint32) {
-	if s.n*2 >= len(s.slots) {
+	if s.crowded() {
 		s.grow(gen)
 	}
 	s.insert(k, gen)
@@ -103,7 +107,7 @@ func (s *uSet) add(k uint64, gen uint32) {
 // placeAt writes a key known to be absent. idx is from a prior probe miss.
 // If the table must grow, idx is ignored and the key is re-inserted.
 func (s *uSet) placeAt(idx uint64, k uint64, gen uint32) {
-	if s.n*2 >= len(s.slots) {
+	if s.crowded() {
 		s.grow(gen)
 		s.insert(k, gen)
 		return
@@ -184,8 +188,10 @@ func (m *uMap) get(k uint64, gen uint32) (int, bool) {
 	}
 }
 
+func (m *uMap) crowded() bool { return m.n*uLoad >= len(m.slots) }
+
 func (m *uMap) put(k uint64, gen uint32, id int) {
-	if m.n*2 >= len(m.slots) {
+	if m.crowded() {
 		m.grow(gen)
 	}
 	m.insert(k, gen, id)

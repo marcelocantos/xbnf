@@ -15,6 +15,8 @@ make          # bin/xbnf
 make test
 make vet
 make bullseye # standing invariants for /cv
+make eval-corpus # T22.1 standing JSON smoke harness
+make eval-languages # T22 SQL XML C++ Python YAML JS CommonMark
 ```
 
 Never pass `-j` to make; `MAKEFLAGS` is set in the Makefile.
@@ -36,13 +38,14 @@ grammar/      IR (Rule, Term) — exists
 syntax/       bootstrap parser: xbnf source → IR — exists
 engine/       GLL + DFA terminal layer — exists
 fromwbnf/     parse old .wbnf into an IR of meaning — exists
+eval/         corpus harness (T22.1) — exists
 ast/          committed parse tree
 ```
 
 Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`, `-from-wbnf`,
-`parse`, `--explain`) plus packages `grammar` (IR), `syntax` (bootstrap
-parser), `engine` (GLL with a DFA fast path), and `fromwbnf` (parse `.wbnf`
-into meaning and emit xbnf). `xbnf sandbox` hosts the cheat sheet;
+`parse`, `eval`, `--explain`) plus packages `grammar` (IR), `syntax` (bootstrap
+parser), `engine` (GLL with a DFA fast path), `fromwbnf` (parse `.wbnf`
+into meaning and emit xbnf), and `eval` (corpus harness). `xbnf sandbox` hosts the cheat sheet;
 `POST /run` matches editable examples. Compile-time disambiguation (T6)
 and self-host (T7) are not this slice.
 
@@ -59,6 +62,8 @@ Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).
   the stub.
 - Default branch is `master`.
 - Do not introduce TOML.
+- Parse-speed keep/discard: `make bench-stable` (or `BASE=<ref>` / `SELF=1`).
+  Do not decide from a lone `go test -bench` median; see `docs/parse-speed.md`.
 
 ## Agent guide
 

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "language": "json",
+  "dialect": "RFC 8259",
+  "dialect_version": "8259",
+  "source": {
+    "name": "xbnf standing JSON smoke fixture",
+    "revision": "in-repo",
+    "license": "Apache-2.0",
+    "url": ""
+  },
+  "grammar": "../../../docs/examples/json.xbnf",
+  "start": "json",
+  "selection": "Both listed files; no sampling.",
+  "coverage": "RFC 8259 JSON values as in docs/examples/json.xbnf. Auxiliary regression, not a T22 language track.",
+  "exclusions": [],
+  "reference": {
+    "name": "encoding/json.Valid",
+    "work": "recognition only; no Unmarshal, no tree, no I/O beyond the in-memory bytes"
+  },
+  "files": [
+    {
+      "path": "ok.json",
+      "sha256": "f6cedcb707ac612027c4cbc5ef83602263a7367bd9ad100981235ef164a8c0f5",
+      "expect": "accept",
+      "class": "syntax"
+    },
+    {
+      "path": "bad.json",
+      "sha256": "8f970b448b38a9a7c64475cf468610c2c0ce7d5309dfdd3cbb7b4b95d308bf98",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "trailing comma; independently invalid per RFC 8259 and encoding/json.Valid"
+    }
+  ]
+}

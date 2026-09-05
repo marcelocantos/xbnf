@@ -6,7 +6,7 @@ export GOWORK := off
 
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all build test vet clean smoke sandbox bullseye bench-json
+.PHONY: all build test vet clean smoke sandbox bullseye bench-json bench-stable eval-corpus eval-languages
 
 all: build
 
@@ -32,9 +32,27 @@ smoke: build
 sandbox: build
 	bin/xbnf sandbox
 
-# JSON 64 KB parse speed vs encoding/json and wbnf. Record the output in docs/parse-speed.md.
+# JSON 64 KB parse speed vs encoding/json and wbnf. Snapshot only — not a keep/discard gate.
 bench-json:
 	go test ./engine/ -run '^$' -bench 'BenchmarkJSON64K' -benchmem -benchtime=2s -count=3
+
+# Standing T22.1 corpus command (json-smoke). Language tracks add their own manifests.
+eval-corpus:
+	go run ./cmd/xbnf eval eval/testdata/json-smoke/manifest.json
+
+eval-languages:
+	go run ./cmd/xbnf eval eval/testdata/sql/manifest.json
+	go run ./cmd/xbnf eval eval/testdata/xml/manifest.json
+	go run ./cmd/xbnf eval eval/testdata/cpp/manifest.json
+	go run ./cmd/xbnf eval eval/testdata/python/manifest.json
+	go run ./cmd/xbnf eval eval/testdata/yaml/manifest.json
+	go run ./cmd/xbnf eval eval/testdata/javascript/manifest.json
+	go run ./cmd/xbnf eval eval/testdata/commonmark/manifest.json
+
+# Interleaved BenchmarkJSON64K keep/discard. BASE=HEAD (dirty tree) or a SHA. SELF=1 is A vs A.
+# See docs/parse-speed.md.
+bench-stable:
+	./scripts/bench-json-stable.sh $(if $(SELF),--self,$(if $(BASE),--base $(BASE),)) $(if $(PAIRS),--pairs $(PAIRS),) $(if $(SKIP_IDLE),--skip-idle,) $(if $(BENCHTIME),--benchtime $(BENCHTIME),)
 
 # Standing invariants hook read by /cv (bullseye_convergence).
 bullseye:

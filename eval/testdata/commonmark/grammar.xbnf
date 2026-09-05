@@ -1,0 +1,21 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Coverage: ATX headings, paragraphs, and fenced code blocks. Newlines are
+// significant. No list indent stack, link destinations, HTML blocks, or
+// emphasis parsing. Acceptance of leftover text is not success: the whole
+// document must be consumed. cmark is the named structural oracle.
+
+doc -> (NEWLINE* block)+ NEWLINE* ;
+
+block -> (atx | fence | para) #longest ;
+
+atx -> "#"{1,6} [ \t]+ /[^\n]+/ "\n" ;
+
+fence -> "```" /[^\n]*/ "\n" /([^`] | "`" [^`] | "``" [^`])*/ "```" "\n"? ;
+
+para -> /[^#`\n][^\n]*/ "\n" ;
+
+NEWLINE -> /{ #wrap -> () ; \n ; }/ ;
+
+#wrap -> [ \t]* ;

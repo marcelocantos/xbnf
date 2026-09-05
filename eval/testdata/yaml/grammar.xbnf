@@ -1,0 +1,20 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Coverage: one-level block mappings (IDENT: value NEWLINE) plus flow
+// sequences/mappings. Not YAML 1.2 tags, aliases, nested indent stacks, or
+// document markers. Syntax/events, not tag/alias value construction.
+
+doc -> pair+ ;
+
+pair -> IDENT ":" (flow | IDENT | STR | NUMBER) NEWLINE ;
+
+flow -> "[" ((IDENT | STR | NUMBER):",")? "]"
+      | "{" (IDENT ":" (IDENT | STR | NUMBER):",")? "}" ;
+
+IDENT -> /{ #wrap -> () ; [A-Za-z_] [A-Za-z0-9_]* ; }/ ;
+STR -> /{ #wrap -> () ; '"' [^"\n]* '"' | "'" [^'\n]* "'" ; }/ ;
+NUMBER -> /{ #wrap -> () ; [0-9]+ ; }/ ;
+NEWLINE -> /{ #wrap -> () ; \n ; }/ ;
+
+#wrap -> [ \t]* ;

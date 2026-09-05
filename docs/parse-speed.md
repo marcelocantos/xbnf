@@ -6,15 +6,36 @@ when a parse-speed change lands.
 
 ## How to measure
 
+Keep or discard a parse-speed change with the interleaved gate, not a lone
+`go test -bench` median. Absolute ns/op wanders with package temperature and
+other P-core load on this laptop; B/op and allocs/op do not.
+
 ```sh
-make bench-json
+make bench-stable              # working tree vs HEAD
+make bench-stable BASE=a9c96f5
+make bench-stable SELF=1       # same binary both sides; must be SELF-OK
 ```
 
-That runs `BenchmarkJSON64K`, `BenchmarkJSON64K_wbnf`,
-`BenchmarkJSON64K_stdlibUnmarshal`, and `BenchmarkJSON64K_stdlibValid`
-(`engine/scaling_test.go`) for 2 s × 3 on `nestedJSON(64<<10)` (~65 553
-bytes). Append a row under [History](#history) with the median ns/op and
-B/op, the commit SHA, machine, and a one-line note.
+That compiles two `engine` test binaries (worktree for `BASE`), waits until
+1-minute load is ≤ 2.5 and transient processes are below 40% CPU (always-on
+AV such as Bitdefender is warned, not waited out), then alternates old/new
+for 10 × 2 s with `GOMAXPROCS=1`. Pair ratios cancel common-mode drift. The
+script prints `TIME` / `MEM` / `VERDICT`:
+
+| VERDICT | Meaning |
+|---|---|
+| `KEEP` | New is ≥3% faster on ≥80% of pairs, or time is a tie and B/op or allocs dropped |
+| `DISCARD` | Slower, or a tie with flat memory — do not keep the change for speed |
+| `NOISY` | Pair ratios still wander, or the machine never went idle. **Do not decide** |
+| `SELF-OK` / `SELF-FAIL` | Harness check; `SELF-FAIL` means the machine is too busy to trust A/B |
+
+Exit 2 on `NOISY` or `SELF-FAIL`. Cite the `VERDICT` line and the pair
+speedups in the history note. ns/op in the table is a snapshot only — do not
+compare it across sessions.
+
+`make bench-json` is the older snapshot: `BenchmarkJSON64K` plus wbnf and
+stdlib, 2 s × 3 on `nestedJSON(64<<10)` (~65 553 bytes). Use it for the
+side-by-side latest table, not for keep/discard.
 
 Keep [Probe harness](#probe-harness-genjson-64-kb) separate: those rows used
 a different `genJSON` helper, not `nestedJSON`. Pigeon numbers in that
@@ -35,12 +56,12 @@ wbnf: same machine and input, `BenchmarkJSON64K_wbnf` count=2 (25.7 ms).
 xbnf is ~1.2× wbnf, ~47× `Unmarshal`, ~180× `Valid`. A dedicated xbnf-only
 run at `c077348` was ~23–25 ms/op / 48 MB.
 
-Current xbnf-only (post-🎯T20++ mixed open-addressing charts, 3 s × 5 on
-the same machine): median **13.6 ms** / **2.35 MB** / 3 allocs. Same-session
-Go `map` `U`/`gssAt`/`stepAt` was ~15.3 ms; a quiet-machine T20++ run was
-11.0 ms. `U` is a splitmix64 open-addressing set (not `k&mask` — that was
-~100× slower); `gssAt` and `stepAt` use the same table with an int value;
-`reach` keys are packed `uint64`. Remaining B/op is the public `Node` tree.
+Current xbnf-only (post-🎯T20+++ `sym`/`reach` as `uMap`, 3 s × 5 on the
+same machine): median **16.6 ms** / **2.35 MB** / 3 allocs. Same-session
+`a9c96f5` was median **19.8 ms** on a hot machine (quiet T20++ was 11.0 ms).
+`sym` and `reach` are `uMap`; `endAt` tracks max right without iterating
+`sym`; all step runs are sorted and binary-searched; tables grow at load
+1/4. Remaining B/op is the public `Node` tree.
 
 ## History
 
@@ -61,6 +82,7 @@ recorded run.
 | 2026-09-03 | T20+ | 13.4e6 | 2.51e6 | — | — | — | 3s×5: 13.2/14.2/13.3/13.4/14.1 ms, 12 allocs. Kept: candBuf on stack (was heap via orderCands), linear matchSteps + no sort for n≤32, wrapEnd reuse on same input. Left materialize as []Node API floor. |
 | 2026-09-04 | T20++ | 11.0e6 | 2.35e6 | — | — | — | 3s×5: 10.88/11.04/10.91/11.76/11.67 ms, 3 allocs. Same-session 075a8d9 was 12.78/13.09/13.95/14.12/14.22 ms, 2.51 MB, 12 allocs. Kept: generational maps, slimmer steps, last-stepAt cache, flatten-all + radix large runs, pooled spines, packed sym, compile-time dfa/nid, ASCII decodeRune. Discarded: admits-before-U (noise). Left materialize as []Node API floor. |
 | 2026-09-05 | T20+++ | 13.6e6 | 2.35e6 | — | — | — | 3s×5: 13.55/14.13/13.61/16.12/12.84 ms, 3 allocs. Same-session Go map U was ~15.3 ms (this session was hotter than the 11.0 T20++ run). Kept: splitmix64 uSet/uMap for U, gssAt, stepAt (probe+place, not k&mask); packed uint64 reach. Discarded: position-indexed U lists (tie). Isolated uSet microbench ~2× std map. Left materialize. |
+| 2026-09-05 | T20++++ | 16.6e6 | 2.35e6 | — | — | — | 3s×5: 19.34/17.41/16.03/16.64/16.54 ms, 3 allocs. Same-session a9c96f5 was 16.65/19.05/21.54/25.43/19.82 ms (hot). Kept: sym+reach as uMap, endAt max-right, always-sort + matchSteps, load 1/4, packSteps pre-size. Discarded: in-parse step regions (copy still needed; pre-size is enough). Left materialize. |
 
 ## Probe harness (`genJSON`, 64 KB)
 

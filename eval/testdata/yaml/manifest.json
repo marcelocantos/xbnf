@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "language": "yaml",
+  "dialect": "YAML 1.2 subset",
+  "dialect_version": "1.2-subset",
+  "source": {
+    "name": "xbnf standing YAML fixtures",
+    "revision": "in-repo",
+    "license": "Apache-2.0",
+    "url": "https://github.com/marcelocantos/xbnf"
+  },
+  "grammar": "grammar.xbnf",
+  "start": "doc",
+  "selection": "Both listed files; no sampling.",
+  "coverage": "One-level IDENT: value NEWLINE block mappings and flow seq/map. No tags, aliases, nested indent stack, document markers.",
+  "exclusions": [],
+  "reference": {
+    "name": "PyYAML yaml.safe_load",
+    "work": "compose+construct; not a syntax-only event dump. Tag/alias resolution is the oracle, not xbnf."
+  },
+  "oracle_cmd": [
+    "python3",
+    "eval/oracles/pyyaml_load.py"
+  ],
+  "files": [
+    {
+      "path": "accept.yaml",
+      "sha256": "688bf05b5197838d98a822c5b38fc47ccdaa5e7835bf62fd06f97bbb58cc6bea",
+      "expect": "accept",
+      "class": "syntax"
+    },
+    {
+      "path": "reject.yaml",
+      "sha256": "f55908bbe6bc5c9106ffccb2ccb6b9c1e1931a40d53b6e2edbe4f4ae3cf48d25",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "unterminated flow sequence"
+    }
+  ]
+}

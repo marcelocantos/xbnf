@@ -222,8 +222,11 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 		}
 		r, ok := b.c.rules[x.Name]
 		if !ok {
+			// Undefined names fail Compile via checkDefined. A sink that never
+			// matches keeps this path from treating the ident as ε.
 			s := b.n.st()
-			return s, s
+			a := b.n.st()
+			return s, a
 		}
 		if b.seen[x.Name] {
 			s := b.n.st()
