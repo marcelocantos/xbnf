@@ -1,16 +1,38 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 //
-// Coverage: well-formed elements with matching names via %n, text, comments.
-// No DTD, entities, processing instructions, CDATA, namespaces, or mixed
-// attribute quote styles beyond double quotes. Tag-name match is engine %ref.
+// Coverage: XML 1.0 well-formed documents: prolog (xmldecl, PI, DOCTYPE with
+// internal subset), one root element with matching names via %n, attributes
+// (single or double quotes), comments, text. Not external DTD fetch or schema.
 
-doc -> elem ;
+doc -> prolog elem misc* ;
+
+prolog -> misc* xmldecl? misc* doctype? misc* ;
+
+xmldecl -> "<?xml" xmlattr+ "?>" ;
+
+xmlattr -> Name "=" STR ;
+
+doctype -> "<!DOCTYPE" Name (intsubset | extid intsubset?)? ">" ;
+
+extid -> ("SYSTEM" STR | "PUBLIC" STR STR) #longest ;
+
+intsubset -> "[" markup* "]" ;
+
+markup -> (comment | "<!ELEMENT" Name rest ">" | "<!ATTLIST" Name rest ">"
+        | "<!ENTITY" rest ">" | PI) #longest ;
+
+rest -> /{ #wrap -> () ; ([^>] | ">" [^<])* ; }/ ;
+
+PI -> "<?" Name xmlattr* "?>"
+    | "<?" Name ([^?] | "?" [^>])* "?>" ;
+
+misc -> (comment | PI) #longest ;
 
 elem -> (empty_elem | pair_elem) #longest ;
 empty_elem -> "<" n=Name attrs? "/>" ;
 pair_elem -> "<" n=Name attrs? ">" content* "</" %n ">" ;
-content -> (comment | elem | text) #longest ;
+content -> (comment | PI | elem | text) #longest ;
 
 attrs -> attr+ ;
 attr -> Name "=" STR ;
@@ -21,6 +43,6 @@ text -> /{ #wrap -> () ; [^<]+ ; }/ ;
 
 comment -> /{ #wrap -> () ; "<!--" ([^-] | "-" [^-])* "-->" ; }/ ;
 
-STR -> /{ #wrap -> () ; '"' [^"<]* '"' ; }/ ;
+STR -> /{ #wrap -> () ; '"' [^"<]* '"' | "'" [^'<]* "'" ; }/ ;
 
 #wrap -> \s* ;

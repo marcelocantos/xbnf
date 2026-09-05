@@ -12,7 +12,7 @@
   "grammar": "grammar.xbnf",
   "start": "doc",
   "selection": "commonmark-spec README.md and changelog.txt at 0.31.2.",
-  "coverage": "ATX headings, paragraphs, fenced code, blank lines. README/changelog include links, lists, HTML: they stay in the denominator. Whole document must be consumed. No list indent stack as claimed coverage.",
+  "coverage": "CommonMark blocks enough to consume the pinned README/changelog: ATX/setext, fences, lists, indented code, HTML/autolink lines, reference definitions, paragraphs. Inlines are line text. Whole document must be consumed. cmark is the structural oracle.",
   "exclusions": [
     "emphasis, link destinations, HTML blocks as claimed coverage"
   ],

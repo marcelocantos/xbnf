@@ -12,9 +12,9 @@
   "grammar": "grammar.xbnf",
   "start": "query",
   "selection": "Exactly the four REL_16_6 regress files listed. No sampling at eval time.",
-  "coverage": "Uppercase-keyword SELECT subset (FROM/WHERE, arithmetic, AND/OR, calls). Real postgres regress scripts use lowercase keywords, COPY, CREATE, and much else: those files are in the denominator; misses are retained. Not DDL/joins/subqueries as claimed coverage.",
+  "coverage": "PostgreSQL-ish statements in the four pinned REL_16_6 regress files. Keywords are ASCII case-folded via (?i:). SELECT/VALUES/INSERT/UPDATE/CREATE/DROP/SET plus CASE, DISTINCT, set ops, LIMIT/OFFSET, joins, subqueries, and function FROM items. Not COPY or plpgsql.",
   "exclusions": [
-    "COPY, CREATE, INSERT, plpgsql, and all other regress directories not listed"
+    "COPY, plpgsql, and all other regress directories not listed"
   ],
   "reference": {
     "name": "PostgreSQL raw parser (libpg_query / pg_query)",

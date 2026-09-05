@@ -212,6 +212,14 @@ func emitTerm(b *strings.Builder, t grammar.Term, prec int, compact bool) {
 		b.WriteString("(?!")
 		emitTerm(b, x.Term, precStack, compact)
 		b.WriteByte(')')
+	case grammar.CaseFold:
+		if x.On {
+			b.WriteString("(?i:")
+		} else {
+			b.WriteString("(?~i:")
+		}
+		emitTerm(b, x.Term, precStack, compact)
+		b.WriteByte(')')
 	case grammar.Self:
 		b.WriteByte('@')
 	case grammar.Empty:

@@ -12,7 +12,7 @@
   "grammar": "grammar.xbnf",
   "start": "doc",
   "selection": "Twelve yaml-test-suite ids listed in SOURCES.md.",
-  "coverage": "One-level IDENT: value NEWLINE mappings plus flow seq/map. Tags, aliases, nested indent, directives are in the suite files and stay in the denominator; they are not claimed coverage.",
+  "coverage": "YAML 1.2 recognition of the pinned suite: one node per --- document, block seq/map, flow seq/map, tags, aliases, fold/plain scalars. Event oracle, not construct. 2JQS is suite-valid and PyYAML-event-invalid; expect follows the named oracle.",
   "exclusions": [
     "tag/alias value construction (oracle is events only)"
   ],
@@ -35,9 +35,9 @@
     {
       "path": "corpus/2JQS/in.yaml",
       "sha256": "ecd8d4ad8333dfa1d3e7ef5245afd8c578366c7cf555f30830233a3ce7b51aef",
-      "expect": "accept",
+      "expect": "reject",
       "class": "syntax",
-      "reason": "yaml-test-suite 2JQS"
+      "reason": "yaml-test-suite 2JQS is suite-valid; PyYAML events reject empty keys. Expect follows the named event oracle."
     },
     {
       "path": "corpus/26DV/in.yaml",

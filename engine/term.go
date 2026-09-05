@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
@@ -19,9 +20,47 @@ func hasMod(mods []string, name string) bool {
 	return false
 }
 
+func asciiLower(r rune) rune {
+	if r >= 'A' && r <= 'Z' {
+		return r + 32
+	}
+	return r
+}
+
+func asciiFoldEq(a, b rune) bool {
+	return asciiLower(a) == asciiLower(b)
+}
+
+func matchFoldString(pat, input string, pos int) (int, bool) {
+	if pos+len(pat) > len(input) {
+		return pos, false
+	}
+	// ASCII: same byte length; EqualFold is the mode, not per-letter expansion.
+	if strings.EqualFold(input[pos:pos+len(pat)], pat) {
+		return pos + len(pat), true
+	}
+	return pos, false
+}
+
+func classMatchFold(c grammar.CharClass, r rune) bool {
+	if classMatch(c, r) {
+		return true
+	}
+	if r >= 'A' && r <= 'Z' {
+		return classMatch(c, r+32)
+	}
+	if r >= 'a' && r <= 'z' {
+		return classMatch(c, r-32)
+	}
+	return false
+}
+
 func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 	switch x := t.(type) {
 	case grammar.String:
+		if x.Fold {
+			return matchFoldString(x.Text, input, pos)
+		}
 		if pos+len(x.Text) <= len(input) && input[pos:pos+len(x.Text)] == x.Text {
 			return pos + len(x.Text), true
 		}
@@ -30,7 +69,11 @@ func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 			return pos, false
 		}
 		r, n := decodeRune(input, pos)
-		if classMatch(x, r) {
+		ok := classMatch(x, r)
+		if !ok && x.Fold {
+			ok = classMatchFold(x, r)
+		}
+		if ok {
 			return pos + n, true
 		}
 	case grammar.Escape:

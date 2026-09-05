@@ -245,6 +245,8 @@ func (c *compiler) firstOf(t grammar.Term, fs map[string]firstSet) firstSet {
 		return firstSet{toks: []ftok{{any: true}}}
 	case grammar.Empty, grammar.Lookahead, grammar.NegLookahead:
 		return firstSet{eps: true}
+	case grammar.CaseFold:
+		return c.firstOf(x.Term, fs)
 	case grammar.Ident:
 		if s, ok := fs[x.Name]; ok {
 			return s
@@ -362,6 +364,8 @@ func (c *compiler) walkDecision(rule string, t grammar.Term, dirs []grammar.Dire
 	case grammar.Lookahead:
 		c.walkDecision(rule, x.Term, dirs, regular, fs, warns, errs)
 	case grammar.NegLookahead:
+		c.walkDecision(rule, x.Term, dirs, regular, fs, warns, errs)
+	case grammar.CaseFold:
 		c.walkDecision(rule, x.Term, dirs, regular, fs, warns, errs)
 	}
 }

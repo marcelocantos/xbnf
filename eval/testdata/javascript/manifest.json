@@ -12,7 +12,7 @@
   "grammar": "grammar.xbnf",
   "start": "script",
   "selection": "Listed test262 files only.",
-  "coverage": "Script with required semicolons in the xbnf grammar. test262 files use harness comments and if/throw: they stay in the denominator. No RegularExpressionLiteral (lexical / goal not implemented), no ASI, no JSX/TS.",
+  "coverage": "ECMAScript Script: comments, empty statements, if/throw/try, calls, ===/!==, string concat. No regexp lexical goal, no ASI, no JSX/TS.",
   "exclusions": [
     "modules, JSX, TypeScript, regexp literals as claimed coverage"
   ],

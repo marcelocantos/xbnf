@@ -1,17 +1,19 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 //
-// Coverage: ECMAScript Script with required semicolons. Functions, let/const,
-// if/return, calls, arithmetic. No RegularExpressionLiteral (lexical goal
-// for / vs division is not implemented), no ASI, no JSX/TS, no modules.
+// Coverage: ECMAScript Script with comments, empty statements, if/throw,
+// calls, !== / ===, string concat. No regexp lexical goal, no ASI, no JSX/TS.
 
 script -> stmt* ;
 
 stmt -> ("function" IDENT "(" params? ")" block
-      | ("let" | "const") IDENT "=" expr ";"
+      | ("let" | "const" | "var") IDENT "=" expr ";"
       | "return" expr? ";"
+      | "throw" expr ";"
       | "if" "(" expr ")" stmt ("else" stmt)?
+      | "try" block ("catch" "(" IDENT? ")" block)? ("finally" block)?
       | block
+      | ";"
       | expr ";") #longest ;
 
 params -> IDENT:"," ;
@@ -24,9 +26,16 @@ expr -> @:op=("||" | "&&")
       > @:op=relop
       > @:op=("+" | "-") #assoc=left
       > @:op=("*" | "/") #assoc=left
-      > atom ;
+      > trailer ;
 
-atom -> (IDENT ("(" (expr:",")? ")")?
+trailer -> atom postfix* ;
+
+postfix -> ("." IDENT | "(" args? ")" | "[" expr "]") #longest ;
+
+args -> expr:"," ;
+
+atom -> ("new" IDENT ("(" args? ")")?
+      | IDENT
       | NUMBER
       | STR
       | "(" expr ")"
@@ -37,13 +46,13 @@ IDENT -> /{ #wrap -> () ;
 }/ ;
 
 KEYWORD -> /{ #wrap -> () ;
-    ("function" | "let" | "const" | "return" | "if" | "else"
-    | "true" | "false" | "null")
+    ("function" | "let" | "const" | "var" | "return" | "if" | "else"
+    | "true" | "false" | "null" | "throw" | "try" | "catch" | "finally" | "new")
     (?![A-Za-z0-9_$]) ;
 }/ ;
 
 NUMBER -> /{ #wrap -> () ; [0-9]+ ; }/ ;
-STR -> /{ #wrap -> () ; '"' [^"\n]* '"' | "'" [^'\n]* "'" ; }/ ;
+STR -> /{ #wrap -> () ; '"' ([^"\\] | "\\" .)* '"' | "'" ([^'\\] | "\\" .)* "'" ; }/ ;
 COMMENT -> /{ #wrap -> () ; "//" [^\n]* | "/*" ([^*] | "*" [^/])* "*/" ; }/ ;
 
 #wrap -> (\s | COMMENT)* ;

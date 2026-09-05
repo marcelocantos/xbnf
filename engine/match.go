@@ -80,6 +80,8 @@ func rejectLater(stmts []grammar.Stmt) error {
 			return walkTerm(x.Term)
 		case grammar.NegLookahead:
 			return walkTerm(x.Term)
+		case grammar.CaseFold:
+			return walkTerm(x.Term)
 		case grammar.ExtRef:
 			return fmt.Errorf("first-slice runner: %%%% extref is not executed")
 		case grammar.MacroCall:

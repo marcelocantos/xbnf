@@ -565,47 +565,7 @@ func rangeElems(tab *unicode.RangeTable) []grammar.ClassElem {
 }
 
 func caseFold(t grammar.Term) grammar.Term {
-	switch x := t.(type) {
-	case grammar.String:
-		return foldString(x.Text)
-	case grammar.CharClass:
-		return foldClass(x)
-	case grammar.Seq:
-		ts := make([]grammar.Term, len(x.Terms))
-		for i, u := range x.Terms {
-			ts[i] = caseFold(u)
-		}
-		x.Terms = ts
-		return x
-	case grammar.Alt:
-		ts := make([]grammar.Term, len(x.Terms))
-		for i, u := range x.Terms {
-			ts[i] = caseFold(u)
-		}
-		x.Terms = ts
-		return x
-	case grammar.OrderedAlt:
-		ts := make([]grammar.Term, len(x.Terms))
-		for i, u := range x.Terms {
-			ts[i] = caseFold(u)
-		}
-		x.Terms = ts
-		return x
-	case grammar.Quant:
-		x.Term = caseFold(x.Term)
-		return x
-	case grammar.Named:
-		x.Term = caseFold(x.Term)
-		return x
-	case grammar.Lookahead:
-		x.Term = caseFold(x.Term)
-		return x
-	case grammar.NegLookahead:
-		x.Term = caseFold(x.Term)
-		return x
-	default:
-		return t
-	}
+	return grammar.CaseFold{On: true, Term: t}
 }
 
 func foldString(s string) grammar.Term {

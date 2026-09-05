@@ -115,17 +115,47 @@ type nfaB struct {
 	c      *compiler
 	seen   map[string]bool
 	nowrap bool
+	fold   bool
 }
 
 func (b *nfaB) term(t grammar.Term) (int, int) {
 	switch x := t.(type) {
+	case grammar.CaseFold:
+		saved := b.fold
+		b.fold = x.On
+		s, a := b.term(x.Term)
+		b.fold = saved
+		return s, a
 	case grammar.String:
+		if x.Fold {
+			saved := b.fold
+			b.fold = true
+			s, a := b.lit(x.Text)
+			b.fold = saved
+			return s, a
+		}
 		return b.lit(x.Text)
 	case grammar.CharClass, grammar.Escape, grammar.AnyChar:
 		s := b.n.st()
 		a := b.n.st()
+		pred := runePred(x)
+		if cc, ok := x.(grammar.CharClass); ok && (cc.Fold || b.fold) {
+			inner := pred
+			pred = func(r rune) bool {
+				if inner(r) {
+					return true
+				}
+				if r >= 'A' && r <= 'Z' {
+					return inner(r + 32)
+				}
+				if r >= 'a' && r <= 'z' {
+					return inner(r - 32)
+				}
+				return false
+			}
+		}
 		b.n.states[s].trans = append(b.n.states[s].trans, nfaTrans{
-			pred: runePred(x), beyondASCII: termBeyondASCII(x), to: a,
+			pred: pred, beyondASCII: termBeyondASCII(x), to: a,
 		})
 		return s, a
 	case grammar.Empty:
@@ -302,11 +332,16 @@ func (b *nfaB) lit(s string) (int, int) {
 	}
 	start := b.n.st()
 	cur := start
+	fold := b.fold
 	for _, r := range s {
 		nx := b.n.st()
 		rr := r
+		pred := func(x rune) bool { return x == rr }
+		if fold {
+			pred = func(x rune) bool { return asciiFoldEq(x, rr) }
+		}
 		b.n.states[cur].trans = append(b.n.states[cur].trans, nfaTrans{
-			pred:        func(x rune) bool { return x == rr },
+			pred:        pred,
 			beyondASCII: rr > 255,
 			to:          nx,
 		})

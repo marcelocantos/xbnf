@@ -442,6 +442,7 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
             <tr class="item" data-slice="core" data-q="%%bind extref"><td><code>%%bind</code></td><td>external ref</td><td><span class="badge ir">ExtRef</span></td></tr>
             <tr class="item" data-slice="later" data-q="%! macro call"><td><code>%!patternterms(expr)</code></td><td>macro call <span class="badge later">later</span></td><td><span class="badge ir">MacroCall</span></td></tr>
             <tr class="item" data-slice="core" data-q="lookahead (?= (?!"><td><code>(?=term)</code> <code>(?!term)</code></td><td>zero-width lookahead</td><td><span class="badge ir">Lookahead</span> / <span class="badge ir">NegLookahead</span></td></tr>
+            <tr class="item" data-slice="core" data-q="case fold (?i: (?~i:"><td><code>(?i:term)</code> <code>(?~i:term)</code></td><td>ASCII case-fold mode; nested off-switch</td><td><span class="badge ir">CaseFold</span></td></tr>
             <tr class="item" data-slice="core" data-q="@ self stack"><td><code>@</code></td><td>stack self-ref</td><td><span class="badge ir">Self</span></td></tr>
             <tr class="item" data-slice="later" data-q="@col @line positional python"><td><code>@col</code> <code>@col(=0)</code> <code>@col(&gt;0)</code></td><td>positional predicate <span class="badge later">later</span></td><td><span class="badge ir">PosProp</span></td></tr>
             <tr class="item" data-slice="core" data-q="grouping parentheses"><td><code>(term)</code></td><td>grouping — nested term, no node</td><td>—</td></tr>

@@ -1,12 +1,21 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 //
-// Coverage: newline-sensitive subset with @col line-indent. Top-level stmts at
-// column 0; a block is NEWLINE then stmts at indent > 0. One indent level.
-// No implicit line joining beyond "\\ \n", no match/case, no async, no
-// decorators. CPython AST is the oracle (parse, not bytecode).
+// Coverage: Python 3 files with @col indent, module docstrings, lists/dicts,
+// comprehensions, defs, for, calls/attr, implicit newlines inside ()[]{}.
+// Coding cookies: if a coding line is present it must name a known encoding.
 
-file -> (@col(=0) stmt)* ;
+file -> sep file_body ;
+file_body -> ((?= cookie_head) encoding sep stmts | (?! cookie_head) stmts) #longest ;
+stmts -> (@col(=0) (stmt | hash_comment) sep)* ;
+sep -> NEWLINE* ;
+hash_comment -> "#" (?! [ \t]* "-*-") /[^\n]*/ ;
+
+encoding -> (?= cookie_head) cookie_head [ \t]* ":" [ \t]* enc_name [ \t]* "-*-"? [ \t]* NEWLINE ;
+
+cookie_head -> "#" [ \t]* "-*-" [ \t]* (?i:"coding") ;
+
+enc_name -> (?i:("utf-8" | "utf8" | "latin-1" | "ascii" | "iso-8859-1")) ;
 
 stmt -> (simple NEWLINE | compound) #longest ;
 
@@ -16,28 +25,56 @@ simple -> ("pass"
         | assign
         | expr) #longest ;
 
-assign -> IDENT "=" expr ;
+assign -> trailer "=" expr ;
 
 compound -> ("if" expr ":" block ("else" ":" block)?
           | "def" IDENT "(" params? ")" ":" block
+          | "for" for_targets "in" expr ":" block
           | "while" expr ":" block) #longest ;
+
+for_targets -> IDENT ("," IDENT)* ;
 
 params -> IDENT:"," ;
 
 block -> NEWLINE (@col(>0) stmt)+ ;
 
+py_relop -> ("==" | "!=" | "<=" | ">=" | "<" | ">" | "in") #longest ;
+
 expr -> @:op="or"
       > @:op="and"
       > "not" @
-      > @:op=("==" | "!=" | "<" | ">" | "+" | "-") #assoc=left
-      > @:op=("*" | "/") #assoc=left
-      > atom ;
+      > @:op=py_relop #assoc=left
+      > @:op=("+" | "-") #assoc=left
+      > @:op=("*" | "/" | "%") #assoc=left
+      > trailer ;
 
-atom -> (IDENT ("(" (expr:",")? ")")?
+trailer -> atom postfix* ;
+
+postfix -> ("." IDENT | "(" args? ")" | "[" expr "]") #longest ;
+
+args -> expr:"," ;
+
+atom -> (IDENT
       | NUMBER
       | STR
       | "True" | "False" | "None"
-      | "(" expr ")") #longest ;
+      | "(" expr_list? ")"
+      | list
+      | dict) #longest ;
+
+expr_list -> expr:"," ;
+
+list -> "[" nl list_body? nl "]" ;
+list_body -> (comp | expr ("," nl expr)* ","?) #longest ;
+
+dict -> "{" nl dict_body? nl "}" ;
+dict_body -> (dict_comp | expr ":" expr ("," nl expr ":" expr)* ","?) #longest ;
+
+comp -> expr nl "for" for_targets "in" expr nl ("if" expr)? ;
+
+dict_comp -> expr ":" expr nl "for" for_targets "in" expr nl ("if" expr)? ;
+
+nl -> NEWLINE* ;
 
 IDENT -> /{ #wrap -> () ;
     (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]* ;
@@ -45,16 +82,20 @@ IDENT -> /{ #wrap -> () ;
 
 KEYWORD -> /{ #wrap -> () ;
     ("if" | "else" | "def" | "while" | "return" | "pass" | "break"
-    | "continue" | "and" | "or" | "not" | "True" | "False" | "None")
+    | "continue" | "and" | "or" | "not" | "True" | "False" | "None"
+    | "for" | "in" | "class")
     (?![A-Za-z0-9_]) ;
 }/ ;
 
 NUMBER -> /{ #wrap -> () ; [0-9]+ ; }/ ;
 
-STR -> /{ #wrap -> () ; '"' [^"\n]* '"' | "'" [^'\n]* "'" ; }/ ;
+STR -> /{ #wrap -> () ;
+    '"""' ([^"] | '"' [^"] | '""' [^"])* '"""'
+  | "'''" ([^'] | "'" [^'] | "''" [^'])* "'''"
+  | '"' [^"\n]* '"'
+  | "'" [^'\n]* "'" ;
+}/ ;
 
 NEWLINE -> /{ #wrap -> () ; \n ; }/ ;
 
-COMMENT -> /{ #wrap -> () ; "#" [^\n]* ; }/ ;
-
-#wrap -> ([ \t] | "\\" \n | COMMENT)* ;
+#wrap -> ([ \t] | "\\" \n)* ;

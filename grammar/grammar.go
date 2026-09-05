@@ -40,6 +40,7 @@ const (
 	KindMacroCall
 	KindLookahead
 	KindNegLookahead
+	KindCaseFold
 	KindSelf
 	KindPosProp
 	KindEmpty
@@ -70,6 +71,7 @@ func (k Kind) String() string {
 		KindMacroCall:    "MacroCall",
 		KindLookahead:    "Lookahead",
 		KindNegLookahead: "NegLookahead",
+		KindCaseFold:     "CaseFold",
 		KindSelf:         "Self",
 		KindPosProp:      "PosProp",
 		KindEmpty:        "Empty",

@@ -300,6 +300,16 @@
     "input": "hi"
   },
   {
+    "id": "case-fold",
+    "group": "Atoms",
+    "title": "Case-fold mode",
+    "syntax": "(?i:term)  (?~i:term)",
+    "blurb": "ASCII case-insensitive matching around any term. Nested (?~i:term) turns folding off for that span.",
+    "slice": "core",
+    "grammar": "start -> (?i:\"ab\") ;\n#wrap -> () ;\n",
+    "input": "AB"
+  },
+  {
     "id": "lookahead",
     "group": "Atoms",
     "title": "Positive lookahead",

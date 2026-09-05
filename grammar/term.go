@@ -104,17 +104,21 @@ func (Ident) term()      {}
 func (Ident) Kind() Kind { return KindIdent }
 
 // String is a quoted literal. Text is the intended match, not the quotes.
+// Fold is ASCII case-insensitive matching (from an enclosing (?i:) region).
 type String struct {
 	Text string
+	Fold bool
 }
 
 func (String) term()      {}
 func (String) Kind() Kind { return KindString }
 
 // CharClass is `[...]`. Elems are single atoms or ranges.
+// Fold is ASCII case-insensitive matching (from an enclosing (?i:) region).
 type CharClass struct {
 	Negated bool
 	Elems   []ClassElem
+	Fold    bool
 }
 
 func (CharClass) term()      {}
@@ -175,6 +179,16 @@ type MacroCall struct {
 
 func (MacroCall) term()      {}
 func (MacroCall) Kind() Kind { return KindMacroCall }
+
+// CaseFold is `(?i:term)` (On true) or `(?~i:term)` (On false). It is a
+// match-time mode around any term, not letter expansion.
+type CaseFold struct {
+	On   bool
+	Term Term
+}
+
+func (CaseFold) term()      {}
+func (CaseFold) Kind() Kind { return KindCaseFold }
 
 // Lookahead is `(?=term)`.
 type Lookahead struct {

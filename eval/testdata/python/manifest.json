@@ -12,7 +12,7 @@
   "grammar": "grammar.xbnf",
   "start": "file",
   "selection": "Three stdlib modules plus three tokenizedata encoding/syntax rejects from CPython v3.13.0.",
-  "coverage": "@col line-indent subset: col 0 statements, one indent >0, def/if/while, pass/return, calls. CPython stdlib files use imports, unicode, dicts: they remain in the denominator.",
+  "coverage": "@col indent, module docstrings, lists/dicts, comprehensions, defs/for, calls/attr, implicit newlines inside ()[]{}. Encoding cookies, if present, must name a known encoding. Engine rejects invalid UTF-8. async/match/decorators not claimed.",
   "exclusions": [
     "async, decorators, match/case, multi-level indent stacks"
   ],

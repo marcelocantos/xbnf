@@ -56,8 +56,14 @@ func (a firstAtom) starts(r rune) bool {
 	switch x := a.term.(type) {
 	case grammar.String:
 		first, _ := utf8.DecodeRuneInString(x.Text)
+		if x.Fold {
+			return asciiFoldEq(r, first)
+		}
 		return r == first
 	case grammar.CharClass:
+		if x.Fold {
+			return classMatchFold(x, r)
+		}
 		return classMatch(x, r)
 	case grammar.Escape:
 		return escapeMatch(x.Code, r)
@@ -259,9 +265,21 @@ func fillASCII(f firstInfo, seen *[256]bool) bool {
 				return false
 			}
 			seen[byte(r)] = true
+			if x.Fold {
+				if r >= 'A' && r <= 'Z' {
+					seen[byte(r+32)] = true
+				}
+				if r >= 'a' && r <= 'z' {
+					seen[byte(r-32)] = true
+				}
+			}
 		case grammar.CharClass:
 			for b := 0; b < 256; b++ {
-				if classMatch(x, rune(b)) {
+				ok := classMatch(x, rune(b))
+				if !ok && x.Fold {
+					ok = classMatchFold(x, rune(b))
+				}
+				if ok {
 					seen[b] = true
 				}
 			}

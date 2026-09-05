@@ -251,7 +251,7 @@ func TestConvertCaseFold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(src, "x") || !strings.Contains(src, "X") {
+	if !strings.Contains(src, "(?i:") {
 		t.Fatalf("case fold: %s", src)
 	}
 }

@@ -477,13 +477,20 @@ func (p *parser) parseAtom() (grammar.Term, error) {
 	}
 	switch {
 	case p.at("(?"):
+		on, off := p.at("(?i:"), p.at("(?~i:")
 		neg := p.at("(?!")
-		if neg {
+		pos := p.at("(?=")
+		switch {
+		case off:
+			p.pos += 5
+		case on:
+			p.pos += 4
+		case neg:
 			p.pos += 3
-		} else if p.at("(?=") {
+		case pos:
 			p.pos += 3
-		} else {
-			return p.parseGroup()
+		default:
+			return nil, p.err("unknown (? flag")
 		}
 		t, err := p.parseTerm()
 		if err != nil {
@@ -493,10 +500,16 @@ func (p *parser) parseAtom() (grammar.Term, error) {
 		if !p.eat(")") {
 			return nil, p.err("expected )")
 		}
-		if neg {
+		switch {
+		case off:
+			return grammar.CaseFold{On: false, Term: t}, nil
+		case on:
+			return grammar.CaseFold{On: true, Term: t}, nil
+		case neg:
 			return grammar.NegLookahead{Term: t}, nil
+		default:
+			return grammar.Lookahead{Term: t}, nil
 		}
-		return grammar.Lookahead{Term: t}, nil
 	case p.peek() == '(':
 		return p.parseGroup()
 	case p.peek() == '{':

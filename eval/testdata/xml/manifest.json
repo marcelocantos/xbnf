@@ -12,7 +12,7 @@
   "grammar": "grammar.xbnf",
   "start": "doc",
   "selection": "Listed third-party documents only.",
-  "coverage": "Elements with matching names via %n, attributes, text, comments. No DTD/DOCTYPE, PI, CDATA, entities, namespaces. W3C valid/sa files include DOCTYPE: they remain in the denominator.",
+  "coverage": "XML 1.0 well-formed documents: prolog (xmldecl, PI, DOCTYPE with internal subset), one root element with matching names via %n, attributes, comments, text. Not external DTD fetch or schema.",
   "exclusions": [
     "DTD-only evaluation; schema-valid vs well-formed is oracle work for xmllint --noout"
   ],

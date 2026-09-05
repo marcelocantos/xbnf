@@ -450,6 +450,17 @@ func TestAtoms(t *testing.T) {
 			},
 		},
 		{
+			name: "case_fold",
+			term: grammar.CaseFold{On: true, Term: grammar.String{Text: "select"}},
+			kind: grammar.KindCaseFold,
+			check: func(t *testing.T, term grammar.Term) {
+				cf := as[grammar.CaseFold](t, term)
+				if !cf.On || as[grammar.String](t, cf.Term).Text != "select" {
+					t.Fatalf("%v", term)
+				}
+			},
+		},
+		{
 			name: "lookahead",
 			term: grammar.Lookahead{Term: grammar.Ident{Name: "KEYWORD"}},
 			kind: grammar.KindLookahead,

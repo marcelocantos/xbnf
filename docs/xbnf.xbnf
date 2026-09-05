@@ -72,6 +72,8 @@ atom -> (
       | MACRO_NAME "(" term:","? ")"     // %!name(args)
       | "(?=" term ")"                   // positive lookahead
       | "(?!" term ")"                   // negative lookahead
+      | "(?i:" term ")"                  // case-fold match mode
+      | "(?~i:" term ")"                 // restore case-sensitive matching
       | "@"                              // Stack self-reference
       | POS_PROP ("(" CMP ")")?          // @col  or  @col(=level)
       | "{" scope "}"                    // scoped wrap / locals

@@ -88,8 +88,8 @@ func TestCommonMarkListLineNotParagraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := c.Parse("doc", "- <https://github.com/commonmark/cmark> (C)\n")
-	if res.OK {
-		t.Fatal("list item must not parse as a paragraph (leftover structure is not success)")
+	if !res.OK {
+		t.Fatal("list item must parse as a list block, not fail")
 	}
 }
 

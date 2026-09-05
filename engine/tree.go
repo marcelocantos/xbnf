@@ -897,6 +897,8 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 		return w.delim(x, pos, nowrap)
 	case grammar.Scope:
 		return w.term(x.Term, pos, nowrap)
+	case grammar.CaseFold:
+		return w.term(x.Term, pos, nowrap)
 	case grammar.Lookahead:
 		_, _, ok := w.term(x.Term, pos, nowrap)
 		if !ok {

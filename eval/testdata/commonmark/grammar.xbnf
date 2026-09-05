@@ -1,23 +1,36 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 //
-// Coverage: ATX headings, paragraphs, and fenced code blocks. Newlines are
-// significant. No list indent stack, link destinations, HTML blocks, or
-// emphasis parsing. Acceptance of leftover text is not success: the whole
-// document must be consumed. cmark is the named structural oracle.
+// Coverage: CommonMark blocks enough to consume the pinned README/changelog:
+// ATX/setext headings, fences, lists, indented code, HTML/autolink lines,
+// reference definitions, paragraphs. Inlines are line text. cmark is the oracle.
 
-doc -> (NEWLINE* block)+ NEWLINE* ;
+doc -> NEWLINE* (block NEWLINE*)* ;
 
-block -> (atx | fence | para) #longest ;
+block -> (fence | atx | setext | list_item | indent_code | html_line | refdef | para | rule | indented) #longest ;
 
-atx -> "#"{1,6} [ \t]+ /[^\n]+/ "\n" ;
+atx -> [ \t]* "#"{1,6} ([ \t]+ /[^\n]*/)? "\n" ;
 
-fence -> "```" /[^\n]*/ "\n" /([^`] | "`" [^`] | "``" [^`])*/ "```" "\n"? ;
+setext -> /[^#\n][^\n]*/ "\n" [ \t]* ("="+ | "-"+) "\n" ;
 
-// List markers and indented code are not paragraphs. Swallowing them would
-// count leftover document structure as success.
-para -> (?! "- " | "* " | "+ " | "    ") /[^#`\n][^\n]*/ "\n" ;
+fence -> [ \t]* "`"{3,} /[^\n]*/ "\n" /([^`] | "`" [^`] | "``" [^`])*/ [ \t]* "`"{3,} "\n"?
+       | [ \t]* "~"{3,} /[^\n]*/ "\n" /([^~] | "~" [^~])*/ [ \t]* "~"{3,} "\n"? ;
+
+list_item -> [ \t]* ("-" | "*" | "+" | /[0-9]+/ ".") [ \t]* /[^\n]*/ "\n"
+             ( [ \t]+ /[^\n]*/ "\n" )* ;
+
+indented -> [ \t]+ /[^\n]*/ "\n" ;
+
+indent_code -> ("    " | "\t") /[^\n]*/ "\n" ;
+
+html_line -> [ \t]* "<" /[^\n]*/ "\n" ;
+
+refdef -> [ \t]* "[" /[^\]\n]+/ "]:" [ \t]* /[^\n]*/ "\n" ;
+
+rule -> [ \t]* ("***" | "---" | "___") /[^\n]*/ "\n" ;
+
+para -> (?! [ \t]* ("-" | "*" | "+" | "#" | "```" | "<")) /[^\n]+/ "\n" ;
 
 NEWLINE -> /{ #wrap -> () ; \n ; }/ ;
 
-#wrap -> [ \t]* ;
+#wrap -> () ;

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/marcelocantos/xbnf/grammar"
 )
@@ -242,6 +243,9 @@ func (c *Compiled) IsDFA(rule string) bool {
 }
 
 func (c *Compiled) Parse(start, input string) *Result {
+	if !utf8.ValidString(input) {
+		return &Result{Error: "invalid UTF-8"}
+	}
 	if start == "" {
 		start = c.first
 	}
@@ -265,6 +269,7 @@ type compiler struct {
 	prods    []prod
 	hid      int
 	extraDFA map[string]*dfa
+	folded   map[string]string // rule name → $fi_ name under (?i:)
 	// stackTighter is the next-tighter stack level while emitRule runs for
 	// a level. An infix @:sep whose term rewrote to this ident must consume
 	// a separator; the zero-operator case is the level's fallback.
@@ -332,6 +337,8 @@ func (c *compiler) analyzeRegular() {
 		case grammar.NegLookahead:
 			r, _ := walk(x.Term)
 			return r, true
+		case grammar.CaseFold:
+			return walk(x.Term)
 		}
 		return refs, bad
 	}
@@ -535,6 +542,8 @@ func (c *compiler) checkDefined() error {
 			walk(x.Term, locals)
 		case grammar.NegLookahead:
 			walk(x.Term, locals)
+		case grammar.CaseFold:
+			walk(x.Term, locals)
 		case grammar.MacroCall:
 			for _, a := range x.Args {
 				walk(a, locals)
@@ -554,33 +563,80 @@ func (c *compiler) checkDefined() error {
 }
 
 func (c *compiler) flatten(t grammar.Term) []elem {
+	return c.flattenAt(t, false)
+}
+
+func (c *compiler) foldNT(name string) string {
+	if c.folded == nil {
+		c.folded = map[string]string{}
+	}
+	if fn, ok := c.folded[name]; ok {
+		return fn
+	}
+	fn := "$fi_" + name
+	c.folded[name] = fn
+	r, ok := c.rules[name]
+	if !ok {
+		return name
+	}
+	body := grammar.CaseFold{On: true, Term: r.Body}
+	c.rules[fn] = grammar.Rule{Name: fn, Body: body}
+	if c.regular[name] {
+		d, err := buildDFA(body, c)
+		if err == nil {
+			if c.extraDFA == nil {
+				c.extraDFA = map[string]*dfa{}
+			}
+			c.extraDFA[fn] = d
+			c.regular[fn] = true
+		}
+	} else {
+		c.regular[fn] = false
+		c.emitRule(fn, body)
+	}
+	return fn
+}
+
+func (c *compiler) flattenAt(t grammar.Term, fold bool) []elem {
 	switch x := t.(type) {
+	case grammar.CaseFold:
+		return c.flattenAt(x.Term, x.On)
 	case grammar.Seq:
 		var out []elem
 		for _, s := range x.Terms {
 			if sq, ok := s.(grammar.Seq); ok && len(sq.Directives) > 0 {
 				// A directive on a nested group governs that group only.
 				h := c.fresh("grp")
-				c.addProdDirs(h, c.flatten(sq), sq.Directives)
+				c.addProdDirs(h, c.flattenAt(sq, fold), sq.Directives)
 				out = append(out, elem{kind: ekNT, nt: h})
 				continue
 			}
-			out = append(out, c.flatten(s)...)
+			out = append(out, c.flattenAt(s, fold)...)
 		}
 		return out
 	case grammar.Alt:
 		h := c.fresh("alt")
-		c.emitRule(h, x)
+		if fold {
+			for _, a := range x.Terms {
+				c.addProd(h, c.flattenAt(a, true))
+			}
+		} else {
+			c.emitRule(h, x)
+		}
 		return []elem{{kind: ekNT, nt: h}}
 	case grammar.OrderedAlt:
-		return c.flatten(pegEncode(x))
+		return c.flattenAt(pegEncode(x), fold)
 	case grammar.Ident:
-		if c.regular[x.Name] {
-			return []elem{{kind: ekDFA, nt: x.Name, label: x.Label}}
+		name := x.Name
+		if fold {
+			name = c.foldNT(x.Name)
 		}
-		return []elem{{kind: ekNT, nt: x.Name, label: x.Label}}
+		if c.regular[name] {
+			return []elem{{kind: ekDFA, nt: name, label: x.Label}}
+		}
+		return []elem{{kind: ekNT, nt: name, label: x.Label}}
 	case grammar.Named:
-		out := c.flatten(x.Term)
+		out := c.flattenAt(x.Term, fold)
 		if len(out) == 1 {
 			out[0].name = x.Name
 			return out
@@ -589,28 +645,69 @@ func (c *compiler) flatten(t grammar.Term) []elem {
 		c.addProd(h, out)
 		return []elem{{kind: ekNT, nt: h, name: x.Name}}
 	case grammar.Leaf:
-		return []elem{{kind: ekDFA, nt: c.leafDFA(x)}}
+		inner := x
+		if fold {
+			inner.Term = grammar.CaseFold{On: true, Term: x.Term}
+		}
+		return []elem{{kind: ekDFA, nt: c.leafDFA(inner)}}
 	case grammar.Quant:
-		return []elem{{kind: ekNT, nt: c.quantNT(c.flatten(x.Term), x.Min, x.Max)}}
+		return []elem{{kind: ekNT, nt: c.quantNT(c.flattenAt(x.Term, fold), x.Min, x.Max)}}
 	case grammar.Delim:
-		return []elem{{kind: ekNT, nt: c.delimNT(x)}}
+		d := x
+		if fold {
+			d.Term = grammar.CaseFold{On: true, Term: x.Term}
+			d.Sep = grammar.CaseFold{On: true, Term: x.Sep}
+		}
+		return []elem{{kind: ekNT, nt: c.delimNT(d)}}
 	case grammar.Stack:
-		return []elem{{kind: ekNT, nt: c.stackNT(x)}}
+		st := x
+		if fold {
+			ls := make([]grammar.Term, len(x.Levels))
+			for i, l := range x.Levels {
+				ls[i] = grammar.CaseFold{On: true, Term: l}
+			}
+			st.Levels = ls
+		}
+		return []elem{{kind: ekNT, nt: c.stackNT(st)}}
 	case grammar.Scope:
-		return []elem{{kind: ekNT, nt: c.scopeNT(x)}}
+		sc := x
+		if fold {
+			sc.Term = grammar.CaseFold{On: true, Term: x.Term}
+		}
+		return []elem{{kind: ekNT, nt: c.scopeNT(sc)}}
 	case grammar.Lookahead:
+		inner := x.Term
+		if fold {
+			inner = grammar.CaseFold{On: true, Term: inner}
+		}
 		h := c.fresh("la")
-		c.emitRule(h, x.Term)
+		c.emitRule(h, inner)
 		return []elem{{kind: ekLook, nt: h}}
 	case grammar.NegLookahead:
+		inner := x.Term
+		if fold {
+			inner = grammar.CaseFold{On: true, Term: inner}
+		}
 		h := c.fresh("nl")
-		c.emitRule(h, x.Term)
+		c.emitRule(h, inner)
 		return []elem{{kind: ekNegLook, nt: h}}
 	case grammar.Empty:
 		return nil
 	case grammar.PosProp, grammar.Ref:
 		return []elem{{kind: ekTerm, term: x}}
-	case grammar.String, grammar.CharClass, grammar.Escape, grammar.AnyChar:
+	case grammar.String:
+		s := x
+		if fold {
+			s.Fold = true
+		}
+		return []elem{{kind: ekTerm, term: s}}
+	case grammar.CharClass:
+		cc := x
+		if fold {
+			cc.Fold = true
+		}
+		return []elem{{kind: ekTerm, term: cc}}
+	case grammar.Escape, grammar.AnyChar:
 		return []elem{{kind: ekTerm, term: x}}
 	case grammar.Self:
 		return nil
@@ -755,6 +852,8 @@ func rewriteSelf(t grammar.Term, tighter string) grammar.Term {
 		return grammar.Lookahead{Term: rewriteSelf(x.Term, tighter)}
 	case grammar.NegLookahead:
 		return grammar.NegLookahead{Term: rewriteSelf(x.Term, tighter)}
+	case grammar.CaseFold:
+		return grammar.CaseFold{On: x.On, Term: rewriteSelf(x.Term, tighter)}
 	default:
 		return t
 	}
@@ -833,6 +932,8 @@ func localRegular(t grammar.Term) bool {
 		return localRegular(x.Term) && localRegular(x.Sep)
 	case grammar.Lookahead, grammar.NegLookahead:
 		return false
+	case grammar.CaseFold:
+		return localRegular(x.Term)
 	case grammar.Scope:
 		return localRegular(x.Term)
 	}

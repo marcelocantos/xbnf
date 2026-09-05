@@ -1,38 +1,159 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 //
-// Coverage: uppercase-keyword SELECT with optional DISTINCT/ALL, FROM, WHERE,
-// comma-separated select list, dotted names, function calls, AND/OR, and
-// arithmetic. COUNT(*) is out (star-arg vs expr-list FIRST). Not DDL, joins,
-// subqueries, windows, or procedural bodies. (?!KEYWORD) on IDENT.
+// Coverage: PostgreSQL-ish SQL in the pinned regress files. Keywords are
+// case-folded via (?i:). Not a full dialect.
 
-query -> select_stmt (";" select_stmt)* ";"? ;
+query -> stmt (";" stmt)* ";"? ;
 
-select_stmt -> "SELECT" ("DISTINCT" | "ALL")?
-               select_list
-               ("FROM" from_clause)?
-               ("WHERE" expr)? ;
+stmt -> (select_stmt | values_stmt | insert_stmt | update_stmt | create_stmt
+      | drop_stmt | set_stmt | reset_stmt | analyze_stmt | explain_stmt
+      | begin_stmt | end_stmt | rollback_stmt | alter_stmt | empty_stmt) #longest ;
+
+empty_stmt -> () ;
+
+select_stmt -> query_term (setop query_term)* order_by?
+               ((?i:"limit") expr)? ((?i:"offset") expr)? for_lock? ;
+
+for_lock -> (?i:"for") ((?i:"no") (?i:"key"))? (?i:("update" | "share")) ;
+
+query_term -> ("(" select_stmt ")" | values_stmt | select_core | (?i:"table") IDENT) #longest ;
+
+setop -> (?i:("union" | "except" | "intersect")) (?i:"all")? ;
+
+select_core -> (?i:"select") (?i:("distinct" | "all"))?
+               select_list?
+               (?i:"from" from_item ("," from_item)*)?
+               (?i:"where" expr)?
+               (?i:"group" "by" expr_list)?
+               (?i:"having" expr)? ;
 
 select_list -> ("*" | select_item:",") #longest ;
-select_item -> expr (("AS")? IDENT)? ;
+select_item -> expr ((?i:"as")? IDENT)? ;
 
-from_clause -> IDENT (("AS")? IDENT)? ;
+from_item -> from_atom ((?i:"as")? IDENT ("(" IDENT:"," ")")?)? from_tail* ;
 
-relop -> (">=" | "<=" | "<>" | ">" | "<" | "=") #longest ;
+from_atom -> (IDENT "(" expr_list? ")"
+           | IDENT "*"? ("." IDENT)*
+           | (?i:"lateral") from_atom
+           | "(" select_stmt ")"
+           | "(" values_stmt ")") #longest ;
 
-expr -> @:op="OR"
-      > @:op="AND"
-      > "NOT" @
+from_tail -> (?i:("left" | "right" | "full" | "inner" | "cross"))? (?i:"join") from_item
+             ((?i:"on" expr | (?i:"using") "(" IDENT:"," ")") #longest)? ;
+
+values_stmt -> (?i:"values") values_row ("," values_row)* ;
+values_row -> "(" expr_list ")" ;
+
+insert_stmt -> (?i:"insert") (?i:"into") IDENT
+               ((?i:"default") (?i:"values")
+               | (?i:"values") values_row ("," values_row)*
+               | select_core
+               | "(" select_stmt ")") #longest ;
+
+update_stmt -> (?i:"update") IDENT (?i:"set") assign ("," assign)*
+               ((?i:"from") from_item ("," from_item)*)?
+               ((?i:"where") expr)? ;
+assign -> IDENT "=" expr ;
+
+create_stmt -> (?i:"create") ((?i:"or") (?i:"replace"))? create_rest ;
+
+create_rest -> ((?i:"temp")? (?i:"table") IDENT table_def
+             | (?i:"index") IDENT? (?i:"on") IDENT "(" expr_list ")"
+             | (?i:"function") IDENT "(" func_params? ")" (?i:"returns") type dollar_body
+             | (?i:"type") IDENT (?i:"as") table_def
+             | (?i:"domain") IDENT (?i:"as") type
+             | (?i:"operator") rest_toks
+             | rest_toks) #longest ;
+
+table_def -> "(" col_def:","? ")"
+           | (?i:"as") select_stmt ;
+
+col_def -> IDENT type col_tail* ;
+col_tail -> ((?i:"primary") (?i:"key") | (?i:"not") (?i:"null") | (?i:"null") | (?i:"default") expr | IDENT) #longest ;
+
+func_params -> IDENT type ("," IDENT type)* ;
+
+drop_stmt -> (?i:"drop") drop_what ;
+drop_what -> ((?i:"function") IDENT "(" type:","? ")"
+            | (?i:("table" | "index" | "type" | "domain" | "operator" | "temp"))
+              IDENT ("," IDENT)* ((?i:"cascade" | (?i:"restrict")))?) #longest ;
+
+set_stmt -> (?i:"set") IDENT (("=" | (?i:"to")) set_val)? ;
+set_val -> ((?i:"off" | (?i:"on") | (?i:"default") | expr) #longest) ;
+
+reset_stmt -> (?i:"reset") IDENT ;
+
+analyze_stmt -> (?i:"analyze") IDENT? ;
+
+explain_stmt -> (?i:"explain") ("(" explain_opt:"," ")" )? stmt ;
+explain_opt -> IDENT IDENT? ;
+
+begin_stmt -> (?i:"begin") ;
+end_stmt -> (?i:"end") ;
+rollback_stmt -> (?i:"rollback") ;
+alter_stmt -> (?i:"alter") rest_toks ;
+
+tok -> (dollar_body | IDENT | STR | NUMBER | op | "(" rest_inner ")") #longest ;
+rest_toks -> tok+ ;
+rest_inner -> (tok | ",")* ;
+
+dollar_body -> "$$" /{ #wrap -> () ; ([^$] | "$" [^$])* ; }/ "$$" rest_toks? ;
+
+type -> IDENT ("." IDENT)? ("(" NUMBER ("," NUMBER)? ")")? ("[]")? ;
+
+order_by -> (?i:"order") (?i:"by") order_item:"," ;
+order_item -> expr order_tail? ;
+order_tail -> ((?i:"using") op
+            | ((?i:"asc" | (?i:"desc")))? ((?i:"nulls") (?i:("first" | "last")))?) #longest ;
+
+expr_list -> expr:"," ;
+
+relop -> (">=" | "<=" | "<>" | "!=" | ">" | "<" | "=") #longest ;
+
+op -> ("::" | relop | "+" | "-" | "*" | "/" | "%" | "||") #longest ;
+
+expr -> @:op=(?i:"or")
+      > @:op=(?i:"and")
+      > (?i:"not") @
       > @:op=relop
-      > @:op=("+" | "-") #assoc=left
+      > @:op=("+" | "-" | "||") #assoc=left
       > @:op=("*" | "/" | "%") #assoc=left
-      > atom ;
+      > ("+" | "-") @
+      > prefix ;
 
-atom -> (IDENT ("(" (expr:",")? ")")? ("." IDENT)*
-      | "(" expr ")"
+prefix -> atom postfix* ;
+
+postfix -> ("(" expr_list? ")"
+         | "." ("*" | IDENT) #longest
+         | "[" expr "]"
+         | "::" type
+         | (?i:"between") expr (?i:"and") expr
+         | (?i:"is") (?i:"not")? (?i:"null")
+         | (?i:"is") (?i:"not")? (?i:"distinct") (?i:"from") expr
+         | (?i:"in") in_arg) #longest ;
+
+in_arg -> "(" in_arg_body ")" ;
+in_arg_body -> (values_stmt | select_stmt | expr_list) #longest ;
+
+atom -> ((?i:"case") case_body (?i:"end")
+      | (?i:"cast") "(" expr (?i:"as") type ")"
+      | (?i:"trim") "(" trim_args ")"
+      | (?i:"array") "[" expr_list "]"
+      | IDENT
       | NUMBER
       | STR
-      | "NULL" | "TRUE" | "FALSE") #longest ;
+      | "*"
+      | "(" select_stmt ")"
+      | "(" expr_list ")"
+      | (?i:("null" | "true" | "false" | "default"))) #longest ;
+
+trim_args -> ((?i:("both" | "leading" | "trailing")) (?i:"from") expr
+           | expr (?i:"from") expr
+           | expr) #longest ;
+
+when_chain -> ((?i:"when") expr (?i:"then") expr)+ ((?i:"else") expr)? ;
+case_body -> (when_chain | expr when_chain) #longest ;
 
 IDENT -> /{ #wrap -> () ;
     (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]*
@@ -40,15 +161,26 @@ IDENT -> /{ #wrap -> () ;
 }/ ;
 
 KEYWORD -> /{ #wrap -> () ;
-    ("SELECT" | "FROM" | "WHERE" | "DISTINCT" | "ALL" | "AS"
-    | "AND" | "OR" | "NOT" | "NULL" | "TRUE" | "FALSE")
+    (?i:("select" | "from" | "where" | "distinct" | "all" | "as" | "and" | "or"
+    | "not" | "null" | "true" | "false" | "case" | "when" | "then" | "else"
+    | "end" | "union" | "except" | "intersect" | "order" | "by" | "group"
+    | "having" | "insert" | "into" | "values" | "update" | "set" | "create"
+    | "drop" | "table" | "index" | "join" | "left" | "right" | "full" | "inner"
+    | "cross" | "on" | "using" | "lateral" | "default" | "temp" | "function"
+    | "returns" | "begin" | "rollback" | "alter" | "reset" | "analyze"
+    | "explain" | "asc" | "desc" | "nulls" | "first" | "last" | "replace"
+    | "offset" | "limit" | "is" | "cast" | "trim" | "between" | "trailing"
+    | "leading" | "both" | "for" | "share" | "no" | "key" | "array"))
     (?![A-Za-z0-9_]) ;
 }/ ;
 
-NUMBER -> /{ #wrap -> () ; [0-9]+ ("." [0-9]+)? ; }/ ;
+NUMBER -> /{ #wrap -> () ; [0-9]+ ("." [0-9]+)? ([eE] [+\-]? [0-9]+)? ; }/ ;
 
-STR -> /{ #wrap -> () ; "'" ("''" | [^'])* "'" ; }/ ;
+STR -> /{ #wrap -> () ;
+    "'" ("''" | [^'])* "'"
+  | "E'" ("''" | [^'])* "'" ;
+}/ ;
 
-COMMENT -> /{ #wrap -> () ; "--" [^\n]* ; }/ ;
+COMMENT -> /{ #wrap -> () ; "--" [^\n]* | "/*" ([^*] | "*" [^/])* "*/" ; }/ ;
 
 #wrap -> (\s | COMMENT)* ;
