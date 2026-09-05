@@ -134,6 +134,9 @@ func Evaluate(a *Args) (*Report, error) {
 	if a.Oracle == nil && strings.EqualFold(m.Language, "json") {
 		a.Oracle = JSONValid{}
 	}
+	if a.Oracle == nil && strings.EqualFold(m.Language, "go") {
+		a.Oracle = GoParser{}
+	}
 	if a.Oracle != nil {
 		rep.Reference.Name = a.Oracle.Name()
 		rep.Reference.Work = a.Oracle.Work()

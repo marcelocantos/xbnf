@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "role": "historical",
   "language": "c++",
   "dialect": "C++ translation unit (preprocessed)",
   "dialect_version": "gcc-14.2.0 g++.dg/parse + clang -E -P",

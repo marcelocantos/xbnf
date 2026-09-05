@@ -1,8 +1,14 @@
 # Corpus evaluation contract (🎯T22.1)
 
-Shared measurement rules for SQL, XML, C++, Python, YAML, JavaScript, and
-CommonMark tracks. JSON is a standing fixture and an auxiliary regression, not
-a substitute for those languages.
+Shared measurement rules for the live T22 tracks: SQL, XML, Go, Python, YAML,
+JavaScript, and CommonMark. C++ under `eval/testdata/cpp` is historical
+(`role: historical`) and is not a live language. JSON is a standing fixture
+and an auxiliary regression, not a substitute for those languages.
+
+Language-track achievement requires a **present** real-world parser oracle and
+`xbnf eval` **Failed=0** on the pinned manifest. A missing binary is an
+`oracle_limit`, not a pass. Extending xbnf to close grammar gaps is in scope.
+Dropping pinned fixtures after seeing misses to mint 100% is not.
 
 ## What this measures
 
@@ -97,8 +103,12 @@ reports for T22 live under `docs/eval/` and cite the manifest hashes.
 - `engine.TestListDescriptorsLinear` — structural growth on JSON
 - `make bench-stable SELF=1` — JSON 64 KB noise gate
 
-Language corpora are the files listed in `eval/testdata/*/manifest.json`
-(provenance in `eval/testdata/SOURCES.md`). `make eval-languages` runs all
-seven. Failures stay in the report; the file list is the denominator.
+Live language corpora are the files listed in each live
+`eval/testdata/*/manifest.json` (provenance in `eval/testdata/SOURCES.md`).
+`make eval-languages` runs the seven live tracks. Historical manifests
+(`role: historical`) stay on disk and load in `go test ./eval/` but are not
+live-set evidence. Failures stay in the report; the file list is the
+denominator. A language track is not achieved while Failed>0 or the oracle is
+absent.
 
 JSON smoke remains `make eval-corpus`.

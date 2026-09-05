@@ -1,0 +1,132 @@
+// Copyright 2026 Marcelo Cantos
+// SPDX-License-Identifier: Apache-2.0
+//
+// Coverage: Go source files as a CFG. package/import, func (incl. methods),
+// type struct, var, if/for-range/return/defer, composite literals, make/append
+// conversions, selectors, index/slice, pointer/slice/func types, ASI via
+// newline as terminator. No generics, channels, select, go-stmt, type switch,
+// fallthrough, labels, or interface method sets as claimed coverage.
+
+file -> nl* "package" IDENT eos import_decl* top_decl* nl* ;
+
+import_decl -> "import" import_body eos ;
+
+import_body -> ( "(" nl* (import_spec eos)* ")" | import_spec ) #longest ;
+
+import_spec -> (IDENT | ".")? STR ;
+
+top_decl -> top_decl_body eos ;
+
+top_decl_body -> (func_decl | type_decl | var_decl) #longest ;
+
+func_decl -> "func" receiver? IDENT signature block ;
+
+receiver -> "(" IDENT go_type ")" ;
+
+signature -> "(" param_list? ")" result? ;
+
+result -> "(" param_list ")" | go_type ;
+
+param_list -> param_group:"," ;
+
+param_group -> (IDENT ("," IDENT)* "..."? go_type | "..." go_type | go_type) #longest ;
+
+type_decl -> "type" IDENT go_type ;
+
+var_decl -> "var" IDENT ("=" expr | go_type ("=" expr)?) #longest ;
+
+go_type -> (
+    "*" go_type
+  | "[]" go_type
+  | "func" signature
+  | "struct" "{" nl* field_decl* "}"
+  | IDENT ("." IDENT)*
+) #longest ;
+
+field_decl -> IDENT go_type eos ;
+
+block -> "{" nl* stmt* "}" ;
+
+stmt -> stmt_body eos ;
+
+stmt_body -> (if_stmt | for_stmt | return_stmt | defer_stmt | var_decl | simple_stmt) #longest ;
+
+if_stmt -> "if" expr block ("else" (if_stmt | block) #longest)? ;
+
+for_stmt -> "for" for_head? block ;
+
+for_head -> (range_clause | c_for | expr) #longest ;
+
+range_clause -> IDENT ("," IDENT)? (":=" | "=") "range" expr ;
+
+c_for -> simple_stmt? ";" expr? ";" simple_stmt? ;
+
+return_stmt -> "return" expr? ;
+
+defer_stmt -> "defer" expr ;
+
+simple_stmt -> primary stmt_tail? ;
+
+stmt_tail -> (incdec | assign_op expr | ":=" expr) #longest ;
+
+incdec -> "++" | "--" ;
+
+assign_op -> ("+=" | "-=" | "*=" | "/=" | "=") #longest ;
+
+relop -> ("==" | "!=" | "<=" | ">=" | "<" | ">") #longest ;
+
+addop -> ("+" | "-" | "|" | "^") #longest ;
+
+mulop -> ("<<" | ">>" | "&^" | "*" | "/" | "%" | "&") #longest ;
+
+expr -> @:op="||"
+      > @:op="&&"
+      > @:op=relop
+      > @:op=addop #assoc=left
+      > @:op=mulop #assoc=left
+      > unop* primary ;
+
+unop -> ("!" | "+" | "-" | "&" | "*" | "^") #longest ;
+
+primary -> (IDENT postfix* | "[]" go_type postfix* | lit | "(" expr ")") #longest ;
+
+postfix -> ("." IDENT | "[" slice_index "]" | "(" nl* args? nl* ")" | "{" nl* elements? nl* "}" | "...") #longest ;
+
+slice_index -> expr (":" expr?)? ;
+
+args -> expr ("," expr)* "..."? ;
+
+elements -> element:",", ;
+
+element -> (IDENT ":" expr | expr) #longest ;
+
+lit -> NUMBER | STR | RUNE | "nil" | "true" | "false" ;
+
+eos -> ";"? nl+ | ";" ;
+
+nl -> "\r"? "\n" ;
+
+IDENT -> /{ #wrap -> () ;
+    (?!KEYWORD) [A-Za-z_] [A-Za-z0-9_]* ;
+}/ ;
+
+KEYWORD -> /{ #wrap -> () ;
+    ("break" | "case" | "chan" | "const" | "continue" | "default" | "defer"
+    | "else" | "fallthrough" | "for" | "func" | "go" | "goto" | "if"
+    | "import" | "interface" | "map" | "package" | "range" | "return"
+    | "select" | "struct" | "switch" | "type" | "var")
+    (?![A-Za-z0-9_]) ;
+}/ ;
+
+NUMBER -> /{ #wrap -> () ; [0-9]+ ; }/ ;
+
+STR -> /{ #wrap -> () ;
+    '"' ( "\\" . | [^"\\] )* '"'
+  | "`" [^`]* "`" ;
+}/ ;
+
+RUNE -> /{ #wrap -> () ; "'" ( "\\" . | [^'\\] ) "'" ; }/ ;
+
+COMMENT -> /{ #wrap -> () ; "//" [^\n]* | "/*" ([^*] | "*" [^/])* "*/" ; }/ ;
+
+#wrap -> ([ \t] | COMMENT)* ;

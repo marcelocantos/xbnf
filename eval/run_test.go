@@ -175,7 +175,8 @@ func TestLanguageManifests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := 0
+	live := 0
+	sawGo, sawCpp := false, false
 	for _, e := range ents {
 		if !e.IsDir() || e.Name() == "json-smoke" {
 			continue
@@ -184,7 +185,18 @@ func TestLanguageManifests(t *testing.T) {
 		if _, err := os.Stat(man); err != nil {
 			continue
 		}
-		n++
+		m, err := LoadManifest(man)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Live() {
+			live++
+			if e.Name() == "go" {
+				sawGo = true
+			}
+		} else if e.Name() == "cpp" {
+			sawCpp = true
+		}
 		t.Run(e.Name(), func(t *testing.T) {
 			rep, err := Evaluate(&Args{Manifest: man, WarmRepeat: 2})
 			if err != nil {
@@ -217,10 +229,19 @@ func TestLanguageManifests(t *testing.T) {
 			if !sawAccept {
 				t.Fatal("denominator needs at least one independently valid accept")
 			}
+			if e.Name() == "go" && rep.OracleLimit != "" {
+				t.Fatalf("go/parser must be present, got oracle_limit %q", rep.OracleLimit)
+			}
+			if e.Name() == "go" && (rep.Reference.Name != "go/parser.ParseFile") {
+				t.Fatalf("go oracle %q", rep.Reference.Name)
+			}
 		})
 	}
-	if n < 7 {
-		t.Fatalf("language manifests %d, want 7", n)
+	if live != 7 || !sawGo {
+		t.Fatalf("live language manifests %d (go=%v), want 7 including go", live, sawGo)
+	}
+	if !sawCpp {
+		t.Fatal("historical C++ manifest missing (must stay on disk)")
 	}
 }
 

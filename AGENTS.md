@@ -16,7 +16,7 @@ make test
 make vet
 make bullseye # standing invariants for /cv
 make eval-corpus # T22.1 standing JSON smoke harness
-make eval-languages # T22 SQL XML C++ Python YAML JS CommonMark
+make eval-languages # T22 SQL XML Go Python YAML JS CommonMark (C++ historical)
 ```
 
 Never pass `-j` to make; `MAKEFLAGS` is set in the Makefile.

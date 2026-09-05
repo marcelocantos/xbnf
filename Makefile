@@ -42,7 +42,7 @@ eval-corpus:
 
 eval-languages:
 	@fail=0; \
-	for m in sql xml cpp python yaml javascript commonmark; do \
+	for m in sql xml go python yaml javascript commonmark; do \
 	  go run ./cmd/xbnf eval eval/testdata/$$m/manifest.json || fail=1; \
 	done; \
 	exit $$fail

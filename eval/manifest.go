@@ -36,6 +36,7 @@ const (
 // revision; subsets cannot silently shrink to fit xbnf.
 type Manifest struct {
 	Version        int      `json:"version"`
+	Role           string   `json:"role,omitempty"` // "historical" is not in the live T22 set
 	Language       string   `json:"language"`
 	Dialect        string   `json:"dialect"`
 	DialectVersion string   `json:"dialect_version"`
@@ -118,6 +119,12 @@ func LoadManifest(path string) (*Manifest, error) {
 		}
 	}
 	return &m, nil
+}
+
+// Live reports whether this manifest is in the T22 live language set.
+// role=historical keeps C++ on disk without counting it as a live track.
+func (m *Manifest) Live() bool {
+	return m.Role != "historical"
 }
 
 func hashFile(path string) (string, error) {

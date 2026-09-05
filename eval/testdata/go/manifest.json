@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "language": "go",
+  "dialect": "Go source file",
+  "dialect_version": "go1.26.4",
+  "source": {
+    "name": "golang/go",
+    "revision": "go1.26.4",
+    "license": "BSD-3-Clause",
+    "url": "https://github.com/golang/go/tree/go1.26.4/src"
+  },
+  "grammar": "grammar.xbnf",
+  "start": "file",
+  "selection": "stdlib errors.go, errors/join.go, sync/once.go plus two go/parser testdata syntax rejects from tag go1.26.4.",
+  "coverage": "package/import, func/methods, type struct, var, if/for-range/return/defer, composite literals, conversions, selectors, index/slice, pointer/slice/func types. Semicolon insertion as newline terminator. No generics, channels, select, go-stmt, type switch, or interface method sets as claimed coverage.",
+  "exclusions": [
+    "generics, channels, select, go statement, type switch, interface method sets, labels, fallthrough"
+  ],
+  "reference": {
+    "name": "go/parser.ParseFile",
+    "work": "syntax only (AllErrors|SkipObjectResolution); not go/types, not compile"
+  },
+  "files": [
+    {
+      "path": "corpus/errors.go",
+      "sha256": "865b9cce008bf68d4d2cc4146455a9c5692756bbe57be29ee1ef0de345dafe1e",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "stdlib errors.New / errorString; go/parser accept"
+    },
+    {
+      "path": "corpus/join.go",
+      "sha256": "87da7c120f71d17e37f110ae1dc6af6493ec841a22ee825e13a6a8024a014dba",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "stdlib errors.Join; go/parser accept"
+    },
+    {
+      "path": "corpus/once.go",
+      "sha256": "3bc00bab32acd134ddf50c87fdbd1dd70502f224b7684a801a077dfe0a05eb3f",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "stdlib sync.Once; go/parser accept"
+    },
+    {
+      "path": "corpus/issue11377.src",
+      "sha256": "404cc4c256f6448a5a0243be65efee624df7f609c0d8ad6685255242ac0758af",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "go/parser testdata: extra ) in if header"
+    },
+    {
+      "path": "corpus/commas.src",
+      "sha256": "a760542175fa636e164674133254ebadaa0a95bb98129d57916a9e834b2e4fd6",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "go/parser testdata: missing commas in composite literals"
+    }
+  ]
+}

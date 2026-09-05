@@ -19,7 +19,7 @@ The parse engine is not written yet.
 - [`docs/plan.md`](docs/plan.md) — locked decisions and work graph
 - [`docs/parse-speed.md`](docs/parse-speed.md) — JSON 64 KB parse speed vs wbnf and `encoding/json`
 - [`docs/eval/contract.md`](docs/eval/contract.md) — T22 corpus evaluation contract
-- [`docs/eval/T22.md`](docs/eval/T22.md) — seven-language evaluation report
+- [`docs/eval/T22.md`](docs/eval/T22.md) — seven-language evaluation report (SQL, XML, Go, Python, YAML, JS, CommonMark)
 - [`docs/toward-a-universal-grammar.md`](docs/toward-a-universal-grammar.md) —
   design origin (written against wbnf; see the lineage note at the top)
 

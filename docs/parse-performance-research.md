@@ -484,7 +484,7 @@ seven completed grammars or seven available performance results.
 |---|---|---|
 | SQL, 🎯T22.2 | Shared prefixes, expression structure, optional clauses, callee reuse. | A pinned PostgreSQL raw parser; separate syntax from binding and execution. |
 | XML, 🎯T22.3 | Long text runs, nesting, captured name agreement, contextual reuse. | libxml2 under an explicit well-formedness profile; align entity, DTD, and namespace treatment. |
-| C++, 🎯T22.4 | Large grammar, declaration/expression interactions, templates, expensive continuations. | Pinned Clang on identical preprocessed inputs; account for semantic work in syntax-only mode. |
+| Go, 🎯T22.4 | C-family CFG: declarations, methods, composite literals, types as expression operands, semicolon insertion. | `go/parser.ParseFile` (syntax only, not `go/types`). C++ testdata is historical, not this track. |
 | Python, 🎯T22.5 | Indentation, logical lines, contextual keywords, embedded expressions. | CPython AST parsing; distinguish parsing from later compiler checks. |
 | YAML, 🎯T22.6 | Indentation/context parameters and scalar interpretation. | A pinned YAML test suite and compatible parser; separate syntax/events from value construction. |
 | JavaScript, 🎯T22.7 | Lexical goals, template boundaries, newline-sensitive syntax. | Pinned Acorn with matching edition and Script/Module settings. |
@@ -492,16 +492,17 @@ seven completed grammars or seven available performance results.
 
 The feature choices are grounded in the [PostgreSQL parser
 description](https://www.postgresql.org/docs/17/parser-stage.html), [XML specification](https://www.w3.org/TR/xml/),
-[Clang tooling documentation](https://clang.llvm.org/docs/LibTooling.html), [Python lexical
+[Go spec](https://go.dev/ref/spec) / [go/parser](https://pkg.go.dev/go/parser), [Python lexical
 specification](https://docs.python.org/3.13/reference/lexical_analysis.html), [YAML production
 parameters](https://yaml.org/spec/1.2.2/#42-production-parameters), [ECMAScript lexical
 grammar](https://tc39.es/ecma262/2024/multipage/ecmascript-language-lexical-grammar.html), and [CommonMark
 specification](https://spec.commonmark.org/0.31.2/).
 
 Whole-language names are insufficient experimental definitions. Every track needs a frozen dialect, reference version,
-corpus revision, licence, selection rule, exclusions, and output contract. C++ name/type-dependent decisions and
-CommonMark reference interpretation deserve explicit boundaries; silently accepting a CFG superset is not full-language
-conformance. Source input for xbnf remains characters, including for Python and JavaScript. External token streams must
+corpus revision, licence, selection rule, exclusions, and output contract. Go is parsed as a CFG against
+`go/parser`; type-checking is out of band. CommonMark reference interpretation deserves explicit
+boundaries; silently accepting a CFG superset is not full-language conformance. Live-track
+achievement requires a present real-world parser and Failed=0 on the pinned manifest. Source input for xbnf remains characters, including for Python and JavaScript. External token streams must
 not do the hard part on xbnf's behalf.
 
 JSON and xbnf self-hosting remain useful auxiliary regressions. arr.ai is outside this portfolio. The earlier Pigeon
