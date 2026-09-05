@@ -31,7 +31,7 @@ Hashes are of the exact bytes on disk. `eval.LoadManifest` rejects drift.
 | class | Meaning | Oracle disagreement |
 |---|---|---|
 | `syntax` | Well-formedness / grammar membership | xbnf and the reference must agree with `expect` |
-| `tree` | Structure after a successful parse | Compare a documented projection, not raw dumps |
+| `tree` | Structure after a successful parse | Compare a documented projection, not raw dumps. If the structural oracle is missing, an xbnf accept is `unverified` (not a pass): leftover-text consumption is not success. |
 | `semantic` | Meaning the reference may reject after parse | xbnf accept + oracle reject is **not** an xbnf syntax error |
 
 Deliberately malformed fixtures have an independently stated `reason`.
@@ -40,11 +40,12 @@ syntax miss.
 
 ## Phases (timed separately)
 
-Headline times use uninstrumented `Compiled.Parse` after correctness.
+Headline times use uninstrumented `Compiled.Parse`. Diagnostics are a later pass.
 
-1. **Correctness** — every fixture, not timed, tree built.
-2. **Cold compile** — `syntax.Parse` + `engine.Compile`.
-3. **Cold first parse** — first `Parse` after compile.
+1. **Cold compile** — `syntax.Parse` + `engine.Compile`.
+2. **Cold first parse** — first `Parse` on that `Compiled`, **before** the
+   untimed correctness loop (a sample after `checkFile` is pool-warm).
+3. **Correctness** — every fixture, not timed, tree built.
 4. **Warm varied** — one `Parse` per fixture on the live `Compiled`.
 5. **Warm identical** — repeated `Parse` of one document (pool reuse).
 6. **Diagnostics** — `Compiled.ParseProfile` after timing.

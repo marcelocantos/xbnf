@@ -14,7 +14,9 @@ atx -> "#"{1,6} [ \t]+ /[^\n]+/ "\n" ;
 
 fence -> "```" /[^\n]*/ "\n" /([^`] | "`" [^`] | "``" [^`])*/ "```" "\n"? ;
 
-para -> /[^#`\n][^\n]*/ "\n" ;
+// List markers and indented code are not paragraphs. Swallowing them would
+// count leftover document structure as success.
+para -> (?! "- " | "* " | "+ " | "    ") /[^#`\n][^\n]*/ "\n" ;
 
 NEWLINE -> /{ #wrap -> () ; \n ; }/ ;
 

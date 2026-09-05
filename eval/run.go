@@ -152,6 +152,13 @@ func Evaluate(a *Args) (*Report, error) {
 		items = append(items, loaded{file: f, data: data})
 	}
 
+	// Cold first parse on this Compiled before any other Parse (not after
+	// the correctness loop, which would report a pool-warm sample).
+	first := items[0]
+	t1 := time.Now()
+	_ = c.Parse(m.Start, string(first.data))
+	rep.ColdFirstNs = time.Since(t1).Nanoseconds()
+
 	// Untimed correctness. Tree is produced (Parse always builds it).
 	for _, it := range items {
 		fr := checkFile(c, m.Start, it.file, it.data, a.Oracle)
@@ -162,12 +169,6 @@ func Evaluate(a *Args) (*Report, error) {
 		}
 		rep.Files = append(rep.Files, fr)
 	}
-
-	// Cold first parse: already compiled; first input after compile.
-	first := items[0]
-	t1 := time.Now()
-	_ = c.Parse(m.Start, string(first.data))
-	rep.ColdFirstNs = time.Since(t1).Nanoseconds()
 
 	// Warm varied: one Parse per file on the live Compiled.
 	t2 := time.Now()
@@ -225,6 +226,12 @@ func checkFile(c *engine.Compiled, start string, f File, data []byte, o Oracle) 
 		Error:  res.Error,
 	}
 	want := f.Expect == ExpectAccept
+	if o == nil && f.Class == ClassTree && res.OK && want {
+		fr.Pass = false
+		fr.Kind = "unverified"
+		fr.Error = "structural oracle missing; leftover-text consumption is not success"
+		return fr
+	}
 	if o != nil && f.Class != ClassSemantic {
 		ok, err := o.Recognize(data)
 		if err != nil {

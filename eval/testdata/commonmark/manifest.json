@@ -28,14 +28,14 @@
       "path": "corpus/README.md",
       "sha256": "43286ba97b743db2e95871ba12210c8f54de3a26b016dfacf2b6de2003c99ca8",
       "expect": "accept",
-      "class": "syntax",
+      "class": "tree",
       "reason": "commonmark-spec README.md"
     },
     {
       "path": "corpus/changelog.txt",
       "sha256": "2ea3552ebef3794b7aca5e7b392d68ed61bde80113820e0337279a4987ac0337",
       "expect": "accept",
-      "class": "syntax",
+      "class": "tree",
       "reason": "commonmark-spec changelog.txt"
     }
   ]

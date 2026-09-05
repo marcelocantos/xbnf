@@ -69,8 +69,45 @@ func TestEvaluateJSONSmoke(t *testing.T) {
 	if !sawAccept || !sawReject {
 		t.Fatal("fixture must retain both accept and reject (full denominator)")
 	}
-	if rep.ColdCompileNs <= 0 || rep.WarmIdentN != 4 {
-		t.Fatalf("phases: compile=%d identN=%d", rep.ColdCompileNs, rep.WarmIdentN)
+	if rep.ColdCompileNs <= 0 || rep.ColdFirstNs <= 0 || rep.WarmIdentN != 4 {
+		t.Fatalf("phases: compile=%d first=%d identN=%d", rep.ColdCompileNs, rep.ColdFirstNs, rep.WarmIdentN)
+	}
+}
+
+func TestCommonMarkListLineNotParagraph(t *testing.T) {
+	src, err := os.ReadFile("testdata/commonmark/grammar.xbnf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := syntax.Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := engine.Compile(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := c.Parse("doc", "- <https://github.com/commonmark/cmark> (C)\n")
+	if res.OK {
+		t.Fatal("list item must not parse as a paragraph (leftover structure is not success)")
+	}
+}
+
+func TestCommonMarkNotPassWithoutCmark(t *testing.T) {
+	rep, err := Evaluate(&Args{Manifest: "testdata/commonmark/manifest.json", WarmRepeat: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.OracleLimit == "" {
+		t.Skip("cmark present; structural compare is the oracle's job")
+	}
+	for _, f := range rep.Files {
+		if f.Expect == ExpectAccept && f.Pass {
+			t.Fatalf("%s passed without cmark (kind=%s); leftover-text is not success", f.Path, f.Kind)
+		}
+		if f.Expect == ExpectAccept && f.Kind != "unverified" && f.Kind != "miss" {
+			t.Fatalf("%s: want unverified or miss without cmark, got %s", f.Path, f.Kind)
+		}
 	}
 }
 
