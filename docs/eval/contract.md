@@ -96,4 +96,8 @@ reports for T22 live under `docs/eval/` and cite the manifest hashes.
 - `engine.TestListDescriptorsLinear` — structural growth on JSON
 - `make bench-stable SELF=1` — JSON 64 KB noise gate
 
-Full language corpora are later T22.2–T22.4 commands, not this smoke.
+Language corpora are the files listed in `eval/testdata/*/manifest.json`
+(provenance in `eval/testdata/SOURCES.md`). `make eval-languages` runs all
+seven. Failures stay in the report; the file list is the denominator.
+
+JSON smoke remains `make eval-corpus`.

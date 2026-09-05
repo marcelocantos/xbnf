@@ -1,3 +1,0 @@
-SELECT a FROM t WHERE = 1;
-
-

@@ -1,22 +1,24 @@
 {
   "version": 1,
   "language": "python",
-  "dialect": "Python 3 subset",
-  "dialect_version": "3",
+  "dialect": "Python 3",
+  "dialect_version": "3.13.0",
   "source": {
-    "name": "xbnf standing Python layout fixtures",
-    "revision": "in-repo",
-    "license": "Apache-2.0",
-    "url": "https://github.com/marcelocantos/xbnf"
+    "name": "python/cpython Lib",
+    "revision": "60403a5409ff",
+    "license": "PSF-2.0",
+    "url": "https://github.com/python/cpython/tree/v3.13.0/Lib"
   },
   "grammar": "grammar.xbnf",
   "start": "file",
-  "selection": "Both listed files; no sampling.",
-  "coverage": "@col line-indent: top-level col 0, one block indent >0. def/if/while, pass/return, calls. No async, decorators, implicit joining beyond backslash.",
-  "exclusions": [],
+  "selection": "Three stdlib modules plus three tokenizedata encoding/syntax rejects from CPython v3.13.0.",
+  "coverage": "@col line-indent subset: col 0 statements, one indent >0, def/if/while, pass/return, calls. CPython stdlib files use imports, unicode, dicts: they remain in the denominator.",
+  "exclusions": [
+    "async, decorators, match/case, multi-level indent stacks"
+  ],
   "reference": {
-    "name": "CPython ast.parse",
-    "work": "syntax to AST; not bytecode or execution"
+    "name": "CPython compile",
+    "work": "syntax only via compile(bytes); honours encoding cookies; not bytecode/execution"
   },
   "oracle_cmd": [
     "python3",
@@ -24,17 +26,46 @@
   ],
   "files": [
     {
-      "path": "accept.py",
-      "sha256": "3e22dd4aab95ac01a2d252fbfaa931b8648341c528a4bd548847c611cb7e4be0",
+      "path": "corpus/keyword.py",
+      "sha256": "18c2be738c04ad20ad375f6a71db34b3823c7f40b0340f5294d0e89f3c9b093b",
       "expect": "accept",
-      "class": "syntax"
+      "class": "syntax",
+      "reason": "CPython Lib/keyword.py"
     },
     {
-      "path": "reject.py",
-      "sha256": "f6174ed4a0c7abd6f002ee7de4b9d210865d92ced2eab11365420b84595b436d",
+      "path": "corpus/token.py",
+      "sha256": "ac074e78356bfefd45f0da0931da80274a43c51ec763adeb66371ad6c0ab5fc6",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "CPython Lib/token.py"
+    },
+    {
+      "path": "corpus/this.py",
+      "sha256": "481d0cb3de511eae0b5713dad18542b07eafd9c013bb7690f7497bad49923a71",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "CPython Lib/this.py"
+    },
+    {
+      "path": "corpus/bad_coding.py",
+      "sha256": "ffd93515dbe0bc61779aafb3cdf11e4c32d229e120139bfc38d3ea54b95a76e3",
       "expect": "reject",
       "class": "syntax",
-      "reason": "def header missing colon"
+      "reason": "CPython tokenizedata: coding cookie uft-8 (unknown encoding)"
+    },
+    {
+      "path": "corpus/badsyntax_3131.py",
+      "sha256": "7a72d9ed8bed3d8e10d9a4b2013ffe79c6cd6367254e5baad1286d43552890ec",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "CPython tokenizedata: U+20AC as identifier"
+    },
+    {
+      "path": "corpus/badsyntax_pep3120.py",
+      "sha256": "8d39a6286aca58ab1a43ffd9f84e0758243334f579c6a7e3c082cf55a96a9f6d",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "CPython tokenizedata: latin-1 bytes without encoding cookie"
     }
   ]
 }

@@ -2,18 +2,20 @@
   "version": 1,
   "language": "sql",
   "dialect": "PostgreSQL SQL",
-  "dialect_version": "subset",
+  "dialect_version": "16.6 regress subset",
   "source": {
-    "name": "xbnf standing SQL subset fixtures",
-    "revision": "in-repo",
-    "license": "Apache-2.0",
-    "url": "https://github.com/marcelocantos/xbnf"
+    "name": "postgres/postgres src/test/regress/sql",
+    "revision": "1f47e7b59b92",
+    "license": "PostgreSQL",
+    "url": "https://github.com/postgres/postgres/tree/REL_16_6/src/test/regress/sql"
   },
   "grammar": "grammar.xbnf",
   "start": "query",
-  "selection": "Both listed files; no sampling.",
-  "coverage": "Uppercase-keyword SELECT with FROM/WHERE, arithmetic, AND/OR, function calls with expr args (not COUNT(*)). No joins, DDL, subqueries, windows.",
-  "exclusions": [],
+  "selection": "Exactly the four REL_16_6 regress files listed. No sampling at eval time.",
+  "coverage": "Uppercase-keyword SELECT subset (FROM/WHERE, arithmetic, AND/OR, calls). Real postgres regress scripts use lowercase keywords, COPY, CREATE, and much else: those files are in the denominator; misses are retained. Not DDL/joins/subqueries as claimed coverage.",
+  "exclusions": [
+    "COPY, CREATE, INSERT, plpgsql, and all other regress directories not listed"
+  ],
   "reference": {
     "name": "PostgreSQL raw parser (libpg_query / pg_query)",
     "work": "parse analysis only, not query execution"
@@ -23,17 +25,32 @@
   ],
   "files": [
     {
-      "path": "accept.sql",
-      "sha256": "c8c8cc574f87a28ab1b48f47b97f074d407af7f153d393dc181e7e0775d6c959",
+      "path": "corpus/select.sql",
+      "sha256": "76a06a847e20ca5ad6e53b29c6825784b0b992aff0ac691fcb9c9ff12d0db6a5",
       "expect": "accept",
-      "class": "syntax"
+      "class": "syntax",
+      "reason": "postgres regress input; valid at REL_16_6"
     },
     {
-      "path": "reject.sql",
-      "sha256": "d27973f8d0d2b0b61a39e226cf574d775b8089f82284a0c7d334edf0291cf896",
-      "expect": "reject",
+      "path": "corpus/select_distinct.sql",
+      "sha256": "36a1663b5c569b37da3882c29daa6de2d0369f572cd9b44bfdd7da1490bf772d",
+      "expect": "accept",
       "class": "syntax",
-      "reason": "WHERE clause with a bare = and no operand"
+      "reason": "postgres regress input; valid at REL_16_6"
+    },
+    {
+      "path": "corpus/case.sql",
+      "sha256": "323a044e05cb1207b7ace549a97dce49a0a0193610834e139006d252347f1f06",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "postgres regress input; valid at REL_16_6"
+    },
+    {
+      "path": "corpus/union.sql",
+      "sha256": "f251eff1e17f131c2e6de785fe4f1cfb69084157e544bbcaf1289650d22ba4e3",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "postgres regress input; valid at REL_16_6"
     }
   ]
 }

@@ -41,13 +41,11 @@ eval-corpus:
 	go run ./cmd/xbnf eval eval/testdata/json-smoke/manifest.json
 
 eval-languages:
-	go run ./cmd/xbnf eval eval/testdata/sql/manifest.json
-	go run ./cmd/xbnf eval eval/testdata/xml/manifest.json
-	go run ./cmd/xbnf eval eval/testdata/cpp/manifest.json
-	go run ./cmd/xbnf eval eval/testdata/python/manifest.json
-	go run ./cmd/xbnf eval eval/testdata/yaml/manifest.json
-	go run ./cmd/xbnf eval eval/testdata/javascript/manifest.json
-	go run ./cmd/xbnf eval eval/testdata/commonmark/manifest.json
+	@fail=0; \
+	for m in sql xml cpp python yaml javascript commonmark; do \
+	  go run ./cmd/xbnf eval eval/testdata/$$m/manifest.json || fail=1; \
+	done; \
+	exit $$fail
 
 # Interleaved BenchmarkJSON64K keep/discard. BASE=HEAD (dirty tree) or a SHA. SELF=1 is A vs A.
 # See docs/parse-speed.md.

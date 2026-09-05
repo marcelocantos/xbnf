@@ -2,18 +2,20 @@
   "version": 1,
   "language": "javascript",
   "dialect": "ECMAScript Script",
-  "dialect_version": "subset",
+  "dialect_version": "test262 @ 419d3e0a2273",
   "source": {
-    "name": "xbnf standing ECMAScript Script fixtures",
-    "revision": "in-repo",
-    "license": "Apache-2.0",
-    "url": "https://github.com/marcelocantos/xbnf"
+    "name": "tc39/test262",
+    "revision": "419d3e0a2273",
+    "license": "BSD-3-Clause",
+    "url": "https://github.com/tc39/test262"
   },
   "grammar": "grammar.xbnf",
   "start": "script",
-  "selection": "Both listed files; no sampling.",
-  "coverage": "Script with required semicolons. function/let/const/if/return. No RegularExpressionLiteral (lexical / goal not implemented), no ASI, no JSX/TS, no modules.",
-  "exclusions": [],
+  "selection": "Listed test262 files only.",
+  "coverage": "Script with required semicolons in the xbnf grammar. test262 files use harness comments and if/throw: they stay in the denominator. No RegularExpressionLiteral (lexical / goal not implemented), no ASI, no JSX/TS.",
+  "exclusions": [
+    "modules, JSX, TypeScript, regexp literals as claimed coverage"
+  ],
   "reference": {
     "name": "Acorn",
     "work": "ECMAScript Script parse; not JSX/TS"
@@ -23,17 +25,39 @@
   ],
   "files": [
     {
-      "path": "accept.js",
-      "sha256": "3aa6d667bf394fdbca9fc1134633017405ab074f2d9ccbe539cd704d1edf799f",
+      "path": "corpus/S7.8.2_A1_T1.js",
+      "sha256": "43a21a8d9556662a7a642cd5f1e6c122bfc48e80c458f4f1a177f614d7171157",
       "expect": "accept",
-      "class": "syntax"
+      "class": "syntax",
+      "reason": "test262 boolean literal; no negative marker"
     },
     {
-      "path": "reject.js",
-      "sha256": "c8c957274d4c2e1af75f7d2b80532ca7966bae3f495d33e6276714b84771a4ad",
+      "path": "corpus/S7.8.1_A1_T1.js",
+      "sha256": "56ef0af1c469eb4fb8941f53c3bcc51475d0d39dd738d72c0f393211d500ce3e",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "test262 null literal"
+    },
+    {
+      "path": "corpus/S12.3_A1.js",
+      "sha256": "f68fd54506cdb1de3a13a874d23a487e621aef1ff112eb72d46a452b7f183fae",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "test262 empty statement"
+    },
+    {
+      "path": "corpus/block-12.1-1.js",
+      "sha256": "d513bb224b7f5873d8d7220e0704fba1b556948e85f7fdb6e0cc09041aef52e1",
       "expect": "reject",
       "class": "syntax",
-      "reason": "broken function parameter list"
+      "reason": "test262 negative parse: try{};catch(){}"
+    },
+    {
+      "path": "corpus/early-params-super-call.js",
+      "sha256": "82e222a33f02470b56428be299ef258c18a39f0a8ad5ec6db03f25b73b64b0ed",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "test262 negative parse: super() in parameters"
     }
   ]
 }

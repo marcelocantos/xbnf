@@ -2,21 +2,23 @@
   "version": 1,
   "language": "c++",
   "dialect": "C++ translation unit (preprocessed)",
-  "dialect_version": "preprocessed-subset",
+  "dialect_version": "gcc-14.2.0 g++.dg/parse + clang -E -P",
   "source": {
-    "name": "xbnf standing preprocessed C++ fixtures",
-    "revision": "in-repo",
-    "license": "Apache-2.0",
-    "url": "https://github.com/marcelocantos/xbnf"
+    "name": "gcc-mirror/gcc gcc/testsuite/g++.dg/parse",
+    "revision": "releases/gcc-14.2.0",
+    "license": "GPL-2.0",
+    "url": "https://github.com/gcc-mirror/gcc/tree/releases/gcc-14.2.0/gcc/testsuite/g++.dg/parse"
   },
   "grammar": "grammar.xbnf",
   "start": "tu",
-  "selection": "Both listed files; no sampling.",
-  "coverage": "Preprocessed functions/globals, if/return, int/void/bool. No templates, classes, preprocessor, or name lookup. Input is already preprocessed; clang -E cost is not in xbnf time.",
-  "exclusions": [],
+  "selection": "Four g++.dg/parse tests, each stored as clang -E -P -x c++ output (.ii). Original .C kept beside them.",
+  "coverage": "Preprocessed functions/globals, if/return, int/void/bool. gcc parse tests include templates and incomplete types: those files stay in the denominator. No name lookup as xbnf success.",
+  "exclusions": [
+    "preprocessor; standard-library includes (these tests have none); templates as claimed coverage"
+  ],
   "reference": {
     "name": "Clang -fsyntax-only -x c++",
-    "work": "syntax+semantic analysis of Clang; not parse-only. Preprocessing is out of band."
+    "work": "syntax+semantic analysis of Clang; not parse-only. Preprocessing already applied to .ii"
   },
   "oracle_cmd": [
     "clang",
@@ -27,17 +29,32 @@
   ],
   "files": [
     {
-      "path": "accept.ii",
-      "sha256": "43d475ce9d1d5266136e75b82d8d69e05782790154b04d25335c6f1ee928d811",
+      "path": "corpus/defarg1.ii",
+      "sha256": "9d1cfdb15c6f7de7f7e6f383ef594b3031d500cbe698a4e972babf760dbc1222",
       "expect": "accept",
-      "class": "syntax"
+      "class": "syntax",
+      "reason": "g++.dg/parse/defarg1.C; { dg-do compile }"
     },
     {
-      "path": "reject.ii",
-      "sha256": "e256c737caf741d2cbb46afab9a8e36f66b89dde0342c3014ffad1015b76a632",
+      "path": "corpus/ambig3.ii",
+      "sha256": "057710814008e3e44eb2283eb0426a87f84f0d5cc6dd620410c5828cd2750c71",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "g++.dg/parse/ambig3.C; { dg-do compile }"
+    },
+    {
+      "path": "corpus/error1.ii",
+      "sha256": "ec2bdd94d478ab153eae08a8cc191f5457072862afc081a1095f51d6cacfeeef",
       "expect": "reject",
       "class": "syntax",
-      "reason": "missing closing paren in parameter list"
+      "reason": "g++.dg/parse/error1.C; { dg-error incomplete type }"
+    },
+    {
+      "path": "corpus/crash1.ii",
+      "sha256": "491bc1fb68945e75b70a3338322cf6f8b4e9697be11e834b2cc566fe2649360c",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "g++.dg/parse/crash1.C; { dg-error }"
     }
   ]
 }

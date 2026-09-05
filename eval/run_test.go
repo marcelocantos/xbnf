@@ -156,29 +156,29 @@ func TestLanguageManifests(t *testing.T) {
 			if rep.Denominator < 2 || len(rep.Files) != rep.Denominator {
 				t.Fatalf("denom %d files %d", rep.Denominator, len(rep.Files))
 			}
-			if rep.Failed != 0 {
-				t.Fatalf("failed %d: %+v", rep.Failed, rep.Files)
+			if rep.Passed+rep.Failed != rep.Denominator {
+				t.Fatalf("pass %d + fail %d != denom %d", rep.Passed, rep.Failed, rep.Denominator)
 			}
-			if rep.Coverage == "" {
-				t.Fatal("coverage missing")
+			if rep.Coverage == "" || rep.Source.License == "" || rep.Source.Revision == "" {
+				t.Fatalf("missing coverage/license/revision: %+v", rep.Source)
 			}
 			if rep.ColdCompileNs <= 0 || rep.WarmIdentN != 2 {
 				t.Fatalf("phases compile=%d identN=%d", rep.ColdCompileNs, rep.WarmIdentN)
 			}
-			var sawAccept, sawReject bool
+			var sawAccept bool
 			for _, f := range rep.Files {
 				if f.Profile == nil {
 					t.Fatalf("%s missing profile", f.Path)
 				}
+				if !f.Pass && f.Kind == "" {
+					t.Fatalf("%s failure dropped (empty kind)", f.Path)
+				}
 				if f.Expect == ExpectAccept {
 					sawAccept = true
 				}
-				if f.Expect == ExpectReject {
-					sawReject = true
-				}
 			}
-			if !sawAccept || !sawReject {
-				t.Fatal("need accept and reject in the denominator")
+			if !sawAccept {
+				t.Fatal("denominator needs at least one independently valid accept")
 			}
 		})
 	}

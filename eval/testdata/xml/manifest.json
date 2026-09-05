@@ -4,16 +4,18 @@
   "dialect": "XML 1.0 well-formedness",
   "dialect_version": "1.0",
   "source": {
-    "name": "xbnf standing XML well-formedness fixtures",
-    "revision": "in-repo",
-    "license": "Apache-2.0",
-    "url": "https://github.com/marcelocantos/xbnf"
+    "name": "junit4 pom; CLDR windowsZones; Apache ant xmlproperty; W3C xml.xsd; W3C xmlts20080205 xmltest",
+    "revision": "junit4 r4.13.2; cldr release-46; ant rel/1.10.14; xmlts20080205",
+    "license": "EPL-1.0; Unicode; Apache-2.0; W3C Software and Document Notice",
+    "url": "https://www.w3.org/XML/Test/"
   },
   "grammar": "grammar.xbnf",
   "start": "doc",
-  "selection": "Both listed files; no sampling.",
-  "coverage": "Elements with matching names via %n, attributes, text, comments. No DTD, PI, CDATA, entities, namespaces.",
-  "exclusions": [],
+  "selection": "Listed third-party documents only.",
+  "coverage": "Elements with matching names via %n, attributes, text, comments. No DTD/DOCTYPE, PI, CDATA, entities, namespaces. W3C valid/sa files include DOCTYPE: they remain in the denominator.",
+  "exclusions": [
+    "DTD-only evaluation; schema-valid vs well-formed is oracle work for xmllint --noout"
+  ],
   "reference": {
     "name": "libxml2 xmllint",
     "work": "well-formedness (--noout); not schema/DTD"
@@ -25,17 +27,60 @@
   ],
   "files": [
     {
-      "path": "accept.xml",
-      "sha256": "b09f4d760281abab718ec3f9aec279e0f48ab2557dc516f1a4b4e978cf5345ed",
+      "path": "corpus/junit4.pom.xml",
+      "sha256": "569b6977ee4603c965c1c46c3058fa6e969291b0160eb6964dd092cd89eadd94",
       "expect": "accept",
-      "class": "syntax"
+      "class": "syntax",
+      "reason": "JUnit 4.13.2 POM; well-formed XML"
     },
     {
-      "path": "reject.xml",
-      "sha256": "82112d986eb057730a2b2843271dd6b3393346ee3b05d0a5a53cb06964d6d948",
+      "path": "corpus/windowsZones.xml",
+      "sha256": "39714d7a5a276508aeca2289a490dddb8424dea0063f3f5fbc8bd8520dcbfcba",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "CLDR release-46 supplemental windowsZones"
+    },
+    {
+      "path": "corpus/xmlproperty.xml",
+      "sha256": "1d1695c6f9226d1dccd2c44690f2b00925d590967b8211be66c1f77b6e585d58",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "Apache ant rel/1.10.14 xmlproperty testcase"
+    },
+    {
+      "path": "corpus/xml.xsd",
+      "sha256": "444ebf0a8ac33c2ff5b65148d3c11e0f4225b19870d455718bde31167386ad95",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "W3C XML namespace XSD"
+    },
+    {
+      "path": "corpus/xmltest-valid-sa-001.xml",
+      "sha256": "de65b0aef0514bd49ec2b2a415b0cc77c5af509ae0292111bb539f008a71fa0b",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "W3C xmltest valid/sa/001 (internal DTD subset)"
+    },
+    {
+      "path": "corpus/xmltest-valid-sa-002.xml",
+      "sha256": "9c8cd4004b4e99d7e0349198eff6b5788898d518a72e945690efa3aabb57e3c6",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "W3C xmltest valid/sa/002"
+    },
+    {
+      "path": "corpus/xmltest-not-wf-sa-001.xml",
+      "sha256": "91449388ec72aaf02b1a115d1f07cc560fe22e0a5e0de22dc791e77cf1a6d7ee",
       "expect": "reject",
       "class": "syntax",
-      "reason": "unclosed root element"
+      "reason": "W3C xmltest not-wf/sa/001"
+    },
+    {
+      "path": "corpus/xmltest-not-wf-sa-002.xml",
+      "sha256": "4f2607e43da9c9477811338c428f9b6fdddcdb25507f1d995384e521b41c884f",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "W3C xmltest not-wf/sa/002"
     }
   ]
 }

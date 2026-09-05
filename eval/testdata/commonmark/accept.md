@@ -1,7 +1,0 @@
-# Title
-
-A paragraph.
-
-```
-code
-```

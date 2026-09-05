@@ -1,40 +1,113 @@
 {
   "version": 1,
   "language": "yaml",
-  "dialect": "YAML 1.2 subset",
-  "dialect_version": "1.2-subset",
+  "dialect": "YAML 1.2",
+  "dialect_version": "yaml-test-suite data-2022-01-17",
   "source": {
-    "name": "xbnf standing YAML fixtures",
-    "revision": "in-repo",
-    "license": "Apache-2.0",
-    "url": "https://github.com/marcelocantos/xbnf"
+    "name": "yaml/yaml-test-suite",
+    "revision": "6e6c296ae9c9",
+    "license": "MIT",
+    "url": "https://github.com/yaml/yaml-test-suite/tree/data-2022-01-17"
   },
   "grammar": "grammar.xbnf",
   "start": "doc",
-  "selection": "Both listed files; no sampling.",
-  "coverage": "One-level IDENT: value NEWLINE block mappings and flow seq/map. No tags, aliases, nested indent stack, document markers.",
-  "exclusions": [],
+  "selection": "Twelve yaml-test-suite ids listed in SOURCES.md.",
+  "coverage": "One-level IDENT: value NEWLINE mappings plus flow seq/map. Tags, aliases, nested indent, directives are in the suite files and stay in the denominator; they are not claimed coverage.",
+  "exclusions": [
+    "tag/alias value construction (oracle is events only)"
+  ],
   "reference": {
-    "name": "PyYAML yaml.safe_load",
-    "work": "compose+construct; not a syntax-only event dump. Tag/alias resolution is the oracle, not xbnf."
+    "name": "PyYAML yaml.parse",
+    "work": "event stream (SafeLoader); not safe_load object construction, not tag/alias value building"
   },
   "oracle_cmd": [
     "python3",
-    "eval/oracles/pyyaml_load.py"
+    "eval/oracles/pyyaml_events.py"
   ],
   "files": [
     {
-      "path": "accept.yaml",
-      "sha256": "688bf05b5197838d98a822c5b38fc47ccdaa5e7835bf62fd06f97bbb58cc6bea",
+      "path": "corpus/229Q/in.yaml",
+      "sha256": "0a0e14197966f7f67ba01e9d6854a4906988845779402501226f228830a25e90",
       "expect": "accept",
-      "class": "syntax"
+      "class": "syntax",
+      "reason": "yaml-test-suite 229Q (no error file)"
     },
     {
-      "path": "reject.yaml",
-      "sha256": "f55908bbe6bc5c9106ffccb2ccb6b9c1e1931a40d53b6e2edbe4f4ae3cf48d25",
+      "path": "corpus/2JQS/in.yaml",
+      "sha256": "ecd8d4ad8333dfa1d3e7ef5245afd8c578366c7cf555f30830233a3ce7b51aef",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 2JQS"
+    },
+    {
+      "path": "corpus/26DV/in.yaml",
+      "sha256": "b9ac5bb5babe113af697638577d77ee556dbc2d596bf05c5d31a8b402882976a",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 26DV"
+    },
+    {
+      "path": "corpus/27NA/in.yaml",
+      "sha256": "b30233660ebf6d3edc769e8b8427fb62471d75a415a4d8b87919fe67dd5a0e26",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 27NA"
+    },
+    {
+      "path": "corpus/33X3/in.yaml",
+      "sha256": "be2f840ff4c2e814240cdce3294d3d5b925f478cc1774d4f835ddb1fe84e9f2e",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 33X3"
+    },
+    {
+      "path": "corpus/35KP/in.yaml",
+      "sha256": "e066b9684d42a3bd8654e1db374a165c8cbe691c1cfe721ee2c690e51cc03215",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 35KP"
+    },
+    {
+      "path": "corpus/4ABK/in.yaml",
+      "sha256": "9b064a89ed252ed5ad789a4615d1cac6af01f74a4d76012124bd6da7523e69e4",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 4ABK"
+    },
+    {
+      "path": "corpus/4CQQ/in.yaml",
+      "sha256": "f01e00e4c2f087a41ae13b1f31157ef3025ac66e9339730d958d3677aa3ad372",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 4CQQ"
+    },
+    {
+      "path": "corpus/4FJ6/in.yaml",
+      "sha256": "96c8e9421fd9f9570137800bbd2f912b6589500d99bf13ff103a2008e974d053",
+      "expect": "accept",
+      "class": "syntax",
+      "reason": "yaml-test-suite 4FJ6"
+    },
+    {
+      "path": "corpus/236B/in.yaml",
+      "sha256": "0afb5ce15e48b71fed546017708e80070c1a95903103a2077ce59d15200939ff",
       "expect": "reject",
       "class": "syntax",
-      "reason": "unterminated flow sequence"
+      "reason": "yaml-test-suite 236B error test"
+    },
+    {
+      "path": "corpus/2CMS/in.yaml",
+      "sha256": "6bbeb82a925fca5f844e31810f0f3c32c390efacc77ac12d7fdb64c4ef9e2a8a",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "yaml-test-suite 2CMS error test"
+    },
+    {
+      "path": "corpus/3HFZ/in.yaml",
+      "sha256": "b62ecc842277ba19ea5a1f5ab34e8fb4afe5ebaa70ef1b6611598cf1e4729a16",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "yaml-test-suite 3HFZ error test"
     }
   ]
 }

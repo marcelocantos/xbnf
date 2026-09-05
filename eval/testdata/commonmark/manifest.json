@@ -2,38 +2,41 @@
   "version": 1,
   "language": "commonmark",
   "dialect": "CommonMark",
-  "dialect_version": "0.31-subset",
+  "dialect_version": "0.31.2",
   "source": {
-    "name": "xbnf standing CommonMark fixtures",
-    "revision": "in-repo",
-    "license": "Apache-2.0",
-    "url": "https://github.com/marcelocantos/xbnf"
+    "name": "commonmark/commonmark-spec",
+    "revision": "9103e341a973",
+    "license": "CC-BY-SA-4.0",
+    "url": "https://github.com/commonmark/commonmark-spec/tree/0.31.2"
   },
   "grammar": "grammar.xbnf",
   "start": "doc",
-  "selection": "Both listed files; no sampling.",
-  "coverage": "ATX headings, paragraphs, fenced code. Blank lines allowed. No lists, links, emphasis, HTML blocks. Whole document must be consumed.",
-  "exclusions": [],
+  "selection": "commonmark-spec README.md and changelog.txt at 0.31.2.",
+  "coverage": "ATX headings, paragraphs, fenced code, blank lines. README/changelog include links, lists, HTML: they stay in the denominator. Whole document must be consumed. No list indent stack as claimed coverage.",
+  "exclusions": [
+    "emphasis, link destinations, HTML blocks as claimed coverage"
+  ],
   "reference": {
     "name": "cmark",
-    "work": "structural parse/render; acceptance of leftover text is not success"
+    "work": "structural parse/render; leftover text is not success for xbnf"
   },
   "oracle_cmd": [
     "cmark"
   ],
   "files": [
     {
-      "path": "accept.md",
-      "sha256": "7ccf4c4117433daacd355acee8ca91e1434a581f8cd8e27553786265a6e03cc0",
+      "path": "corpus/README.md",
+      "sha256": "43286ba97b743db2e95871ba12210c8f54de3a26b016dfacf2b6de2003c99ca8",
       "expect": "accept",
-      "class": "syntax"
+      "class": "syntax",
+      "reason": "commonmark-spec README.md"
     },
     {
-      "path": "reject.md",
-      "sha256": "91c5ad5dc6e91c679d200dadb9ea6284a9515c9dad6c30119d91b99da8830fc0",
-      "expect": "reject",
+      "path": "corpus/changelog.txt",
+      "sha256": "2ea3552ebef3794b7aca5e7b392d68ed61bde80113820e0337279a4987ac0337",
+      "expect": "accept",
       "class": "syntax",
-      "reason": "unclosed fenced code block"
+      "reason": "commonmark-spec changelog.txt"
     }
   ]
 }
