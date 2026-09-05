@@ -1,9 +1,11 @@
 // Copyright 2026 Marcelo Cantos
 // SPDX-License-Identifier: Apache-2.0
 //
-// Coverage: preprocessed C++ translation units of functions, globals, if/return,
-// int/void, and arithmetic. No templates, name lookup, preprocessor (input is
-// already preprocessed), classes, or overload resolution. Syntax only.
+// Not a conformant C++ parser. This is a CFG subset used to probe xbnf, not ISO
+// C++. It has no name lookup, so it cannot distinguish declarations from
+// expressions (A * B;), no classes or templates, and no preprocessor (input is
+// already preprocessed). Overload resolution and Clang semantics are out of
+// band. Historical T22 artefact; the live C-family track is Go.
 
 tu -> decl+ ;
 
