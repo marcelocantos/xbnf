@@ -1,0 +1,356 @@
+{
+  "commonmark/corpus/README.md": {
+    "ok": true,
+    "end": 7671,
+    "packed": 18,
+    "nodes": 422,
+    "sha256": "f1c60dcd9612adc3180edbe0bc194a9a0c1e1080e781d97ccbf3cb0a9b81e817"
+  },
+  "commonmark/corpus/changelog.txt": {
+    "ok": true,
+    "end": 33079,
+    "packed": 264,
+    "nodes": 2975,
+    "sha256": "ae96eea7c11c1686398463ae61332ed52665cf315784a709ced2bff91e4b9902"
+  },
+  "cpp/corpus/ambig3.ii": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "expected one of type at 1:1; got \"t\"",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "cpp/corpus/crash1.ii": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "expected one of type at 1:1; got \"s\"",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "cpp/corpus/defarg1.ii": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "expected one of type at 1:1; got \"c\"",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "cpp/corpus/error1.ii": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "expected one of type at 2:1; got \"s\"",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "go/corpus/commas.src": {
+    "ok": false,
+    "end": 304,
+    "packed": 0,
+    "error": "unconsumed input at 14:1 (byte 304)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "go/corpus/errors.go": {
+    "ok": true,
+    "end": 3091,
+    "packed": 0,
+    "nodes": 335,
+    "sha256": "76f6c67b0fc45ed208e84730c65df111b2391d68b9e3417af72a5cd7646fb969"
+  },
+  "go/corpus/issue11377.src": {
+    "ok": false,
+    "end": 274,
+    "packed": 0,
+    "error": "unconsumed input at 10:1 (byte 274)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "go/corpus/join.go": {
+    "ok": true,
+    "end": 1397,
+    "packed": 4,
+    "nodes": 824,
+    "sha256": "c244b27a62d738a5b64db2c15358a9d0148ab8e6019053d590ed874407231c6a"
+  },
+  "go/corpus/once.go": {
+    "ok": true,
+    "end": 2525,
+    "packed": 1,
+    "nodes": 464,
+    "sha256": "d41e1be8642e8e842ec45ff3f532d3f5e15f14ff5136f79ed8336c0e1c0bb117"
+  },
+  "javascript/corpus/S12.3_A1.js": {
+    "ok": true,
+    "end": 761,
+    "packed": 0,
+    "nodes": 566,
+    "sha256": "fe28079a964608921da521d2da9c554b5a48af84aeb8149c3369e673227fd31d"
+  },
+  "javascript/corpus/S7.8.1_A1_T1.js": {
+    "ok": true,
+    "end": 309,
+    "packed": 3,
+    "nodes": 41,
+    "sha256": "49d8c1fbdfa17114600c788dbf02db67e011ab2a7b9ccd07695158cbf104e9bb"
+  },
+  "javascript/corpus/S7.8.2_A1_T1.js": {
+    "ok": true,
+    "end": 381,
+    "packed": 4,
+    "nodes": 74,
+    "sha256": "e639f5ae198a6b96030f549716d2ece1778499402785287c77459de6ca936879"
+  },
+  "javascript/corpus/block-12.1-1.js": {
+    "ok": false,
+    "end": 311,
+    "packed": 0,
+    "error": "unconsumed input at 14:7 (byte 311)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "javascript/corpus/early-params-super-call.js": {
+    "ok": false,
+    "end": 428,
+    "packed": 0,
+    "error": "unconsumed input at 16:1 (byte 428)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "json-smoke/bad.json": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "expected one of STR at 1:12; got \"}\"",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "json-smoke/ok.json": {
+    "ok": true,
+    "end": 12,
+    "packed": 0,
+    "nodes": 11,
+    "sha256": "fc1f6ff85e4d85dd906cc393570dc2cc541e6633f2ad34f465a1a8aee10c23ed"
+  },
+  "python/corpus/bad_coding.py": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "in rule group, expected [ \t], enc_name at 1:15; got \"u\"",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "python/corpus/badsyntax_3131.py": {
+    "ok": false,
+    "end": 24,
+    "packed": 0,
+    "error": "unconsumed input at 2:1 (byte 24)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "python/corpus/badsyntax_pep3120.py": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "invalid UTF-8",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "python/corpus/keyword.py": {
+    "ok": true,
+    "end": 1073,
+    "packed": 0,
+    "nodes": 433,
+    "sha256": "5f5cf98db551c9ac2e6f55892259d700160e48c7d8662bea03584a6de2b8d267"
+  },
+  "python/corpus/this.py": {
+    "ok": true,
+    "end": 1003,
+    "packed": 0,
+    "nodes": 247,
+    "sha256": "1f73a13077ba18929b5d19f6fd4b3f5e40497a17f95936adf9000efe5ab7fd0e"
+  },
+  "python/corpus/token.py": {
+    "ok": true,
+    "end": 2457,
+    "packed": 0,
+    "nodes": 1915,
+    "sha256": "1274aaffa94ab527ed89b90142e3ec7b1017ec0ded566be89d8f310a1968265e"
+  },
+  "sql/corpus/case.sql": {
+    "ok": true,
+    "end": 6236,
+    "packed": 21,
+    "nodes": 2789,
+    "sha256": "a10148a876f8479a247603a34fa386ead681c23188dbf438ae54049d821bc958"
+  },
+  "sql/corpus/select.sql": {
+    "ok": true,
+    "end": 8129,
+    "packed": 62,
+    "nodes": 3063,
+    "sha256": "ec20f4a092db20ddcc7597bb1d3d123d61217aa82b4fc66ef3772c0be6b8c187"
+  },
+  "sql/corpus/select_distinct.sql": {
+    "ok": true,
+    "end": 5468,
+    "packed": 58,
+    "nodes": 1908,
+    "sha256": "a8bdfa424790395225aefb5597013839ba8580cc7b79cd01ced4acf3c7d92e75"
+  },
+  "sql/corpus/union.sql": {
+    "ok": true,
+    "end": 17131,
+    "packed": 198,
+    "nodes": 9558,
+    "sha256": "648890527e82c97e130eb53742090686fef9cf50af9cbaaa6190d7312ef29100"
+  },
+  "xml/corpus/junit4.pom.xml": {
+    "ok": true,
+    "end": 27018,
+    "packed": 0,
+    "nodes": 4674,
+    "sha256": "e93d7715a99f3b301b98460f5b2c944b4bada5a87faa8223a7051990f9a4b447"
+  },
+  "xml/corpus/windowsZones.xml": {
+    "ok": true,
+    "end": 49360,
+    "packed": 0,
+    "nodes": 10362,
+    "sha256": "c30cca5a416406ff52d46d9a300b1fa01d72eacb5e38f242d4acc7070d9cfc61"
+  },
+  "xml/corpus/xml.xsd": {
+    "ok": true,
+    "end": 7878,
+    "packed": 0,
+    "nodes": 1694,
+    "sha256": "9137d8a80ce55ce20d5019a2dea440bad9c3c46e82461a7dbf6ab0c8211c1cb8"
+  },
+  "xml/corpus/xmlproperty.xml": {
+    "ok": true,
+    "end": 1477,
+    "packed": 0,
+    "nodes": 206,
+    "sha256": "5265f5d3d108add1c826002fdbf8d19cede00e2545aa67595ff179aba62b7e2b"
+  },
+  "xml/corpus/xmltest-not-wf-sa-001.xml": {
+    "ok": false,
+    "end": 4,
+    "packed": 0,
+    "error": "unconsumed input at 1:5 (byte 4)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "xml/corpus/xmltest-not-wf-sa-002.xml": {
+    "ok": false,
+    "end": 4,
+    "packed": 0,
+    "error": "unconsumed input at 1:5 (byte 4)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "xml/corpus/xmltest-valid-sa-001.xml": {
+    "ok": true,
+    "end": 60,
+    "packed": 0,
+    "nodes": 10,
+    "sha256": "b5027c630155b368897c50d6bff82fc0a413ffcb385d97014da22851a30635d7"
+  },
+  "xml/corpus/xmltest-valid-sa-002.xml": {
+    "ok": true,
+    "end": 61,
+    "packed": 0,
+    "nodes": 10,
+    "sha256": "b05bf0664d847b679731440d3748823ccb73724eb25675d2450d5aec340382d1"
+  },
+  "yaml/corpus/229Q/in.yaml": {
+    "ok": true,
+    "end": 94,
+    "packed": 4,
+    "nodes": 40,
+    "sha256": "494acbff2a4922dda16d1e7f61b75b4b7e351779b30d4c5cd9baf443be512c8c"
+  },
+  "yaml/corpus/236B/in.yaml": {
+    "ok": false,
+    "end": 11,
+    "packed": 2,
+    "error": "unconsumed input at 3:1 (byte 11)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "yaml/corpus/26DV/in.yaml": {
+    "ok": true,
+    "end": 193,
+    "packed": 21,
+    "nodes": 122,
+    "sha256": "9824ace3b5548a24d22ba12626c6bf4b4cfc030e063176e0ef821526221d5c03"
+  },
+  "yaml/corpus/27NA/in.yaml": {
+    "ok": true,
+    "end": 19,
+    "packed": 1,
+    "nodes": 15,
+    "sha256": "a53de8826b86164349b399ebe02ee04bfd723daf7bc0632786246a6b431cae2f"
+  },
+  "yaml/corpus/2CMS/in.yaml": {
+    "ok": false,
+    "end": 6,
+    "packed": 0,
+    "error": "unconsumed input at 2:2 (byte 6)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "yaml/corpus/2JQS/in.yaml": {
+    "ok": false,
+    "end": 0,
+    "packed": 0,
+    "error": "in rule implicit_key, expected \":\", [ \t] at 1:3; got \"a\"",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "yaml/corpus/33X3/in.yaml": {
+    "ok": true,
+    "end": 36,
+    "packed": 1,
+    "nodes": 27,
+    "sha256": "693203c52781387b0ba86ebdda5ef88817b8a7640f716d580d9670456a3f2b3c"
+  },
+  "yaml/corpus/35KP/in.yaml": {
+    "ok": true,
+    "end": 52,
+    "packed": 2,
+    "nodes": 50,
+    "sha256": "ffd1005f2bdb4e2c8fe0e41707568b9017d31d2f6c93d345e0da0a1a4d1d266a"
+  },
+  "yaml/corpus/3HFZ/in.yaml": {
+    "ok": false,
+    "end": 19,
+    "packed": 2,
+    "error": "unconsumed input at 3:5 (byte 19)",
+    "nodes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "yaml/corpus/4ABK/in.yaml": {
+    "ok": true,
+    "end": 59,
+    "packed": 0,
+    "nodes": 12,
+    "sha256": "fc01edea21f93f1407b46d7eaa351130a73e71017b664e1385b772054ebcbb90"
+  },
+  "yaml/corpus/4CQQ/in.yaml": {
+    "ok": true,
+    "end": 93,
+    "packed": 3,
+    "nodes": 30,
+    "sha256": "60eac1036e01ea01777c33ef54eaf79ccac5d03a8e04ca75dd2a6dfb050c8627"
+  },
+  "yaml/corpus/4FJ6/in.yaml": {
+    "ok": true,
+    "end": 37,
+    "packed": 0,
+    "nodes": 45,
+    "sha256": "37568dc5ca63b67c9f50ba59decf33b205174cd288574a3803d7e5262de46649"
+  }
+}

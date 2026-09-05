@@ -41,6 +41,28 @@ Keep [Probe harness](#probe-harness-genjson-64-kb) separate: those rows used
 a different `genJSON` helper, not `nestedJSON`. Pigeon numbers in that
 section are a frozen record from the evaluation, not something to re-run.
 
+## Golden ratchet (🎯T25.1)
+
+Speed changes must not change trees. `make test` runs `TestGolden` in
+`engine` (nestedJSON 64 KB on `docs/examples/json.xbnf`) and in `eval`
+(every fixture of every manifest under `eval/testdata`, live, historical and
+json-smoke). Each fixture's `engine.Fingerprint` — ok, end, packed, error
+text, node count and a preorder SHA-256 of kind/name/text — must equal
+`engine/testdata/golden.json` / `eval/testdata/golden.json`.
+
+A deliberate tree change (grammar fix, new corpus pin, changed error text)
+runs `make golden-update` and commits the new golden **in the same commit**
+with the reason in the message. An optimisation candidate that needs a
+golden update is not an optimisation; it is a tree change and is judged as
+one. `TestLanguageManifests` also locks `Failed == 0` for every live track.
+
+## Corpus gate (🎯T25.2)
+
+`BenchmarkCorpus` in `eval` parses every accept fixture of each live
+manifest per iteration (warm varied) as one sub-benchmark per language.
+Bytes are the summed fixture sizes. It is the second half of keep/discard:
+a JSON win that loses a language corpus needs a written justification.
+
 ## Latest (2026-09-05, Apple M4 Max)
 
 `nestedJSON(64<<10)`. xbnf and stdlib: `c077348`, count=2 side-by-side.

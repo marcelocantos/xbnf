@@ -208,6 +208,14 @@ func TestLanguageManifests(t *testing.T) {
 			if rep.Passed+rep.Failed != rep.Denominator {
 				t.Fatalf("pass %d + fail %d != denom %d", rep.Passed, rep.Failed, rep.Denominator)
 			}
+			if m.Live() && rep.Failed != 0 {
+				for _, f := range rep.Files {
+					if !f.Pass {
+						t.Errorf("%s: %s %s", f.Path, f.Kind, f.Error)
+					}
+				}
+				t.Fatalf("live track %s: %d of %d failed (🎯T25.1 lock)", e.Name(), rep.Failed, rep.Denominator)
+			}
 			if rep.Coverage == "" || rep.Source.License == "" || rep.Source.Revision == "" {
 				t.Fatalf("missing coverage/license/revision: %+v", rep.Source)
 			}

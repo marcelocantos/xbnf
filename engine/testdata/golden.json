@@ -1,0 +1,9 @@
+{
+  "nestedJSON-64K": {
+    "ok": true,
+    "end": 65553,
+    "packed": 0,
+    "nodes": 32641,
+    "sha256": "dbb50e61426b25314238ae02029f08aae5c6f8500ddb80d7554458abe6b6213a"
+  }
+}

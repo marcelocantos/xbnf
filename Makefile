@@ -6,7 +6,7 @@ export GOWORK := off
 
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all build test vet clean smoke sandbox bullseye bench-json bench-stable eval-corpus eval-languages
+.PHONY: all build test vet clean smoke sandbox bullseye bench-json bench-stable eval-corpus eval-languages golden-update
 
 all: build
 
@@ -46,6 +46,10 @@ eval-languages:
 	  go run ./cmd/xbnf eval eval/testdata/$$m/manifest.json || fail=1; \
 	done; \
 	exit $$fail
+
+# 🎯T25.1 golden ratchet: rewrite tree fingerprints after a deliberate tree change. See docs/parse-speed.md.
+golden-update:
+	XBNF_GOLDEN=update go test ./engine ./eval -run '^TestGolden$$' -count=1
 
 # Interleaved BenchmarkJSON64K keep/discard. BASE=HEAD (dirty tree) or a SHA. SELF=1 is A vs A.
 # See docs/parse-speed.md.
