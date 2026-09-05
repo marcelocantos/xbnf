@@ -639,6 +639,14 @@ func (p *gll) admits(sl slot, i int) bool {
 // advance records that the element before slot next matched input[i:end]
 // and enqueues next.
 func (p *gll) advance(next slot, u, i, end int) {
+	p.step(next, u, i, end)
+	p.add(next, u, end)
+}
+
+// step records that the element before slot next matched input[i:end],
+// without scheduling next. process calls it directly when it continues a
+// straight-line run in place.
+func (p *gll) step(next slot, u, i, end int) {
 	l := p.gss[u].i
 	k := instKey{pid: next.pid, l: l}
 	id := p.stepAtID
@@ -658,7 +666,6 @@ func (p *gll) advance(next slot, u, i, end int) {
 	p.steps = append(p.steps, step{ip: next.ip - 1, i: i, end: end, next: sl.head})
 	sl.head = len(p.steps) - 1
 	sl.n++
-	p.add(next, u, end)
 }
 
 func packGSS(sl slot, i int) (uint64, bool) {
@@ -721,78 +728,99 @@ func (p *gll) pop(u, i int) {
 	}
 }
 
+// process runs one descriptor, and then as much of the production as it can
+// without rescheduling. A terminal or DFA element that matches yields exactly
+// one endpoint, so the descriptor for the element after it has no producer
+// other than this call: the step is recorded as advance would, admits is
+// applied as add would, and the run continues here at the next element.
+// A nonterminal, a lookahead or the end of the production ends the run and
+// goes through the usual create/fork/advance/complete path.
 func (p *gll) process(d desc) {
-	pr := p.c.prods[d.sl.pid]
-	if d.sl.ip == len(pr.rhs) {
-		p.complete(d.sl.pid, p.gss[d.u].i, d.i)
-		p.pop(d.u, d.i)
-		return
-	}
-	e := pr.rhs[d.sl.ip]
-	next := slot{pid: d.sl.pid, ip: d.sl.ip + 1}
-	switch e.kind {
-	case ekTerm:
-		switch x := e.term.(type) {
-		case grammar.PosProp:
-			if colOK(p.input, d.i, x) {
-				p.advance(next, d.u, d.i, d.i)
+	sl, i := d.sl, d.i
+	for {
+		pr := p.c.prods[sl.pid]
+		if sl.ip == len(pr.rhs) {
+			p.complete(sl.pid, p.gss[d.u].i, i)
+			p.pop(d.u, i)
+			return
+		}
+		e := pr.rhs[sl.ip]
+		next := slot{pid: sl.pid, ip: sl.ip + 1}
+		var end int
+		switch e.kind {
+		case ekTerm:
+			switch x := e.term.(type) {
+			case grammar.PosProp:
+				if !colOK(p.input, i, x) {
+					p.noteFail(i, describeElem(e), pr.nt, false)
+					return
+				}
+				end = i
+			case grammar.Ref:
+				j := p.skip(i)
+				want, ok := p.boundText(sl.pid, p.gss[d.u].i, x.Name)
+				if !ok && x.HasDefault {
+					want, ok = x.Default, true
+				}
+				if !ok || j+len(want) > len(p.input) || p.input[j:j+len(want)] != want {
+					p.noteFail(j, "%"+x.Name, pr.nt, false)
+					return
+				}
+				end = j + len(want)
+			default:
+				j := p.skip(i)
+				m, ok := matchTerminal(e.term, p.input, j)
+				if !ok {
+					p.noteFail(j, describeElem(e), pr.nt, false)
+					return
+				}
+				end = m
+			}
+		case ekDFA:
+			j := p.skip(i)
+			df := e.df
+			if df == nil {
+				df = p.c.dfa[e.nt]
+			}
+			if df == nil {
+				return
+			}
+			m, labs, ok := df.match(p.input, j)
+			if !ok {
+				p.noteFail(j, describeElem(e), pr.nt, true)
+				return
+			}
+			if e.label != "" && !hasLabel(labs, e.label) {
+				p.noteFail(j, describeElem(e), pr.nt, true)
+				return
+			}
+			end = m
+		case ekNT:
+			v := p.create(next, d.u, i)
+			if e.nid >= 0 {
+				p.forkID(e.nid, v, i)
 			} else {
-				p.noteFail(d.i, describeElem(e), pr.nt, false)
+				p.fork(e.nt, v, i)
 			}
-		case grammar.Ref:
-			j := p.skip(d.i)
-			want, ok := p.boundText(d.sl.pid, p.gss[d.u].i, x.Name)
-			if !ok && x.HasDefault {
-				want, ok = x.Default, true
+			return
+		case ekLook:
+			if p.succeeds(e.nt, i) {
+				p.advance(next, d.u, i, i)
 			}
-			if ok && j+len(want) <= len(p.input) && p.input[j:j+len(want)] == want {
-				p.advance(next, d.u, d.i, j+len(want))
-			} else {
-				p.noteFail(j, "%"+x.Name, pr.nt, false)
+			return
+		case ekNegLook:
+			if !p.succeeds(e.nt, i) {
+				p.advance(next, d.u, i, i)
 			}
+			return
 		default:
-			j := p.skip(d.i)
-			end, ok := matchTerminal(e.term, p.input, j)
-			if ok {
-				p.advance(next, d.u, d.i, end)
-			} else {
-				p.noteFail(j, describeElem(e), pr.nt, false)
-			}
-		}
-	case ekDFA:
-		j := p.skip(d.i)
-		df := e.df
-		if df == nil {
-			df = p.c.dfa[e.nt]
-		}
-		if df == nil {
 			return
 		}
-		end, labs, ok := df.match(p.input, j)
-		if !ok {
-			p.noteFail(j, describeElem(e), pr.nt, true)
+		p.step(next, d.u, i, end)
+		if !p.admits(next, end) {
 			return
 		}
-		if e.label != "" && !hasLabel(labs, e.label) {
-			p.noteFail(j, describeElem(e), pr.nt, true)
-			return
-		}
-		p.advance(next, d.u, d.i, end)
-	case ekNT:
-		v := p.create(next, d.u, d.i)
-		if e.nid >= 0 {
-			p.forkID(e.nid, v, d.i)
-		} else {
-			p.fork(e.nt, v, d.i)
-		}
-	case ekLook:
-		if p.succeeds(e.nt, d.i) {
-			p.advance(next, d.u, d.i, d.i)
-		}
-	case ekNegLook:
-		if !p.succeeds(e.nt, d.i) {
-			p.advance(next, d.u, d.i, d.i)
-		}
+		sl, i = next, end
 	}
 }
 
