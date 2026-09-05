@@ -20,7 +20,7 @@ Keep [Probe harness](#probe-harness-genjson-64-kb) separate: those rows used
 a different `genJSON` helper, not `nestedJSON`. Pigeon numbers in that
 section are a frozen record from the evaluation, not something to re-run.
 
-## Latest (2026-09-03, Apple M4 Max)
+## Latest (2026-09-05, Apple M4 Max)
 
 `nestedJSON(64<<10)`. xbnf and stdlib: `c077348`, count=2 side-by-side.
 wbnf: same machine and input, `BenchmarkJSON64K_wbnf` count=2 (25.7 ms).
@@ -35,12 +35,12 @@ wbnf: same machine and input, `BenchmarkJSON64K_wbnf` count=2 (25.7 ms).
 xbnf is ~1.2× wbnf, ~47× `Unmarshal`, ~180× `Valid`. A dedicated xbnf-only
 run at `c077348` was ~23–25 ms/op / 48 MB.
 
-Current xbnf-only (post-🎯T20 stack-cands + wrap reuse, 3 s × 5 on the same
-machine): median **13.4 ms** / **2.51 MB** / 12 allocs. 🎯T20 was median
-**19.0 ms** / **4.00 MB** / 23338 allocs. `candBuf` no longer escapes
-(`orderCands` inlined to min/max), small step runs are scanned unsorted,
-and `wrapEnd` is reused when `Parse` sees the same input. Remaining B/op is
-the public `Node` tree (one backing array; `Children` is read-only).
+Current xbnf-only (post-🎯T20++ mixed open-addressing charts, 3 s × 5 on
+the same machine): median **13.6 ms** / **2.35 MB** / 3 allocs. Same-session
+Go `map` `U`/`gssAt`/`stepAt` was ~15.3 ms; a quiet-machine T20++ run was
+11.0 ms. `U` is a splitmix64 open-addressing set (not `k&mask` — that was
+~100× slower); `gssAt` and `stepAt` use the same table with an int value;
+`reach` keys are packed `uint64`. Remaining B/op is the public `Node` tree.
 
 ## History
 
@@ -59,6 +59,8 @@ recorded run.
 | 2026-09-03 | `7504667` | 22.9e6 | 6.85e6 | — | — | — | 3s×5: 20.0/21.3/22.9/23.6/24.0 ms, 137314 allocs. Node arena (int kids, materialize once) + bump GSS edges/pops/steps. Chart slice allocs gone from pprof (advance/pop ~6 objects). |
 | 2026-09-03 | T20 | 19.0e6 | 4.00e6 | — | — | — | 3s×5: 20.4/19.0/19.2/17.1/17.5 ms, 23338 allocs. Kept: contiguous per-instKey steps + stack cands (pred-map index dropped), derive scratch, packed Node array, describe intern, pooled reach memo. Discarded: custom U set (2.2 s/op), further skip (already memoised). |
 | 2026-09-03 | T20+ | 13.4e6 | 2.51e6 | — | — | — | 3s×5: 13.2/14.2/13.3/13.4/14.1 ms, 12 allocs. Kept: candBuf on stack (was heap via orderCands), linear matchSteps + no sort for n≤32, wrapEnd reuse on same input. Left materialize as []Node API floor. |
+| 2026-09-04 | T20++ | 11.0e6 | 2.35e6 | — | — | — | 3s×5: 10.88/11.04/10.91/11.76/11.67 ms, 3 allocs. Same-session 075a8d9 was 12.78/13.09/13.95/14.12/14.22 ms, 2.51 MB, 12 allocs. Kept: generational maps, slimmer steps, last-stepAt cache, flatten-all + radix large runs, pooled spines, packed sym, compile-time dfa/nid, ASCII decodeRune. Discarded: admits-before-U (noise). Left materialize as []Node API floor. |
+| 2026-09-05 | T20+++ | 13.6e6 | 2.35e6 | — | — | — | 3s×5: 13.55/14.13/13.61/16.12/12.84 ms, 3 allocs. Same-session Go map U was ~15.3 ms (this session was hotter than the 11.0 T20++ run). Kept: splitmix64 uSet/uMap for U, gssAt, stepAt (probe+place, not k&mask); packed uint64 reach. Discarded: position-indexed U lists (tie). Isolated uSet microbench ~2× std map. Left materialize. |
 
 ## Probe harness (`genJSON`, 64 KB)
 

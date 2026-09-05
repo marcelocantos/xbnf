@@ -24,6 +24,8 @@ type elem struct {
 	label string
 	name  string // `name=` label from grammar.Named
 	term  grammar.Term
+	df    *dfa // set for ekDFA
+	nid   int  // dense id of nt, for ekNT / lookahead
 }
 
 type prod struct {
@@ -77,6 +79,8 @@ type Compiled struct {
 	// pred[nt] maps the first input byte to a unique production of nt when
 	// the alternatives are non-nullable and FIRST-disjoint on ASCII.
 	pred     map[string]*bytePred
+	predN    []*bytePred
+	ntProdsN [][]int
 	ntNID    map[string]int
 	Warnings []string
 }
@@ -164,7 +168,45 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 	}
 	bindDFAOwner(out)
 	out.computeFirst()
+	out.resolveElems()
 	return out, nil
+}
+
+// resolveElems fills per-element DFA pointers and nid indexes, and turns
+// leftover ekNT references to regular rules into ekDFA.
+func (c *Compiled) resolveElems() {
+	n := len(c.ntNID)
+	c.predN = make([]*bytePred, n)
+	c.ntProdsN = make([][]int, n)
+	for nt, pids := range c.ntProds {
+		if id, ok := c.ntNID[nt]; ok {
+			c.ntProdsN[id] = pids
+		}
+	}
+	for nt, bp := range c.pred {
+		if id, ok := c.ntNID[nt]; ok {
+			c.predN[id] = bp
+		}
+	}
+	for i := range c.prods {
+		rhs := c.prods[i].rhs
+		for j := range rhs {
+			e := &rhs[j]
+			if e.kind == ekNT && c.IsDFA(e.nt) {
+				e.kind = ekDFA
+			}
+			if e.kind == ekDFA {
+				e.df = c.dfa[e.nt]
+			}
+			if e.kind == ekNT || e.kind == ekLook || e.kind == ekNegLook {
+				if id, ok := c.ntNID[e.nt]; ok {
+					e.nid = id
+				} else {
+					e.nid = -1
+				}
+			}
+		}
+	}
 }
 
 func bindDFAOwner(c *Compiled) {

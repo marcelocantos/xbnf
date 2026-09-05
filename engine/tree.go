@@ -52,33 +52,171 @@ func newBuilder(p *gll) *builder {
 	return &builder{p: p, nodes: nodes, kids: kids}
 }
 
-// packSteps copies each instance's linked steps into a contiguous run
-// sorted by (ip, end). Advance only mutates a slab entry; the map is
-// written once per instance, not on every step.
+// packSteps flattens and sorts only large instances. Small ones stay as
+// linked lists in p.steps and are copied into a stack buffer on first use.
 func (p *gll) packSteps() {
 	packed := p.stepPack[:0]
-	if cap(packed) < len(p.steps)-1 {
-		packed = make([]step, 0, len(p.steps)-1)
-	}
 	for i := 1; i < len(p.slabs); i++ {
 		sl := &p.slabs[i]
+		if sl.n == 0 {
+			sl.packed = false
+			continue
+		}
 		start := len(packed)
 		for id := sl.head; id != 0; id = p.steps[id].next {
 			packed = append(packed, p.steps[id])
 		}
-		n := len(packed) - start
-		if n > pathScanCutoff {
-			slices.SortFunc(packed[start:start+n], func(a, b step) int {
+		if sl.n > pathScanCutoff {
+			p.sortTmp = sortRunByIPEnd(packed[start:], p.sortTmp)
+		}
+		sl.head = start
+		sl.packed = true
+	}
+	p.stepPack = packed
+}
+
+const sortIPCap = 16
+
+func sortRunByIPEnd(run, tmp []step) []step {
+	if len(run) < 2 {
+		return tmp
+	}
+	var cnt [sortIPCap]int
+	maxip := 0
+	used := 0
+	for i := range run {
+		ip := run[i].ip
+		if ip < 0 || ip >= sortIPCap {
+			slices.SortFunc(run, func(a, b step) int {
 				if a.ip != b.ip {
 					return a.ip - b.ip
 				}
 				return a.end - b.end
 			})
+			return tmp
 		}
-		sl.head = start
-		sl.n = n
+		if cnt[ip] == 0 {
+			used++
+		}
+		if ip > maxip {
+			maxip = ip
+		}
+		cnt[ip]++
 	}
-	p.stepPack = packed
+	if cap(tmp) < len(run) {
+		tmp = make([]step, len(run))
+	} else {
+		tmp = tmp[:len(run)]
+	}
+	if used == 1 {
+		sortByEnd(run, tmp)
+		return tmp
+	}
+	var off [sortIPCap]int
+	s := 0
+	for ip := 0; ip <= maxip; ip++ {
+		off[ip] = s
+		s += cnt[ip]
+	}
+	for i := range run {
+		ip := run[i].ip
+		tmp[off[ip]] = run[i]
+		off[ip]++
+	}
+	copy(run, tmp)
+	start := 0
+	for ip := 0; ip <= maxip; ip++ {
+		end := start + cnt[ip]
+		if cnt[ip] > 1 {
+			sortByEnd(run[start:end], tmp)
+		}
+		start = end
+	}
+	return tmp
+}
+
+func sortByEnd(run, tmp []step) {
+	n := len(run)
+	if n < 2 {
+		return
+	}
+	if n <= 48 {
+		for i := 1; i < n; i++ {
+			x := run[i]
+			j := i
+			for j > 0 && run[j-1].end > x.end {
+				run[j] = run[j-1]
+				j--
+			}
+			run[j] = x
+		}
+		return
+	}
+	radixByEnd(run, tmp)
+}
+
+func radixByEnd(run, tmp []step) {
+	n := len(run)
+	if cap(tmp) < n {
+		tmp = make([]step, n)
+	} else {
+		tmp = tmp[:n]
+	}
+	var cnt [256]int
+	for i := range run {
+		cnt[run[i].end&255]++
+	}
+	sum := 0
+	for i := range cnt {
+		c := cnt[i]
+		cnt[i] = sum
+		sum += c
+	}
+	for i := range run {
+		b := run[i].end & 255
+		tmp[cnt[b]] = run[i]
+		cnt[b]++
+	}
+	var cnt2 [256]int
+	for i := range tmp {
+		cnt2[(tmp[i].end>>8)&255]++
+	}
+	sum = 0
+	for i := range cnt2 {
+		c := cnt2[i]
+		cnt2[i] = sum
+		sum += c
+	}
+	for i := range tmp {
+		b := (tmp[i].end >> 8) & 255
+		run[cnt2[b]] = tmp[i]
+		cnt2[b]++
+	}
+	maxEnd := 0
+	for i := range run {
+		if run[i].end > maxEnd {
+			maxEnd = run[i].end
+		}
+	}
+	if maxEnd < 1<<16 {
+		return
+	}
+	clear(cnt[:])
+	for i := range run {
+		cnt[(run[i].end>>16)&255]++
+	}
+	sum = 0
+	for i := range cnt {
+		c := cnt[i]
+		cnt[i] = sum
+		sum += c
+	}
+	for i := range run {
+		b := (run[i].end >> 16) & 255
+		tmp[cnt[b]] = run[i]
+		cnt[b]++
+	}
+	copy(run, tmp)
 }
 
 func (b *builder) stepRun(pid, l int) []step {
@@ -87,9 +225,9 @@ func (b *builder) stepRun(pid, l int) []step {
 		return b.run
 	}
 	var run []step
-	if id := b.p.stepAt[k]; id != 0 {
+	if id, ok := b.p.stepAt.get(packInst(pid, l), b.p.gen); ok {
 		sl := b.p.slabs[id]
-		if sl.n > 0 {
+		if sl.n > 0 && sl.packed {
 			run = b.p.stepPack[sl.head : sl.head+sl.n]
 		}
 	}
@@ -214,7 +352,8 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 		return pos, l == r
 	}
 	run := b.stepRun(pid, l)
-	var memo map[reachKey]bool
+	var memo map[uint64]reachVal
+	gen := b.p.gen
 	if len(run) > pathScanCutoff {
 		memo = b.p.reach
 	}
@@ -226,7 +365,7 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 		end := pos[ip]
 		if len(run) > pathScanCutoff {
 			for _, st := range matchSteps(run, ip-1, end) {
-				if stepReach(run, pid, l, ip-1, st.i, memo) {
+				if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
 					dup := false
 					for _, c := range cands {
 						if c == st.i {
@@ -241,7 +380,7 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 			}
 		} else {
 			for _, st := range run {
-				if st.ip != ip-1 || st.end != end || !stepReach(run, pid, l, ip-1, st.i, memo) {
+				if st.ip != ip-1 || st.end != end || !stepReach(run, pid, l, ip-1, st.i, memo, gen) {
 					continue
 				}
 				dup := false
@@ -292,34 +431,33 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 	return pos, true
 }
 
-func stepReach(run []step, pid, l, ip, pos int, memo map[reachKey]bool) bool {
+func stepReach(run []step, pid, l, ip, pos int, memo map[uint64]reachVal, gen uint32) bool {
 	if ip == 0 {
 		return pos == l
 	}
-	if memo != nil {
-		key := reachKey{pid: pid, l: l, ip: ip, pos: pos}
-		if v, ok := memo[key]; ok {
-			return v
+	if key, ok := packReach(pid, l, ip, pos); ok && memo != nil {
+		if v, hit := memo[key]; hit && v.gen == gen {
+			return v.v
 		}
-		memo[key] = false // cycle guard
-		out := stepReachOnce(run, pid, l, ip, pos, memo)
-		memo[key] = out
+		memo[key] = reachVal{gen: gen, v: false} // cycle guard
+		out := stepReachOnce(run, pid, l, ip, pos, memo, gen)
+		memo[key] = reachVal{gen: gen, v: out}
 		return out
 	}
-	return stepReachOnce(run, pid, l, ip, pos, nil)
+	return stepReachOnce(run, pid, l, ip, pos, nil, gen)
 }
 
-func stepReachOnce(run []step, pid, l, ip, pos int, memo map[reachKey]bool) bool {
+func stepReachOnce(run []step, pid, l, ip, pos int, memo map[uint64]reachVal, gen uint32) bool {
 	if len(run) > pathScanCutoff {
 		for _, st := range matchSteps(run, ip-1, pos) {
-			if stepReach(run, pid, l, ip-1, st.i, memo) {
+			if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
 				return true
 			}
 		}
 		return false
 	}
 	for _, st := range run {
-		if st.ip == ip-1 && st.end == pos && stepReach(run, pid, l, ip-1, st.i, memo) {
+		if st.ip == ip-1 && st.end == pos && stepReach(run, pid, l, ip-1, st.i, memo, gen) {
 			return true
 		}
 	}
@@ -469,50 +607,54 @@ type kidSpan struct{ start, n int }
 // once and appends base+rest onto dst. User-level left recursion is not
 // spliced and still nests via prodKidsInto.
 func (b *builder) leftRecKidsInto(dst []int, nt string, l, r int) []int {
-	var spanBuf [32]kidSpan
-	spans := spanBuf[:0]
+	mark := len(b.p.spineBuf)
 	start := len(dst)
 	curR := r
 	for {
 		pid := b.pickAt(nt, l, curR)
 		if pid < 0 {
 			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
+			b.p.spineBuf = b.p.spineBuf[:mark]
 			return dst[:start]
 		}
 		pr := b.p.c.prods[pid]
 		if !leftRec(pr) {
 			dst = b.prodKidsInto(dst, pid, l, curR)
-			return reorderSpine(dst, start, spans)
+			dst = reorderSpine(dst, start, b.p.spineBuf[mark:], &b.p.spineOut)
+			b.p.spineBuf = b.p.spineBuf[:mark]
+			return dst
 		}
 		var buf [8]int
 		pos, ok := b.path(pid, l, curR, buf[:])
 		if !ok {
 			b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
+			b.p.spineBuf = b.p.spineBuf[:mark]
 			return dst[:start]
 		}
 		if pos[1] >= curR {
 			b.fail(fmt.Sprintf("internal: left-recursive %s did not shrink over %s", displayNT(nt), b.where(l)))
+			b.p.spineBuf = b.p.spineBuf[:mark]
 			return dst[:start]
 		}
 		restStart := len(dst)
 		dst = b.rhsNodesInto(dst, pr, pos, 1)
-		spans = append(spans, kidSpan{start: restStart, n: len(dst) - restStart})
+		b.p.spineBuf = append(b.p.spineBuf, kidSpan{start: restStart, n: len(dst) - restStart})
 		curR = pos[1]
 	}
 }
 
-func reorderSpine(dst []int, start int, spans []kidSpan) []int {
+func reorderSpine(dst []int, start int, spans []kidSpan, buf *[]int) []int {
 	if len(spans) == 0 {
 		return dst
 	}
 	n := len(dst) - start
-	var small [64]int
-	var out []int
-	if n <= len(small) {
-		out = small[:n]
-	} else {
+	out := *buf
+	if cap(out) < n {
 		out = make([]int, n)
+	} else {
+		out = out[:n]
 	}
+	*buf = out
 	baseStart := spans[len(spans)-1].start + spans[len(spans)-1].n
 	w := copy(out, dst[baseStart:])
 	for i := len(spans) - 1; i >= 0; i-- {

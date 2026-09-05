@@ -450,7 +450,7 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 	labels = st.labels
 	ok = st.acc
 	for cur < len(input) {
-		r, n := utf8.DecodeRuneInString(input[cur:])
+		r, n := decodeRune(input, cur)
 		nx := d.step(st, r)
 		if nx == nil {
 			break
@@ -622,7 +622,7 @@ func (d *dfa) matchCalls(input string, pos int) (end int, labels []string, ok bo
 			}
 		}
 		if c.pos < len(input) {
-			r, n := utf8.DecodeRuneInString(input[c.pos:])
+			r, n := decodeRune(input, c.pos)
 			mv := d.move(c.set, r)
 			if len(mv) > 0 {
 				q = append(q, cur{set: mv, pos: c.pos + n})
@@ -630,6 +630,13 @@ func (d *dfa) matchCalls(input string, pos int) (end int, labels []string, ok bo
 		}
 	}
 	return end, labels, ok
+}
+
+func decodeRune(s string, i int) (rune, int) {
+	if s[i] < 0x80 {
+		return rune(s[i]), 1
+	}
+	return utf8.DecodeRuneInString(s[i:])
 }
 
 func hasLabel(labels []string, want string) bool {

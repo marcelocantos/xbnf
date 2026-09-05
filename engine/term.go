@@ -29,7 +29,7 @@ func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 		if pos >= len(input) {
 			return pos, false
 		}
-		r, n := utf8.DecodeRuneInString(input[pos:])
+		r, n := decodeRune(input, pos)
 		if classMatch(x, r) {
 			return pos + n, true
 		}
@@ -37,7 +37,7 @@ func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 		if pos >= len(input) {
 			return pos, false
 		}
-		r, n := utf8.DecodeRuneInString(input[pos:])
+		r, n := decodeRune(input, pos)
 		if escapeMatch(x.Code, r) {
 			return pos + n, true
 		}
@@ -45,7 +45,7 @@ func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 		if pos >= len(input) {
 			return pos, false
 		}
-		_, n := utf8.DecodeRuneInString(input[pos:])
+		_, n := decodeRune(input, pos)
 		return pos + n, true
 	case grammar.Empty:
 		return pos, true
