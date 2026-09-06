@@ -113,6 +113,13 @@ kept change (no `make golden-update` in this programme).
 | H4 context projection (§6.1) | DEFERRED | The engine has no environment: `@col` is a function of position, `%name` resolves inside the production instance (now via evidence links). Reopen when a grammar needs a parent's indentation or lexical mode in the invocation key. |
 | §7.3 deterministic regions | DEFERRED | Fusion and the unit shortcut already run straight-line and chain regions without scheduling. A separate LL mode needs a soundness certificate the compiler does not have. |
 | §7.4 transfer summaries | REJECTED | Incremental parsing under another name; requires external-read tracking. Out of scope for this engine. |
+| Flat `slotFirst` + admits by pointer | KEEP | One flat `[]firstInfo` indexed by `prod.firstBase+ip`, hot fields first, ASCII byte decided from one bitset word without decoding. Agent min-of-N 1.041×; `admits` 0.56→0.24 s per 600 parses. |
+| 16-byte `uMap` slots | KEEP | `uMap` generic over the id type; `uset`/`gssAt`/`moreAt` use int32 (U set for 64 KB JSON 1.5→1 MB); `sym` keeps int64 (packComp). Agent: 1.064× 11/12 KEEP; both micro changes together 1.133× 11/12 KEEP, corpus aggregate 1.126× all languages KEEP. |
+| Builder: skip packed probe, int32 arena, inline leaf elements | KEEP (marginal) | `compsAt` skips the `moreAt` probe when nothing packed this parse; `inode` 64→48 bytes with input spans instead of text headers; leaves built inline. Builder share 27%→24.5%; agent gates 1.03–1.05× with 75–95% of pairs, formally NOISY under load. |
+| `wrapEnd` as int32 | see final gate | Halves the 8-bytes-per-position skip memo read at random by every element and builder span. |
+| Per-slot 128-byte ASCII admit table | DISCARD | 0.967× (a second cache line for what the bitset already answers). |
+| Dense `firstBase []int32` | DISCARD | 1.002× tie. |
+| `treeKind`-first element dispatch + span memo | DISCARD | Builder 1.52→1.57 ms per parse. |
 | §7.2 bulk homogeneous scans | not attempted | After ASCII tables `dfa.match` is 17% of commonmark and ≤5% elsewhere; a run-scan loop has ~5% ceiling on one language. |
 
 ## Latest (2026-09-05, Apple M4 Max)
