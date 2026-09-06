@@ -18,9 +18,10 @@ type slot struct {
 }
 
 type desc struct {
-	sl slot
-	u  int
-	i  int
+	sl  slot
+	u   int
+	i   int
+	env int32
 }
 
 // task is a scheduled descriptor plus the evidence cell holding the element
@@ -30,6 +31,7 @@ type task struct {
 	sl   slot
 	u, i int
 	cell int32
+	env  int32 // referenced captures of this production, independent of its caller
 }
 
 // gssNode is one parsing question: nonterminal nid asked at position i. Every
@@ -61,6 +63,21 @@ type gssEdge struct {
 	to, next int
 	ret      slot
 	cell     int32
+	env      int32
+}
+
+// binding is an immutable extension of a production's capture context. Spans
+// distinguish evidence as well as text; equal values at different positions
+// must not allow the builder to switch to a different captured occurrence.
+type binding struct {
+	parent, ip, lo, hi int32
+}
+
+// captureDesc retains the full identity behind captureAt's hash key. Hash
+// collisions form a chain; they must never merge different capture contexts.
+type captureDesc struct {
+	key             uint64 // packed slot, frame and input position
+	env, cell, next int32
 }
 
 type gssPop struct {
@@ -92,47 +109,54 @@ type failInfo struct {
 }
 
 type gll struct {
-	c      *Compiled
-	input  string
-	R      []task
-	uset   uMap[int32]    // packDesc → evidence cell this generation
-	Ubig   map[desc]genID // used when pid/u/i do not pack into 64 bits
-	gss    []gssNode
-	gssAt  uMap[int32]
-	gssBig map[gssKey]genID
+	c     *Compiled
+	input string
+	R     []task
+	uset  uMap[int32]    // packDesc → evidence cell this generation
+	Ubig  map[desc]genID // pid/u/i that do not pack into 64 bits, with their capture context
+	// Captured descriptors have one more key component than uset can pack.
+	// A pooled hash index and collision chain avoid rebuilding Go maps per parse.
+	captureAt    uMap[int32]
+	captureDescs []captureDesc
+	gss          []gssNode
+	gssAt        uMap[int32]
+	gssBig       map[gssKey]genID
 	// sym is the one table with a wide slot: its value is a packComp, whose
 	// production sits above the evidence cell in the high 32 bits.
 	sym uMap[int64] // packFam(nid,l,r) → packComp of the first prod this generation
 	// startNT/startLeft identify the parse's root question; startEnd is the
 	// furthest completion of that question (-1 = none). Completions are only
 	// ever asked for their maximum end at the root, so this replaces a map.
-	startNT   int
-	startLeft int
-	startEnd  int
-	symBig    map[famKey]genID
-	moreAt    uMap[int32]      // packFam(nid,l,r) → head+1 into moreSlab this generation
-	moreBig   map[famKey]genID // same, keyed by famKey when packFam does not fit in 64 bits
-	moreSlab  []moreItem       // dummy at 0; per-family singly linked lists of extra comps
-	pickBuf   []int            // builder.pick's scratch candidate list; reset per pickAt call
-	start     string
-	fail      failInfo
-	wrapEnd   []int32   // memoised skipWrap per position; 0 = unknown, else end+1
-	wrapIn    string    // input wrapEnd was filled for
-	wrapC     *Compiled // #wrap that wrapEnd was filled for; reuse needs both
-	work      int       // descriptors processed
-	cells     []int32   // cell → head of its incoming step list; dummy at 0
-	steps     []step    // dummy at 0
-	edges     []gssEdge
-	pops      []gssPop
-	tnodes    []inode
-	tkids     []int32
-	tlits     []string // builder.lits: node text the input does not contain
-	kscratch  []int32
-	iscratch  []int32 // builder.intern's child-id stack, disjoint from kscratch
-	mqueue    []int32 // builder.materialize's breadth-first queue of arena ids
-	spineBuf  []kidSpan
-	spineOut  []int32
-	gen       uint32 // bumps each Parse; lookup maps are not cleared
+	startNT      int
+	startLeft    int
+	startEnd     int
+	symBig       map[famKey]genID
+	moreAt       uMap[int32]      // packFam(nid,l,r) → head+1 into moreSlab this generation
+	moreBig      map[famKey]genID // same, keyed by famKey when packFam does not fit in 64 bits
+	moreSlab     []moreItem       // dummy at 0; per-family singly linked lists of extra comps
+	pickBuf      []int            // builder.pick's scratch candidate list; reset per pickAt call
+	start        string
+	fail         failInfo
+	wrapEnd      []int32   // memoised skipWrap per position; 0 = unknown, else end+1
+	wrapIn       string    // input wrapEnd was filled for
+	wrapC        *Compiled // #wrap that wrapEnd was filled for; reuse needs both
+	work         int       // descriptors processed
+	cells        []int32   // cell → head of its incoming step list; dummy at 0
+	steps        []step    // dummy at 0
+	bindings     []binding // dummy at 0: no referenced captures yet
+	bindingAt    map[binding]int32
+	compBindings map[int32]int32 // completion cell → its capture context, when nonzero
+	edges        []gssEdge
+	pops         []gssPop
+	tnodes       []inode
+	tkids        []int32
+	tlits        []string // builder.lits: node text the input does not contain
+	kscratch     []int32
+	iscratch     []int32 // builder.intern's child-id stack, disjoint from kscratch
+	mqueue       []int32 // builder.materialize's breadth-first queue of arena ids
+	spineBuf     []kidSpan
+	spineOut     []int32
+	gen          uint32 // bumps each Parse; lookup maps are not cleared
 }
 
 func packFam(nid, l, r int) (uint64, bool) {
@@ -224,6 +248,7 @@ func newGLL(c *Compiled, input, start string) *gll {
 func chartCells(p *gll) int {
 	n := cap(p.R) + cap(p.gss) + cap(p.edges) + cap(p.pops) + cap(p.steps)
 	n += cap(p.cells) + cap(p.wrapEnd) + cap(p.tnodes) + cap(p.tkids)
+	n += cap(p.bindings) + cap(p.captureDescs) + p.captureAt.cells()
 	n += cap(p.kscratch) + cap(p.spineBuf) + cap(p.spineOut) + cap(p.tlits)
 	n += p.uset.cells() + p.gssAt.cells() + p.sym.cells() + p.moreAt.cells() + cap(p.moreSlab) + cap(p.pickBuf)
 	return n
@@ -260,6 +285,7 @@ func (p *gll) bind(c *Compiled, input, start string) {
 		p.gssAt.clear()
 		p.sym.clear()
 		p.moreAt.clear()
+		p.captureAt.clear()
 		clear(p.symBig)
 		clear(p.moreBig)
 		p.gen = 1
@@ -277,6 +303,13 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	p.spineBuf = p.spineBuf[:0]
 	p.cells = keepDummy(p.cells, n)
 	p.steps = keepDummy(p.steps, n)
+	p.bindings = keepDummy(p.bindings, 0)
+	if c.captureSlots != nil {
+		p.captureAt.size(n)
+		p.captureDescs = keepDummy(p.captureDescs, 0)
+	}
+	p.bindingAt = nil
+	p.compBindings = nil
 	p.edges = keepDummy(p.edges, n/2+1)
 	p.pops = keepDummy(p.pops, n/2+1)
 	p.moreSlab = keepDummy(p.moreSlab, n/16)
@@ -335,6 +368,12 @@ func (p *gll) release() {
 	p.gssBig = nil
 	p.symBig = nil
 	p.moreBig = nil
+	p.bindingAt = nil
+	p.compBindings = nil
+	p.bindings = p.bindings[:1]
+	if len(p.captureDescs) != 0 {
+		p.captureDescs = p.captureDescs[:1]
+	}
 	p.work = 0
 	p.fail.pos = -1
 	p.fail.rule = ""
@@ -413,12 +452,10 @@ func colOK(input string, i int, p grammar.PosProp) bool {
 	}
 }
 
-// boundText is the text an earlier element of this production instance
-// matched, for a %ref. cur is the element now being processed and cell its
-// evidence, so the walk back along the links reports the match on the
-// derivation that reached here rather than the newest match anywhere in the
-// instance.
-func (p *gll) boundText(pr prod, cur int, cell int32, end int, name string) (string, bool) {
+// boundText reads the capture context that participated in descriptor
+// identity. Every derivation in its evidence cell agrees on these bindings,
+// including predecessors linked after that descriptor has already run.
+func (p *gll) boundText(pr prod, cur int, env int32, name string) (string, bool) {
 	ip := -1
 	for i, e := range pr.rhs {
 		if e.name == name {
@@ -429,33 +466,40 @@ func (p *gll) boundText(pr prod, cur int, cell int32, end int, name string) (str
 	if ip < 0 || ip >= cur {
 		return "", false
 	}
-	for e := cur - 1; e > ip; e-- {
-		h := p.cells[cell]
-		if h == 0 {
-			return "", false
+	for env != 0 {
+		b := p.bindings[env]
+		if int(b.ip) == ip {
+			return p.input[b.lo:b.hi], true
 		}
-		st := p.steps[h]
-		end = int(st.i)
-		cell = st.prev
+		env = b.parent
 	}
-	h := p.cells[cell]
-	if h == 0 {
-		return "", false
+	return "", false
+}
+
+// capture extends the caller's context when the element before next binds a
+// referenced name. Unreferenced names do not partition execution. Contexts
+// stay distinct through completion so a successful %ref cannot later acquire
+// a tree prefix with a different binding.
+func (p *gll) capture(next slot, i, end int, env int32) int32 {
+	if p.c.captureSlots == nil || p.c.captureSlots[next.pid] == nil ||
+		!p.c.captureSlots[next.pid][next.ip-1] {
+		return env
 	}
-	a := int(p.steps[h].i)
-	if a < 0 {
-		a = 0
+	lo := p.skip(i)
+	if lo > end {
+		lo = end
 	}
-	if e := p.skip(a); e <= end {
-		a = e
+	b := binding{parent: env, ip: int32(next.ip - 1), lo: int32(lo), hi: int32(end)}
+	if id, ok := p.bindingAt[b]; ok {
+		return id
 	}
-	if a > end {
-		a = end
+	if p.bindingAt == nil {
+		p.bindingAt = make(map[binding]int32)
 	}
-	if end > len(p.input) {
-		return "", false
-	}
-	return p.input[a:end], true
+	id := int32(len(p.bindings))
+	p.bindings = append(p.bindings, b)
+	p.bindingAt[b] = id
+	return id
 }
 
 func (p *gll) skip(i int) int {
@@ -656,12 +700,12 @@ func (p *gll) forkID(nid, u, i int) {
 // same language, which checkDisambiguation rejects.
 func (p *gll) forkUnit(pid, u, i int) {
 	sl := slot{pid: pid, ip: 0}
-	cell, fresh, ok := p.claim(sl, u, i)
+	cell, fresh, ok := p.claim(sl, u, i, 0)
 	if !ok || !fresh {
 		return
 	}
 	e := p.c.prods[pid].rhs[0]
-	v, vfresh := p.create(callNID(e.nid), slot{pid: pid, ip: 1}, u, i, cell)
+	v, vfresh := p.create(callNID(e.nid), slot{pid: pid, ip: 1}, u, i, cell, 0)
 	if !vfresh {
 		return
 	}
@@ -717,9 +761,13 @@ func packDesc(sl slot, u, i int) (uint64, bool) {
 // ok is false when FIRST rejects the slot, in which case no match can reach
 // it and no evidence is kept. A slot at element 0 has nothing before it, so
 // it needs no cell.
-func (p *gll) claim(sl slot, u, i int) (cell int32, fresh, ok bool) {
-	d := desc{sl: sl, u: u, i: i}
+// Referenced capture spans are part of identity through the end of a
+// production; adding evidence with the same env cannot change a %ref's value.
+func (p *gll) claim(sl slot, u, i int, env int32) (cell int32, fresh, ok bool) {
 	if key, packed := packDesc(sl, u, i); packed {
+		if env != 0 {
+			return p.claimCaptured(sl, i, key, env)
+		}
 		idx, hit := p.uset.probe(key, p.gen)
 		if hit {
 			return p.uset.idAt(idx), false, true
@@ -731,6 +779,7 @@ func (p *gll) claim(sl slot, u, i int) (cell int32, fresh, ok bool) {
 		p.uset.placeAt(idx, key, p.gen, cell)
 		return cell, true, true
 	}
+	d := desc{sl: sl, u: u, i: i, env: env}
 	if p.Ubig == nil {
 		p.Ubig = map[desc]genID{}
 	}
@@ -745,6 +794,33 @@ func (p *gll) claim(sl slot, u, i int) (cell int32, fresh, ok bool) {
 	return cell, true, true
 }
 
+func (p *gll) claimCaptured(sl slot, i int, key uint64, env int32) (cell int32, fresh, ok bool) {
+	hash := key ^ mix64(uint64(env))
+	idx, hit := p.captureAt.probe(hash, p.gen)
+	var head int32
+	if hit {
+		head = p.captureAt.idAt(idx)
+		for id := head; id != 0; id = p.captureDescs[id].next {
+			d := p.captureDescs[id]
+			if d.key == key && d.env == env {
+				return d.cell, false, true
+			}
+		}
+	}
+	if !p.admits(sl, i) {
+		return 0, false, false
+	}
+	cell = p.newCell(sl.ip)
+	id := int32(len(p.captureDescs))
+	p.captureDescs = append(p.captureDescs, captureDesc{key: key, env: env, cell: cell, next: head})
+	if hit {
+		p.captureAt.put(hash, p.gen, id) // Same hash, different full key: extend its chain.
+	} else {
+		p.captureAt.placeAt(idx, hash, p.gen, id)
+	}
+	return cell, true, true
+}
+
 func (p *gll) newCell(ip int) int32 {
 	if ip == 0 {
 		return 0
@@ -753,8 +829,8 @@ func (p *gll) newCell(ip int) int32 {
 	return int32(len(p.cells) - 1)
 }
 
-func (p *gll) push(sl slot, u, i int, cell int32) {
-	p.R = append(p.R, task{sl: sl, u: u, i: i, cell: cell})
+func (p *gll) push(sl slot, u, i int, cell, env int32) {
+	p.R = append(p.R, task{sl: sl, u: u, i: i, cell: cell, env: env})
 }
 
 // add schedules a production's first slot. fork is the only caller, and an
@@ -765,8 +841,8 @@ func (p *gll) add(sl slot, u, i int) {
 		p.forkUnit(sl.pid, u, i)
 		return
 	}
-	if cell, fresh, ok := p.claim(sl, u, i); ok && fresh {
-		p.push(sl, u, i, cell)
+	if cell, fresh, ok := p.claim(sl, u, i, 0); ok && fresh {
+		p.push(sl, u, i, cell, 0)
 	}
 }
 
@@ -802,14 +878,17 @@ func (p *gll) admits(sl slot, i int) bool {
 // enqueues next. prev is the evidence cell of the descriptor the match came
 // from, so the recorded step already knows its whole chain: the builder walks
 // prev links instead of matching and re-testing a sorted step log.
-func (p *gll) advance(next slot, u, i, end int, prev int32) {
-	cell, fresh, ok := p.claim(next, u, end)
+func (p *gll) advance(next slot, u, i, end int, prev, env int32) {
+	if p.c.captureSlots != nil {
+		env = p.capture(next, i, end, env)
+	}
+	cell, fresh, ok := p.claim(next, u, end, env)
 	if !ok {
 		return
 	}
 	p.link(cell, i, prev)
 	if fresh {
-		p.push(next, u, end, cell)
+		p.push(next, u, end, cell, env)
 	}
 }
 
@@ -864,17 +943,17 @@ func (p *gll) gssNode(nid, i int) (int, bool) {
 // subscriber. The edge is in place before create returns, so a fresh node's
 // productions — which the caller must fork — can recurse straight back into
 // this node and still see the subscription.
-func (p *gll) create(nid int, ret slot, u, i int, cell int32) (int, bool) {
+func (p *gll) create(nid int, ret slot, u, i int, cell, env int32) (int, bool) {
 	v, fresh := p.gssNode(nid, i)
 	for e := p.gss[v].ehead; e != 0; e = p.edges[e].next {
-		if ed := &p.edges[e]; ed.to == u && ed.ret == ret {
+		if ed := &p.edges[e]; ed.to == u && ed.ret == ret && ed.env == env {
 			return v, fresh
 		}
 	}
-	p.edges = append(p.edges, gssEdge{to: u, next: p.gss[v].ehead, ret: ret, cell: cell})
+	p.edges = append(p.edges, gssEdge{to: u, next: p.gss[v].ehead, ret: ret, cell: cell, env: env})
 	p.gss[v].ehead = len(p.edges) - 1
 	for pop := p.gss[v].phead; pop != 0; pop = p.pops[pop].next {
-		p.advance(ret, u, i, p.pops[pop].i, cell)
+		p.advance(ret, u, i, p.pops[pop].i, cell, env)
 	}
 	return v, fresh
 }
@@ -902,16 +981,16 @@ func (p *gll) pop(u, i int) {
 		ed := p.edges[e]
 		e = ed.next
 		if !p.c.unitProd[ed.ret.pid] {
-			p.advance(ed.ret, ed.to, from, i, ed.cell)
+			p.advance(ed.ret, ed.to, from, i, ed.cell, ed.env)
 			continue
 		}
-		cell, fresh, ok := p.claim(ed.ret, ed.to, i)
+		cell, fresh, ok := p.claim(ed.ret, ed.to, i, 0)
 		if !ok {
 			continue
 		}
 		p.link(cell, from, ed.cell)
 		if fresh {
-			p.complete(ed.ret.pid, p.gss[ed.to].i, i, cell)
+			p.complete(ed.ret.pid, p.gss[ed.to].i, i, cell, 0)
 			p.pop(ed.to, i)
 		}
 	}
@@ -927,11 +1006,11 @@ func (p *gll) pop(u, i int) {
 // the end of the production ends the run and goes through the usual
 // create/fork/advance/complete path.
 func (p *gll) process(d task) {
-	sl, i, cell := d.sl, d.i, d.cell
+	sl, i, cell, env := d.sl, d.i, d.cell, d.env
 	for {
 		pr := p.c.prods[sl.pid]
 		if sl.ip == len(pr.rhs) {
-			p.complete(sl.pid, p.gss[d.u].i, i, cell)
+			p.complete(sl.pid, p.gss[d.u].i, i, cell, env)
 			p.pop(d.u, i)
 			return
 		}
@@ -949,7 +1028,7 @@ func (p *gll) process(d task) {
 				end = i
 			case grammar.Ref:
 				j := p.skip(i)
-				want, ok := p.boundText(pr, sl.ip, cell, i, x.Name)
+				want, ok := p.boundText(pr, sl.ip, env, x.Name)
 				if !ok && x.HasDefault {
 					want, ok = x.Default, true
 				}
@@ -987,7 +1066,7 @@ func (p *gll) process(d task) {
 			}
 			end = m
 		case ekNT:
-			v, fresh := p.create(callNID(e.nid), next, d.u, i, cell)
+			v, fresh := p.create(callNID(e.nid), next, d.u, i, cell, env)
 			if !fresh {
 				return // another call site already forked this node's productions
 			}
@@ -999,18 +1078,21 @@ func (p *gll) process(d task) {
 			return
 		case ekLook:
 			if p.succeeds(e.nt, i) {
-				p.advance(next, d.u, i, i, cell)
+				p.advance(next, d.u, i, i, cell, env)
 			}
 			return
 		case ekNegLook:
 			if !p.succeeds(e.nt, i) {
-				p.advance(next, d.u, i, i, cell)
+				p.advance(next, d.u, i, i, cell, env)
 			}
 			return
 		default:
 			return
 		}
-		nextCell, fresh, ok := p.claim(next, d.u, end)
+		if p.c.captureSlots != nil {
+			env = p.capture(next, i, end, env)
+		}
+		nextCell, fresh, ok := p.claim(next, d.u, end, env)
 		if !ok {
 			return
 		}
@@ -1022,7 +1104,13 @@ func (p *gll) process(d task) {
 	}
 }
 
-func (p *gll) complete(pid, left, right int, cell int32) {
+func (p *gll) complete(pid, left, right int, cell, env int32) {
+	if env != 0 {
+		if p.compBindings == nil {
+			p.compBindings = make(map[int32]int32)
+		}
+		p.compBindings[cell] = env
+	}
 	p.recordProd(p.c.prods[pid].nid, left, right, pid, cell)
 }
 
@@ -1036,7 +1124,7 @@ func (p *gll) recordProd(nid, left, right, pid int, cell int32) {
 	if key, ok := packFam(nid, left, right); ok {
 		idx, hit := p.sym.probe(key, p.gen)
 		if hit {
-			if compPID(int(p.sym.idAt(idx))) == pid {
+			if p.sameComp(int(p.sym.idAt(idx)), comp) {
 				return
 			}
 			p.addSymMore(fk, comp)
@@ -1046,7 +1134,7 @@ func (p *gll) recordProd(nid, left, right, pid int, cell int32) {
 		return
 	}
 	if ref, hit := p.symBig[fk]; hit && ref.gen == p.gen {
-		if compPID(ref.id) == pid {
+		if p.sameComp(ref.id, comp) {
 			return
 		}
 		p.addSymMore(fk, comp)
@@ -1071,8 +1159,18 @@ func (p *gll) rootAt(nid, left int) {
 	p.startEnd = -1
 }
 
+// sameComp retains separate completed capture contexts, while deduplicating
+// two frames completing the same production with the same context (including
+// the root and a recursive call). Pure CFG completions always have context 0.
+func (p *gll) sameComp(a, b int) bool {
+	if a == b {
+		return true
+	}
+	return compPID(a) == compPID(b) && p.compBindings[compCell(a)] == p.compBindings[compCell(b)]
+}
+
 // addSymMore records comp as an extra completion for family k, deduplicating
-// on production against whatever is already chained there. The chain lives
+// equivalent completions against whatever is already chained there. The chain lives
 // in moreSlab, a pooled slab of (comp, next) nodes; its head (or, when
 // packFam doesn't fit k in 64 bits, its famKey-keyed head) is tracked per
 // generation exactly like sym/symBig track the family's primary completion,
@@ -1101,14 +1199,13 @@ func (p *gll) addSymMore(k famKey, comp int) {
 }
 
 // chainMore appends comp to the tail of the moreSlab chain starting at head,
-// preserving insertion order, unless a completion of the same production is
-// already present. It reports the (possibly unchanged) head and whether comp
+// preserving insertion order, unless an equivalent completion is already
+// present. It reports the (possibly unchanged) head and whether comp
 // was newly added.
 func (p *gll) chainMore(head, comp int) (int, bool) {
-	pid := compPID(comp)
 	tail := 0
 	for h := head; h != 0; h = p.moreSlab[h].next {
-		if compPID(p.moreSlab[h].comp) == pid {
+		if p.sameComp(p.moreSlab[h].comp, comp) {
 			return head, false
 		}
 		tail = h

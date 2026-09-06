@@ -9,6 +9,10 @@ three times faster warm parsing across the current language corpus, with unchang
 paper's central mechanism—eliminating repeated work and carrying evidence directly—within the existing GLL/DFA runtime.
 It does not establish an architectural fixed point for generalized parsing.
 
+**Follow-up:** the T29/T30 corrections and their verification are documented in
+[capture-dependent parser state](capture-context.md). The findings below describe the reviewed revision, before those
+corrections; the historical timing results are unchanged.
+
 ## 1. What the session history establishes
 
 The primary mnemo session is `38804713-d366-47dc-ba1d-a96e7f9fed58`. The recorded conversation first reviewed the paper and

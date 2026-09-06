@@ -41,6 +41,13 @@ type builder struct {
 	// lits holds the text of the nodes whose text is not a span of the
 	// input; see inode.lo.
 	lits []string
+	// contextAmb marks a selected completion with several valid capture paths.
+	// path counts this together with its internal alternatives, once per path.
+	contextAmb map[int32]bool
+	// active is needed only for nonterminals in the zero-growth graph's
+	// cyclic remainder. Re-entering a completion must choose another one.
+	active map[int]bool // packed completion (production and evidence cell)
+	cycle  bool         // the current attempted tree reached an active completion
 }
 
 // inode is one node of the arena the builder derives into, before
@@ -216,6 +223,9 @@ func (b *builder) path(pid, l, r int, cell int32, buf []int) ([]int, bool) {
 	steps := b.p.steps
 	right := pr.dirs.assoc == assocRight
 	ambiguous := false
+	if b.contextAmb != nil {
+		ambiguous = b.contextAmb[cell]
+	}
 	var candBuf [8]int32
 	for ip := n; ip >= 1; ip-- {
 		h := b.p.cells[cell]
@@ -293,17 +303,34 @@ func (b *builder) pickAt(nid, l, r int) (int, int32) {
 	if comp == 0 {
 		return -1, 0
 	}
+	if b.active != nil && b.p.c.treeCycle[nid] {
+		buf[0] = comp
+		n := 0
+		for _, c := range buf {
+			if !b.active[c] {
+				buf[n] = c
+				n++
+			}
+		}
+		if n == 0 {
+			b.cycle = true
+			b.fail(fmt.Sprintf("cyclic tree derivation of %s at %s: zero-width recursion",
+				displayNT(b.p.c.ntInfo[nid].nt), b.where(l)))
+			return -1, 0
+		}
+		buf, comp = buf[:n], buf[0]
+	}
 	if len(buf) == 1 {
 		return compPID(comp), compCell(comp)
 	}
 	buf[0] = comp
-	win := b.pick(buf)
+	win := b.pick(buf, l, r)
 	return compPID(win), compCell(win)
 }
 
 // pick compares packComp values. The production is in the high bits, so
 // sorting the packed values orders them by production as before.
-func (b *builder) pick(comps []int) int {
+func (b *builder) pick(comps []int, l, r int) int {
 	if len(comps) == 1 {
 		return comps[0]
 	}
@@ -323,11 +350,73 @@ func (b *builder) pick(comps []int) int {
 	}); ok {
 		cands = keep
 	}
-	if len(cands) > 1 {
+	sort.Ints(cands)
+	pid := compPID(cands[0])
+	n := 1
+	for n < len(cands) && compPID(cands[n]) == pid {
+		n++
+	}
+	if n < len(cands) {
 		b.packed++
 	}
-	sort.Ints(cands)
+	if n > 1 {
+		return b.pickContext(cands[:n], l, r)
+	}
 	return cands[0]
+}
+
+// pickContext applies the production's path policy across its completed
+// capture contexts. Comparing complete paths, from the last boundary back,
+// preserves the same left/right rule as path without splicing a prefix from
+// one context onto a reference that only succeeded in another.
+func (b *builder) pickContext(comps []int, l, r int) int {
+	win := comps[0]
+	pid := compPID(win)
+	pr := &b.p.c.prods[pid]
+	packed, err := b.packed, b.err
+	var bestBuf, nextBuf [8]int
+	best, ok := b.path(pid, l, r, compCell(win), bestBuf[:])
+	b.packed, b.err = packed, err
+	if !ok {
+		b.fail(fmt.Sprintf("internal: no capture path through %s at %s", displayNT(pr.nt), b.where(l)))
+		return win
+	}
+	different := false
+	for _, comp := range comps[1:] {
+		pos, ok := b.path(pid, l, r, compCell(comp), nextBuf[:])
+		// Only the selected path's diagnostics count. prodKidsInto walks
+		// it again when building the tree, including #assoc=none errors.
+		b.packed, b.err = packed, err
+		if !ok {
+			b.fail(fmt.Sprintf("internal: no capture path through %s at %s", displayNT(pr.nt), b.where(l)))
+			return win
+		}
+		for ip := len(pos) - 2; ip > 0; ip-- {
+			if pos[ip] == best[ip] {
+				continue
+			}
+			different = true
+			if (pos[ip] > best[ip]) != (pr.dirs.assoc == assocRight) {
+				win = comp
+				copy(best, pos)
+			}
+			break
+		}
+	}
+	if different {
+		switch pr.dirs.assoc {
+		case assocNone:
+			b.fail(fmt.Sprintf("ambiguous derivation of %s at %s: #assoc=none forbids chaining",
+				displayNT(pr.nt), b.where(l)))
+		case assocLeft, assocRight:
+		default:
+			if b.contextAmb == nil {
+				b.contextAmb = make(map[int32]bool)
+			}
+			b.contextAmb[compCell(win)] = true
+		}
+	}
+	return win
 }
 
 // filter compacts xs in place to the elements for which keep is true and
@@ -379,8 +468,57 @@ func (b *builder) deriveInto(dst []int32, nid, l, r int) []int32 {
 		b.fail(fmt.Sprintf("internal: unresolved nonterminal over %s", b.where(l)))
 		return dst
 	}
-	info := &c.ntInfo[nid]
+	if c.treeCycle != nil && c.treeCycle[nid] {
+		return b.deriveCycleInto(dst, nid, l, r)
+	}
 	pid, cell := b.pickAt(nid, l, r)
+	return b.derivePickedInto(dst, nid, pid, cell, l, r)
+}
+
+// deriveCycleInto tries another completion when a preferred subtree would
+// recurse forever. The retry must happen at the branching ancestor: a repeated
+// unit wrapper itself may have no alternative, while its caller has a base case.
+// The ordinary consuming path avoids this speculative arena/diagnostic rollback.
+func (b *builder) deriveCycleInto(dst []int32, nid, l, r int) []int32 {
+	if b.active == nil {
+		b.active = make(map[int]bool)
+	}
+	var tried []int
+	mark := len(dst)
+	nodes, kids, lits := len(b.nodes), len(b.kids), len(b.lits)
+	packed, err, cycle := b.packed, b.err, b.cycle
+	for {
+		// Exclude failed alternatives while picking, but permit them inside
+		// another candidate's finite tree. Only ancestors stay active there.
+		for _, comp := range tried {
+			b.active[comp] = true
+		}
+		pid, cell := b.pickAt(nid, l, r)
+		for _, comp := range tried {
+			delete(b.active, comp)
+		}
+		if pid < 0 {
+			return b.derivePickedInto(dst, nid, pid, cell, l, r)
+		}
+		comp := packComp(pid, cell)
+		b.active[comp] = true
+		b.cycle = false
+		dst = b.derivePickedInto(dst, nid, pid, cell, l, r)
+		delete(b.active, comp)
+		if !b.cycle {
+			b.cycle = cycle
+			return dst
+		}
+		tried = append(tried, comp)
+		dst = dst[:mark]
+		b.nodes, b.kids, b.lits = b.nodes[:nodes], b.kids[:kids], b.lits[:lits]
+		b.packed, b.err, b.cycle = packed, err, cycle
+	}
+}
+
+func (b *builder) derivePickedInto(dst []int32, nid, pid int, cell int32, l, r int) []int32 {
+	c := b.p.c
+	info := &c.ntInfo[nid]
 	if pid < 0 {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(info.nt), b.where(l)))
 		lo, hi := b.span(l, r)

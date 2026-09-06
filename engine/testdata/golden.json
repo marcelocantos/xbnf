@@ -5,5 +5,13 @@
     "packed": 0,
     "nodes": 32641,
     "sha256": "dbb50e61426b25314238ae02029f08aae5c6f8500ddb80d7554458abe6b6213a"
+  },
+  "partial-tree-ab": {
+    "ok": false,
+    "end": 1,
+    "packed": 0,
+    "error": "unconsumed input at 1:2 (byte 1)",
+    "nodes": 1,
+    "sha256": "ca6ddf5e6071c7d04e80d35263668ed839de85f1c275287ed14b79ac61f3bf12"
   }
 }

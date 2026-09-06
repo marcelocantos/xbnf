@@ -50,8 +50,8 @@
     "end": 304,
     "packed": 0,
     "error": "unconsumed input at 14:1 (byte 304)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 61,
+    "sha256": "b6605f061de2f7ce48b7d22f5aae3602c520c4e8481224fe58fd71f4b730bc0e"
   },
   "go/corpus/errors.go": {
     "ok": true,
@@ -65,8 +65,8 @@
     "end": 274,
     "packed": 0,
     "error": "unconsumed input at 10:1 (byte 274)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 25,
+    "sha256": "bd17418a245d5bf459a391835ab2143ac9be75508f544c53784860d7f29d0d73"
   },
   "go/corpus/join.go": {
     "ok": true,
@@ -108,16 +108,16 @@
     "end": 311,
     "packed": 0,
     "error": "unconsumed input at 14:7 (byte 311)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 20,
+    "sha256": "eda14c1b8f3c9a4b8cc035507d6304e4c9a7ad65563b56aac4b0c008db281e78"
   },
   "javascript/corpus/early-params-super-call.js": {
     "ok": false,
     "end": 428,
     "packed": 0,
     "error": "unconsumed input at 16:1 (byte 428)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 13,
+    "sha256": "2de130e9a51b131d23917a487ca4f9af8b6413f6312c55c1634a828f61c54e42"
   },
   "json-smoke/bad.json": {
     "ok": false,
@@ -147,8 +147,8 @@
     "end": 24,
     "packed": 0,
     "error": "unconsumed input at 2:1 (byte 24)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 15,
+    "sha256": "35a754585c3e3836a1b20fee8d023400ffd7f37d514006ec6ff23ebc5c200b15"
   },
   "python/corpus/badsyntax_pep3120.py": {
     "ok": false,
@@ -240,16 +240,16 @@
     "end": 4,
     "packed": 0,
     "error": "unconsumed input at 1:5 (byte 4)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 4,
+    "sha256": "2dea7053b800f183c08f06c378fada64f306ced2beacc419a8e9a76987ca6174"
   },
   "xml/corpus/xmltest-not-wf-sa-002.xml": {
     "ok": false,
     "end": 4,
     "packed": 0,
     "error": "unconsumed input at 1:5 (byte 4)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 4,
+    "sha256": "2dea7053b800f183c08f06c378fada64f306ced2beacc419a8e9a76987ca6174"
   },
   "xml/corpus/xmltest-valid-sa-001.xml": {
     "ok": true,
@@ -277,8 +277,8 @@
     "end": 11,
     "packed": 2,
     "error": "unconsumed input at 3:1 (byte 11)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 19,
+    "sha256": "d79acd5d2ffb88dc69ff56ec086d49e8635a162b3e84527fe4034c21e74a6012"
   },
   "yaml/corpus/26DV/in.yaml": {
     "ok": true,
@@ -299,8 +299,8 @@
     "end": 6,
     "packed": 0,
     "error": "unconsumed input at 2:2 (byte 6)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 9,
+    "sha256": "386be58d5cf21bcd6a004f92ea9dfa6526dcf34ba9ad4c1cacc3c8def5a64192"
   },
   "yaml/corpus/2JQS/in.yaml": {
     "ok": false,
@@ -329,8 +329,8 @@
     "end": 19,
     "packed": 2,
     "error": "unconsumed input at 3:5 (byte 19)",
-    "nodes": 0,
-    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "nodes": 23,
+    "sha256": "071290394a8c959ede2ad4ca0f27d0a1756ef2f5138e56858060d92ca55f63e1"
   },
   "yaml/corpus/4ABK/in.yaml": {
     "ok": true,

@@ -114,6 +114,10 @@ type Compiled struct {
 	// nonterminal. Neither of its two slots matches anything, so fork and
 	// pop run them in place instead of scheduling a descriptor for each.
 	unitProd []bool
+	// captureSlots marks named elements read by a later %ref in the same
+	// production. Only these elements extend a descriptor's binding context.
+	// It is nil for grammars without such references, preserving the CFG path.
+	captureSlots [][]bool
 	// pred[nt] maps the first input byte to a unique production of nt when
 	// the alternatives are non-nullable and FIRST-disjoint on ASCII.
 	pred     map[string]*bytePred
@@ -126,6 +130,9 @@ type Compiled struct {
 	// spineProd[pid] marks a production the builder must walk as a
 	// transparent left-recursive spine rather than nest.
 	spineProd []bool
+	// treeCycle marks nonterminals that may participate in a tree cycle
+	// without input progress. It is nil when the zero-growth graph is acyclic.
+	treeCycle []bool
 	// tw is the scratch tree walker reused by dfaNode. Like the DFA
 	// transition caches it makes one Compiled single-parse-at-a-time.
 	tw       twalk
@@ -220,6 +227,7 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 	out.computeFirst()
 	out.buildNTInfo()
 	out.resolveElems()
+	out.markCaptureSlots()
 	out.markUnitProds()
 	out.markSpineProds()
 	return out, nil
@@ -303,6 +311,30 @@ func (c *Compiled) markUnitProds() {
 	for i := range c.prods {
 		rhs := c.prods[i].rhs
 		c.unitProd[i] = len(rhs) == 1 && rhs[0].kind == ekNT
+	}
+}
+
+func (c *Compiled) markCaptureSlots() {
+	for pid, pr := range c.prods {
+		for ip, e := range pr.rhs {
+			ref, ok := e.term.(grammar.Ref)
+			if !ok {
+				continue
+			}
+			for at := 0; at < ip; at++ {
+				if pr.rhs[at].name != ref.Name {
+					continue
+				}
+				if c.captureSlots == nil {
+					c.captureSlots = make([][]bool, len(c.prods))
+				}
+				if c.captureSlots[pid] == nil {
+					c.captureSlots[pid] = make([]bool, len(pr.rhs))
+				}
+				c.captureSlots[pid][at] = true
+				break // As with %ref lookup, the first matching name binds.
+			}
+		}
 	}
 }
 

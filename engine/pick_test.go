@@ -49,7 +49,7 @@ func TestPickPriorityPreferAvoidFallback(t *testing.T) {
 			for i, pid := range tc.pids {
 				comps[i] = packComp(pid, 0)
 			}
-			got := compPID(b.pick(comps))
+			got := compPID(b.pick(comps, 0, 0))
 			if got != tc.want {
 				t.Fatalf("pick(%v) = %d, want %d", tc.pids, got, tc.want)
 			}

@@ -49,12 +49,51 @@ Speed changes must not change trees. `make test` runs `TestGolden` in
 json-smoke). Each fixture's `engine.Fingerprint` — ok, end, packed, error
 text, node count and a preorder SHA-256 of kind/name/text — must equal
 `engine/testdata/golden.json` / `eval/testdata/golden.json`.
+Public partial trees returned on failure are included; an absent failure tree retains the empty fingerprint.
+The engine also locks `s -> "a"; #wrap -> ();` on `ab` as `partial-tree-ab`.
+
+The T30 coverage correction deliberately rebaselined ten failed corpus tree hashes and node counts, with all other
+fields and all existing successful fingerprints unchanged. It preceded the T29 engine correction. See
+[capture context and ratchet evidence](capture-context.md) for the mechanism, cases and remaining limits.
 
 A deliberate tree change (grammar fix, new corpus pin, changed error text)
 runs `make golden-update` and commits the new golden **in the same commit**
 with the reason in the message. An optimisation candidate that needs a
 golden update is not an optimisation; it is a tree change and is judged as
 one. `TestLanguageManifests` also locks `Failed == 0` for every live track.
+
+## T29/T30 correctness follow-up (2026-09-06)
+
+The [capture-context correction](capture-context.md) fixes order-dependent reference matching and invalid selected
+bindings while preserving shared callees. The fresh full suite, vet, standing build checks, real CLI capture journey and
+42/42 live language comparisons pass. All existing successful golden fingerprints remain unchanged; T30's deliberate
+failed-tree fingerprint update is described above.
+
+Stable timing is **not established** for this correction. The normal corpus gate against `9c47802`, with its default
+ten pairs and two-second duration, stopped at the idle check after 90 seconds: load1 was 24.15 against a 2.5 maximum.
+Two subsequent diagnostic runs used `--skip-idle --pairs 4 --benchtime 500ms` to inspect allocations on the same shipped
+`Compiled.Parse` benchmark and unchanged fixtures. The first was NOISY. It exposed capture-descriptor map reconstruction;
+reusable chart indexing removed most of that allocation:
+
+| Workload | Pre-fix baseline B/op | First correction B/op | Final pooled correction B/op |
+|---|---:|---:|---:|
+| XML corpus | 1.29 MB | 4.56 MB | 1.38 MB |
+| Corpus aggregate | 3.20 MB | 6.48 MB | 3.30 MB |
+
+The other six languages' B/op remain unchanged at the harness's displayed precision. Pooled descriptor storage counts
+toward the chart capacity bound; this trades repeated allocation for retained storage. Per-parse binding and completion
+maps still allocate. These figures do not measure total retained memory or compilation cost.
+
+The final diagnostic reported an aggregate old/new timing ratio of 0.974×, with one candidate win in four pairs.
+Python and YAML reported 0.942× and 0.947× respectively; XML's timing row was NOISY. Its overall script verdict was
+DISCARD (TIME: TIE, MEM: LOSE), an optimization keep/discard classification rather than a reason to restore incorrect
+capture semantics. The idle check was deliberately skipped and the run was short, so these are cost signals for
+investigation, not a stable latency estimate. 🎯T31 records the standard corpus and auxiliary JSON measurements still
+needed. No claim that T25's exact speedup survives this correction has been made.
+
+Raw local logs: `/tmp/xbnf-t2930-corpus-gate.txt`, `/tmp/xbnf-t2930-corpus-allocation-probe.txt`, and
+`/tmp/xbnf-t2930-pooled-allocation-probe.txt`. The standard follow-up command is
+`scripts/bench-json-stable.sh --base 9c47802 --bench corpus`; omit `--bench corpus` for the auxiliary JSON gate.
 
 ## Corpus gate (🎯T25.2)
 

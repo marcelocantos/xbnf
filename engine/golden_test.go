@@ -10,13 +10,17 @@ import (
 )
 
 // TestGolden is the engine half of the 🎯T25.1 ratchet: nestedJSON(64<<10)
-// on docs/examples/json.xbnf must fingerprint exactly as recorded.
+// and the 🎯T30 failed-parse partial tree must fingerprint exactly as recorded.
 // XBNF_GOLDEN=update rewrites testdata/golden.json.
 func TestGolden(t *testing.T) {
 	const path = "testdata/golden.json"
 	c := compileDoc(t, "docs/examples/json.xbnf")
 	in := nestedJSON(64 << 10)
-	got := map[string]Fingerprint{"nestedJSON-64K": FingerprintResult(c.Parse("json", in))}
+	partial := compileSrc(t, "s -> \"a\";\n#wrap -> ();\n")
+	got := map[string]Fingerprint{
+		"nestedJSON-64K":  FingerprintResult(c.Parse("json", in)),
+		"partial-tree-ab": FingerprintResult(partial.Parse("s", "ab")),
+	}
 	if os.Getenv("XBNF_GOLDEN") == "update" {
 		b, err := json.MarshalIndent(got, "", "  ")
 		if err != nil {
@@ -44,6 +48,11 @@ func TestGolden(t *testing.T) {
 		}
 		if g != w {
 			t.Errorf("%s: fingerprint changed\n  want %+v\n  got  %+v", k, w, g)
+		}
+	}
+	for k := range want {
+		if _, ok := got[k]; !ok {
+			t.Errorf("%s: in golden but no longer exercised", k)
 		}
 	}
 }

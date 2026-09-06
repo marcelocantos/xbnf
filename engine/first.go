@@ -175,9 +175,10 @@ func (c *Compiled) elemFirst(e elem, nt map[string]firstInfo) firstInfo {
 		case grammar.Empty, grammar.PosProp:
 			return firstInfo{nullable: true}
 		case grammar.Ref:
-			// Bound text consumes input. Treating it as ε leaks FIRST of
-			// what follows (e.g. ">" after "</" %n ">").
-			return firstInfo{atoms: []firstAtom{{term: grammar.AnyChar{}}}}
+			// A capture (or default) can be empty or begin with any rune.
+			// Keep both possibilities: epsilon alone would incorrectly
+			// prune nonempty copies; a rune alone rejects empty copies at EOF.
+			return firstInfo{nullable: true, atoms: []firstAtom{{term: grammar.AnyChar{}}}}
 		case grammar.String:
 			if x.Text == "" {
 				return firstInfo{nullable: true}
@@ -248,6 +249,50 @@ func (c *Compiled) computeFirst() {
 		}
 	}
 	c.computeBytePred()
+	c.markTreeCycles(nt)
+}
+
+// markTreeCycles conservatively finds where a child can cover its parent's
+// whole span: every sibling must be nullable. Removing zero-indegree nodes
+// leaves cycles and nodes reachable from them. Only those nodes need a runtime
+// cycle guard; consuming recursion cannot revisit the same span.
+func (c *Compiled) markTreeCycles(nt map[string]firstInfo) {
+	edges := make([][]int, len(c.ntNID))
+	indegree := make([]int, len(c.ntNID))
+	for _, pr := range c.prods {
+		for ip, e := range pr.rhs {
+			if e.kind == ekNT && c.slotFirst[int(pr.firstBase)+ip+1].nullable {
+				if nid, ok := c.ntNID[e.nt]; ok {
+					edges[pr.nid] = append(edges[pr.nid], nid)
+					indegree[nid]++
+				}
+			}
+			if !c.elemFirst(e, nt).nullable {
+				break // A non-nullable prefix prevents subsequent whole-span children.
+			}
+		}
+	}
+	var ready []int
+	for nid, n := range indegree {
+		if n == 0 {
+			ready = append(ready, nid)
+		}
+	}
+	for at := 0; at < len(ready); at++ {
+		for _, nid := range edges[ready[at]] {
+			indegree[nid]--
+			if indegree[nid] == 0 {
+				ready = append(ready, nid)
+			}
+		}
+	}
+	if len(ready) == len(indegree) {
+		return
+	}
+	c.treeCycle = make([]bool, len(indegree))
+	for nid, n := range indegree {
+		c.treeCycle[nid] = n != 0
+	}
 }
 
 func (f *firstInfo) buildASCII() {
