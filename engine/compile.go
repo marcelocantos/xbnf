@@ -29,7 +29,15 @@ type elem struct {
 	df    *dfa   // set for ekDFA
 	nid   int    // dense id of nt, for ekNT / lookahead
 	desc  string // interned describeElem text, for parse-failure messages
+	// qid identifies the recognition question this element poses, shared by
+	// every element that asks the same thing: one id per distinct DFA for
+	// ekDFA, one per distinct terminal value for ekTerm. noQID means the
+	// element poses no position-pure question.
+	qid int
 }
+
+// noQID marks an element whose match is not a shared recognition question.
+const noQID = 0
 
 type prod struct {
 	nt   string
@@ -197,6 +205,11 @@ func (c *Compiled) resolveElems() {
 			c.predN[id] = bp
 		}
 	}
+	// Elements that pose the same recognition question share a qid, so a
+	// question asked at one position can be counted, and answered, once.
+	dfaQID := map[*dfa]int{}
+	termQID := map[string]int{}
+	nextQID := noQID
 	for i := range c.prods {
 		rhs := c.prods[i].rhs
 		for j := range rhs {
@@ -218,6 +231,41 @@ func (c *Compiled) resolveElems() {
 			// failed element match, and quoting a string term there was one
 			// allocation per failure.
 			e.desc = describeElem(*e)
+			switch e.kind {
+			case ekDFA:
+				d := e.df
+				if d == nil {
+					d = c.dfa[e.nt]
+				}
+				if d == nil {
+					break
+				}
+				id, ok := dfaQID[d]
+				if !ok {
+					nextQID++
+					id = nextQID
+					dfaQID[d] = id
+				}
+				e.qid = id
+			case ekTerm:
+				// PosProp and Ref are not position-pure: they depend on the
+				// enclosing production's bound text or column.
+				switch e.term.(type) {
+				case grammar.PosProp, grammar.Ref:
+				default:
+					// The structural rendering, not e.desc: describeTerm
+					// drops the case-fold flag, so `"x"` and `(?i:"x")`
+					// share a description but not a language.
+					k := fmt.Sprintf("%#v", e.term)
+					id, ok := termQID[k]
+					if !ok {
+						nextQID++
+						id = nextQID
+						termQID[k] = id
+					}
+					e.qid = id
+				}
+			}
 		}
 	}
 }

@@ -16,6 +16,14 @@ type Profile struct {
 	Steps       int   // derivation steps recorded
 	DFAStart    bool  // start rule ran as a DFA, not GLL
 	ChartBytes  int64 // approximate backing capacity of charts and steps
+	// Duplicate-terminal-question census (research §7.1). Asked counts every
+	// DFA / literal match process requests; Repeat counts those whose
+	// (question, position) pair had already been asked in the same parse.
+	// Questions from lookahead subparses are not included.
+	DFAQuestions  int
+	DFARepeats    int
+	TermQuestions int
+	TermRepeats   int
 	// The following are not measured on this path; they stay 0.
 	CalleeReuse    int
 	ContnLifetimes int
@@ -25,7 +33,7 @@ type Profile struct {
 // ParseProfile runs the same parse as Parse and returns a Profile. Do not use
 // it inside a timed headline section.
 func (c *Compiled) ParseProfile(start, input string) (*Result, *Profile) {
-	res, p := c.run(start, input)
+	res, p := c.runMode(start, input, true)
 	prof := snapshotProfile(c, p, res)
 	if p != nil {
 		p.release()
@@ -60,6 +68,11 @@ func snapshotProfile(c *Compiled, p *gll, res *Result) *Profile {
 		Steps:       steps,
 		DFAStart:    c != nil && c.IsDFA(p.start),
 		ChartBytes:  chartBytes(p),
+
+		DFAQuestions:  p.qc.dfaAsked,
+		DFARepeats:    p.qc.dfaRepeat,
+		TermQuestions: p.qc.termAsked,
+		TermRepeats:   p.qc.termRepeat,
 	}
 }
 

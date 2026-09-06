@@ -82,7 +82,22 @@ type gll struct {
 	spineOut []int
 	stepAtK  instKey
 	stepAtID int
+	qseen    uSet // diag: packQuestion(qid,pos) pairs already asked this parse
+	qc       questionCounts
+	diag     bool   // count repeated terminal questions; ParseProfile only
 	gen      uint32 // bumps each Parse; lookup maps are not cleared
+}
+
+// questionCounts is the 7.1 "duplicate terminal questions" census: how often
+// process asks a DFA or a literal to match, and how often the same (question,
+// position) pair was already asked in this parse.
+type questionCounts struct {
+	dfaAsked, dfaRepeat   int
+	termAsked, termRepeat int
+}
+
+func packQuestion(qid, pos int) uint64 {
+	return uint64(uint32(qid))<<32 | uint64(uint32(pos))
 }
 
 func packFam(nid, l, r int) (uint64, bool) {
@@ -139,6 +154,8 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	p.input = input
 	p.start = start
 	p.work = 0
+	p.diag = false
+	p.qc = questionCounts{}
 	p.Ubig = nil
 	p.gssBig = nil
 	p.symMore = nil
@@ -160,8 +177,12 @@ func (p *gll) bind(c *Compiled, input, start string) {
 		p.reach.clear()
 		p.sym.clear()
 		p.endAt.clear()
+		p.qseen.clear()
 		clear(p.symBig)
 		p.gen = 1
+	}
+	if p.qseen.slots != nil {
+		p.qseen.reset()
 	}
 	if p.uset.slots == nil {
 		p.uset.init(n * 4)
@@ -264,6 +285,8 @@ func (p *gll) release() {
 	p.symBig = nil
 	p.symMore = nil
 	p.work = 0
+	p.diag = false
+	p.qc = questionCounts{}
 	p.fail.pos = -1
 	p.fail.rule = ""
 	p.fail.dfa = false
@@ -410,6 +433,12 @@ func (c *Compiled) gll(start, input string) *Result {
 
 // run parses and also returns the parser state, for tests that inspect work done.
 func (c *Compiled) run(start, input string) (*Result, *gll) {
+	return c.runMode(start, input, false)
+}
+
+// runMode is run with the per-question census optionally armed. diag costs a
+// hash probe per terminal match, so only ParseProfile passes true.
+func (c *Compiled) runMode(start, input string, diag bool) (*Result, *gll) {
 	if start == "" {
 		start = c.first
 	}
@@ -420,7 +449,35 @@ func (c *Compiled) run(start, input string) (*Result, *gll) {
 		return &Result{Error: "unknown rule " + start}, nil
 	}
 	p := newGLL(c, input, start)
+	p.diag = diag
 	return c.runOn(p, start, input)
+}
+
+// noteQuestion records that process asked question qid at pos, and whether the
+// same pair was asked earlier in this parse. Lookahead subparses run on their
+// own gll and are not counted.
+func (p *gll) noteQuestion(qid, pos int, isDFA bool) {
+	if isDFA {
+		p.qc.dfaAsked++
+	} else {
+		p.qc.termAsked++
+	}
+	if qid == noQID {
+		return
+	}
+	if p.qseen.slots == nil {
+		p.qseen.init(len(p.input) + 1)
+	}
+	idx, hit := p.qseen.probe(packQuestion(qid, pos), p.gen)
+	if hit {
+		if isDFA {
+			p.qc.dfaRepeat++
+		} else {
+			p.qc.termRepeat++
+		}
+		return
+	}
+	p.qseen.placeAt(idx, packQuestion(qid, pos), p.gen)
 }
 
 func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
@@ -799,6 +856,9 @@ func (p *gll) process(d desc) {
 				end = j + len(want)
 			default:
 				j := p.skip(i)
+				if p.diag {
+					p.noteQuestion(e.qid, j, false)
+				}
 				m, ok := matchTerminal(e.term, p.input, j)
 				if !ok {
 					p.noteFail(j, describeElem(e), pr.nt, false)
@@ -814,6 +874,9 @@ func (p *gll) process(d desc) {
 			}
 			if df == nil {
 				return
+			}
+			if p.diag {
+				p.noteQuestion(e.qid, j, true)
 			}
 			m, labs, ok := df.match(p.input, j)
 			if !ok {
