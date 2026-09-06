@@ -120,7 +120,35 @@ kept change (no `make golden-update` in this programme).
 | Per-slot 128-byte ASCII admit table | DISCARD | 0.967× (a second cache line for what the bitset already answers). |
 | Dense `firstBase []int32` | DISCARD | 1.002× tie. |
 | `treeKind`-first element dispatch + span memo | DISCARD | Builder 1.52→1.57 ms per parse. |
+| Final cycle: `noteFail` on the admits rejection path; inlining `admits` into `claim` | not attempted (ceiling < gate) | Profile after round four attributes 80 ms and 50 ms of 3.1 s (2.6% and 1.6%) to these; each is below the gate's 3% KEEP bar on its own. The exploring agent was cut off by the account spend limit before measuring; recorded as the open tail. |
 | §7.2 bulk homogeneous scans | not attempted | After ASCII tables `dfa.match` is 17% of commonmark and ≤5% elsewhere; a run-scan loop has ~5% ceiling on one language. |
+
+### Gate results, t25-opt vs master (8dfa60a)
+
+Interleaved, 10 × 2 s pairs, `GOMAXPROCS=1`, idle-checked (load1 ≤ 2.5).
+
+| Gate | Candidate | old median | new median | pair speedup median | new faster | B/op | VERDICT |
+|---|---|---:|---:|---:|---:|---|---|
+| JSON 64K | 3aa5c02 (through H1) | 12.26 ms | 4.84 ms | 2.520 | 10/10 | 2.35 → 2.35 MB, allocs 3 → 2 | KEEP |
+| Corpus aggregate | 681d1fb (all rounds) | — | — | 3.043 | 10/10 | 18.89 → 3.20 MB | KEEP |
+| Corpus commonmark | 681d1fb | | | 4.070 | 10/10 | 12.61 → 0.26 MB | KEEP |
+| Corpus xml | 681d1fb | | | 3.541 | 10/10 | 2.51 → 1.29 MB | KEEP |
+| Corpus sql | 681d1fb | | | 2.787 | 10/10 | 3.17 → 1.26 MB | KEEP |
+| Corpus python | 681d1fb | | | 2.532 | 10/10 | 0.25 → 0.19 MB | KEEP |
+| Corpus javascript | 681d1fb | | | 2.493 | 10/10 | 0.05 → 0.05 MB | KEEP |
+| Corpus go | 681d1fb | | | 2.449 | 10/10 | 0.22 → 0.13 MB | KEEP |
+| Corpus yaml | 681d1fb | | | 2.205 | 10/10 | 0.07 → 0.03 MB | KEEP |
+
+The pool change's indicative xml loss did not survive integration: xml is
+3.5× faster at the gate. Per-change attribution comes from the agents'
+interleaved runs in the table above, not from re-gating each commit.
+
+**Fixed point.** After round four every remaining candidate in the profile
+is below the gate's own KEEP bar (3% median, 80% of pairs): the largest is
+the `noteFail` rejection path at 2.6%. The public tree (`materialize`,
+2 allocs, 2.35 MB on JSON) and its collection are the API floor; changing
+that is a `Node` layout decision (see 🎯T23 for positions), not an
+optimisation.
 
 ## Latest (2026-09-05, Apple M4 Max)
 
