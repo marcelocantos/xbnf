@@ -154,7 +154,9 @@ func TestJSON16KParseCost(t *testing.T) {
 	if !res.OK {
 		t.Fatal(res.Error)
 	}
-	const workBound = 30000
+	// 19549 descriptors after straight-line fusion, with the same ~17%
+	// headroom the 30000 bound left over the 25552 before it.
+	const workBound = 23000
 	if p.work > workBound {
 		t.Fatalf("16 KB nested JSON work=%d, bound %d", p.work, workBound)
 	}
