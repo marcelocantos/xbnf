@@ -724,8 +724,26 @@ func (c *compiler) flattenAt(t grammar.Term, fold bool) []elem {
 	}
 }
 
+// optMin and optMax are the bounds of `X?`, the one quantifier shape that
+// lowers to a single nonterminal.
+const (
+	optMin = 0
+	optMax = 1
+)
+
 func (c *compiler) quantNT(inner []elem, min, max int) string {
 	h := c.fresh("q")
+	if min == optMin && max == optMax {
+		// `X?` is `$q ::= ε | inner` directly, not `$q ::= $qo` over a
+		// separate `$qo ::= ε | inner`. The unit wrapper cost a GSS node,
+		// a create, a descriptor, a completion and a pop per attempt
+		// position; deriveInto spliced `$qo` into `$q` anyway, so the
+		// kids — and the ε-first production order pick relies on — are
+		// unchanged.
+		c.addProd(h, nil)
+		c.addProd(h, inner)
+		return h
+	}
 	star := c.fresh("qs")
 	// star ::= ε | star inner
 	//
