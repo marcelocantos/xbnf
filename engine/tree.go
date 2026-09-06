@@ -390,7 +390,7 @@ func (b *builder) deriveInto(dst []int32, nid, l, r int) []int32 {
 	// Transparent left-recursive lists ($dl, $qs) must not append the prefix
 	// children at every spine node — that is O(n²) Node copies.
 	if c.spineProd[pid] {
-		dst = b.leftRecKidsInto(dst, nid, l, r)
+		dst = b.leftRecKidsInto(dst, nid, pid, cell, l, r)
 	} else {
 		dst = b.prodKidsInto(dst, pid, l, r, cell)
 	}
@@ -417,15 +417,16 @@ type kidSpan struct{ start, n int }
 
 // leftRecKidsInto walks a transparent left-recursive spine N ::= N rest | base
 // once and appends base+rest onto dst. User-level left recursion is not
-// spliced and still nests via prodKidsInto.
-func (b *builder) leftRecKidsInto(dst []int32, nid, l, r int) []int32 {
+// spliced and still nests via prodKidsInto. pid and cell are the spine
+// production over (l, r) that deriveInto already resolved; the walk resolves
+// each shorter prefix itself.
+func (b *builder) leftRecKidsInto(dst []int32, nid, pid int, cell int32, l, r int) []int32 {
 	c := b.p.c
 	nt := c.ntInfo[nid].nt
 	mark := len(b.p.spineBuf)
 	start := len(dst)
 	curR := r
 	for {
-		pid, cell := b.pickAt(nid, l, curR)
 		if pid < 0 {
 			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 			b.p.spineBuf = b.p.spineBuf[:mark]
@@ -454,6 +455,7 @@ func (b *builder) leftRecKidsInto(dst []int32, nid, l, r int) []int32 {
 		dst = b.rhsNodesInto(dst, pr.rhs, pos, 1)
 		b.p.spineBuf = append(b.p.spineBuf, kidSpan{start: restStart, n: len(dst) - restStart})
 		curR = pos[1]
+		pid, cell = b.pickAt(nid, l, curR)
 	}
 }
 
@@ -490,52 +492,52 @@ func (b *builder) prodKidsInto(dst []int32, pid, l, r int, cell int32) []int32 {
 	return b.rhsNodesInto(dst, pr.rhs, pos, 0)
 }
 
+// rhsNodesInto appends the nodes for the elements of rhs from index from on,
+// with pos holding their boundaries. A leaf element — a terminal, or a DFA
+// rule flat enough for compile time to have settled its node kind and name —
+// makes exactly one node and is built here, so only the elements that recurse
+// pay for a call.
 func (b *builder) rhsNodesInto(dst []int32, rhs []elem, pos []int, from int) []int32 {
 	for ip := from; ip < len(rhs); ip++ {
-		dst = b.appendElem(dst, &rhs[ip], pos[ip], pos[ip+1])
+		e := &rhs[ip]
+		if e.kind == ekNT || (e.kind == ekDFA && e.treeKind == "") {
+			dst = b.appendElem(dst, e, pos[ip], pos[ip+1])
+			continue
+		}
+		if e.treeKind == "" {
+			continue // Empty / PosProp and the lookaheads make no node
+		}
+		lo, hi := b.span(pos[ip], pos[ip+1])
+		dst = append(dst, b.addNode(e.treeKind, e.treeName, lo, hi, nil))
 	}
 	return dst
 }
 
 // appendElem appends the nodes for one right-hand-side element matched over
-// input[i:end]. Terminals and flat DFA elements carry their node kind and name
-// from compile time, so this path inspects neither the term nor a name.
+// input[i:end], for the elements rhsNodesInto does not build itself: a
+// nonterminal, and a regular rule whose structure has to be recovered.
 func (b *builder) appendElem(kids []int32, e *elem, i, end int) []int32 {
-	switch e.kind {
-	case ekTerm:
-		if e.treeKind == "" {
-			return kids // Empty / PosProp match no text and make no node
-		}
-		lo, hi := b.span(i, end)
-		return append(kids, b.addNode(e.treeKind, e.treeName, lo, hi, nil))
-	case ekDFA:
-		if e.treeKind != "" {
-			lo, hi := b.span(i, end)
-			return append(kids, b.addNode(e.treeKind, e.treeName, lo, hi, nil))
-		}
+	if e.kind == ekDFA {
 		// A regular rule with structure: recover it by walking the body.
 		n := b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)
 		if e.name != "" {
 			n.Name = e.name
 		}
 		return append(kids, b.intern(n))
-	case ekNT:
-		start := len(kids)
-		kids = b.deriveInto(kids, e.nid, i, end)
-		if e.name != "" {
-			added := kids[start:]
-			if len(added) == 1 {
-				b.nodes[added[0]].name = e.name
-			} else if len(added) > 1 {
-				lo, hi := b.span(i, end)
-				id := b.addNode(nodeKindSeq, e.name, lo, hi, added)
-				kids = append(kids[:start], id)
-			}
-		}
-		return kids
-	default:
-		return kids
 	}
+	start := len(kids)
+	kids = b.deriveInto(kids, e.nid, i, end)
+	if e.name != "" {
+		added := kids[start:]
+		if len(added) == 1 {
+			b.nodes[added[0]].name = e.name
+		} else if len(added) > 1 {
+			lo, hi := b.span(i, end)
+			id := b.addNode(nodeKindSeq, e.name, lo, hi, added)
+			kids = append(kids[:start], id)
+		}
+	}
+	return kids
 }
 
 // dfaNode is the node for a regular rule matched over input[l:r]. A /leaf/
