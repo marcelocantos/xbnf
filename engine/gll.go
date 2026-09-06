@@ -613,6 +613,34 @@ func (p *gll) add(sl slot, u, i int) {
 	p.R = append(p.R, d)
 }
 
+// mark is add without the R push: it claims the descriptor in U and reports
+// whether the caller may run it in place.
+func (p *gll) mark(sl slot, u, i int) bool {
+	d := desc{sl: sl, u: u, i: i}
+	if key, ok := packDesc(sl, u, i); ok {
+		idx, hit := p.uset.probe(key, p.gen)
+		if hit {
+			return false
+		}
+		if !p.admits(sl, i) {
+			return false
+		}
+		p.uset.placeAt(idx, key, p.gen)
+		return true
+	}
+	if p.Ubig == nil {
+		p.Ubig = map[desc]uint32{}
+	}
+	if p.Ubig[d] == p.gen {
+		return false
+	}
+	if !p.admits(sl, i) {
+		return false
+	}
+	p.Ubig[d] = p.gen
+	return true
+}
+
 // admits is the GLL test: can the remainder of the slot start at position i?
 // A rejected slot records what it expected, so error messages are unchanged.
 func (p *gll) admits(sl slot, i int) bool {
@@ -730,11 +758,13 @@ func (p *gll) pop(u, i int) {
 
 // process runs one descriptor, and then as much of the production as it can
 // without rescheduling. A terminal or DFA element that matches yields exactly
-// one endpoint, so the descriptor for the element after it has no producer
-// other than this call: the step is recorded as advance would, admits is
-// applied as add would, and the run continues here at the next element.
-// A nonterminal, a lookahead or the end of the production ends the run and
-// goes through the usual create/fork/advance/complete path.
+// one endpoint, so the descriptor for the element after it can run here: the
+// step is recorded as advance would and mark claims it in U as add would, so
+// no other path can run it a second time. R is LIFO and a terminal's advance
+// was already the last act of process, so a fused run visits slots in the
+// order drain would have. A nonterminal, a lookahead or the end of the
+// production ends the run and goes through the usual create/fork/advance/
+// complete path.
 func (p *gll) process(d desc) {
 	sl, i := d.sl, d.i
 	for {
@@ -817,7 +847,7 @@ func (p *gll) process(d desc) {
 			return
 		}
 		p.step(next, d.u, i, end)
-		if !p.admits(next, end) {
+		if !p.mark(next, d.u, end) {
 			return
 		}
 		sl, i = next, end
