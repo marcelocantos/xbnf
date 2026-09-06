@@ -88,6 +88,30 @@ note and justify the regressed language(s) explicitly. Aggregate `NOISY` or
 `SELF-FAIL` behave exactly as in the JSON gate (exit 2; do not decide).
 `--bench json` (the default) is unchanged.
 
+## 🎯T25 optimisation programme (2026-09-06)
+
+Every documented opportunity in `docs/parse-performance-research.md` has a
+verdict here. Mechanism counts are deterministic (`xbnf eval` profiles and
+`c.run` on nestedJSON 64K); timings are from the interleaved gates in the
+table at the end of this section. Trees were golden-identical for every
+kept change (no `make golden-update` in this programme).
+
+| Opportunity | Verdict | Mechanism evidence |
+|---|---|---|
+| H2 straight-line fusion (§5.2) | KEEP | Descriptors JSON 102810→78745 (−23%), xml −12%, commonmark −12%, sql −3%. Intermediate slots still deduped via U (`claim` without push). Steps/completions/packed unchanged. |
+| H3 predecessor-linked evidence (§5.3) | KEEP | Descriptors carry evidence cells; `path` is a link walk; packSteps/matchSteps/sort/stepReach deleted (−198 lines). Instrumented: 119,781 matched steps, 0 unreachable, so `stepReach` was a tautology. Agent interleaved A/B on JSON: median 1.3×. |
+| Unit-production shortcut (§5.2/§7.3) | KEEP | `X?` lowers to one NT; unit prods (`$q→$qs`, `$d→$dl`, stack fallbacks) fork the target in place and pop through the chain. Descriptors JSON 78745→40112, sql 353343→144176, python 21701→8357, go 8564→4671; GSS sql 131198→101668. |
+| DFA ASCII tables + allocation-free twalk (§7.2) | KEEP | `dfaState.ascii[128]` before the rune map; twalk uses a scratch stack + arena, `describeElem` interned (was `strconv.Quote` per failure). Allocs/parse commonmark 32264→1469, xml 19692→3101; commonmark ns/op −69% (indicative). |
+| Root-end tracking | KEEP | `endAt` map written per completion, read only for the root: replaced by three ints (`rootAt`). `noteEnd` was 44% of `uMap.get` time on JSON. |
+| Allocation-free span selection | KEEP | `pick` scratch buffer, `symMore` as a pooled slab. Allocs/parse sql 16706→12, commonmark 1469→49. |
+| H1 callee sharing (§5.1) | measured; see gate table | Counter: duplicated callee descriptors are 3.3% (JSON), 8.0% (sql), 10.1% (go), 14.2% (python), 1–6% elsewhere. |
+| §7.1 duplicate terminal questions | DISCARD | Census on t25-opt: DFA questions repeated 0% (json), 14% (sql), 54% (yaml), 33% (go); but `dfa.match` is ≤4% of time, so a memo's ceiling is 2.2% (yaml) at the cost of a `uMap` probe per question. Not implemented. |
+| §7.1 batched joins | DEFERRED | Join fanout is bounded by GSS edges per node; after unit shortcut the GSS is the sharing point already. Reopen if a language shows a node with hundreds of edges in `ParseProfile`. |
+| H4 context projection (§6.1) | DEFERRED | The engine has no environment: `@col` is a function of position, `%name` resolves inside the production instance (now via evidence links). Reopen when a grammar needs a parent's indentation or lexical mode in the invocation key. |
+| §7.3 deterministic regions | DEFERRED | Fusion and the unit shortcut already run straight-line and chain regions without scheduling. A separate LL mode needs a soundness certificate the compiler does not have. |
+| §7.4 transfer summaries | REJECTED | Incremental parsing under another name; requires external-read tracking. Out of scope for this engine. |
+| §7.2 bulk homogeneous scans | not attempted | After ASCII tables `dfa.match` is 17% of commonmark and ≤5% elsewhere; a run-scan loop has ~5% ceiling on one language. |
+
 ## Latest (2026-09-05, Apple M4 Max)
 
 `nestedJSON(64<<10)`. xbnf and stdlib: `c077348`, count=2 side-by-side.
