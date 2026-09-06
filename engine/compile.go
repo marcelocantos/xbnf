@@ -46,6 +46,10 @@ type prod struct {
 	// fallback marks the synthetic `level ::= tighter` alternative of a
 	// precedence stack. It loses to any other derivation of the same span.
 	fallback bool
+	// firstBase is where this production's slots start in Compiled.slotFirst:
+	// slot (pid, ip) is slotFirst[prods[pid].firstBase+ip]. It fits in the
+	// padding after fallback, so prod is no larger for it.
+	firstBase int32
 }
 
 // #assoc values, resolved at compile time so the tree builder compares an int
@@ -100,8 +104,12 @@ type Compiled struct {
 	wrap    grammar.Term
 	wrapDFA *dfa
 	rules   map[string]grammar.Rule
-	// slotFirst[pid][ip] is the FIRST set of prods[pid].rhs[ip:].
-	slotFirst [][]firstInfo
+	// slotFirst is every slot's FIRST set in one flat array: the set of
+	// prods[pid].rhs[ip:] lives at slotFirst[prods[pid].firstBase+ip]. One
+	// array rather than a slice per production, because admits reads it on
+	// the hottest path in the parser and a slice of slices costs a second
+	// bounds check and a pointer chase into a separately allocated row.
+	slotFirst []firstInfo
 	// unitProd[pid] marks a production whose whole right-hand side is one
 	// nonterminal. Neither of its two slots matches anything, so fork and
 	// pop run them in place instead of scheduling a descriptor for each.

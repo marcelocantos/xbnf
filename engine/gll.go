@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/marcelocantos/xbnf/grammar"
 )
@@ -768,14 +769,19 @@ func (p *gll) add(sl slot, u, i int) {
 // admits is the GLL test: can the remainder of the slot start at position i?
 // A rejected slot records what it expected, so error messages are unchanged.
 func (p *gll) admits(sl slot, i int) bool {
-	f := p.c.slotFirst[sl.pid][sl.ip]
+	f := &p.c.slotFirst[int(p.c.prods[sl.pid].firstBase)+sl.ip]
 	if f.nullable {
 		return true
 	}
 	j := p.skip(i)
 	if j < len(p.input) {
-		r, _ := decodeRune(p.input, j)
-		if f.admits(r) {
+		// An ASCII byte against an ASCII-only FIRST set is the whole hot
+		// path: one word of the bitset decides it, with no rune to decode.
+		if b := p.input[j]; f.asciiOK && b < utf8.RuneSelf {
+			if f.admitsASCII(b) {
+				return true
+			}
+		} else if r, _ := decodeRune(p.input, j); f.admits(r) {
 			return true
 		}
 	}
