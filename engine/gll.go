@@ -125,12 +125,13 @@ type gll struct {
 	edges     []gssEdge
 	pops      []gssPop
 	tnodes    []inode
-	tkids     []int
-	kscratch  []int
-	iscratch  []int // builder.intern's child-id stack, disjoint from kscratch
-	mqueue    []int // builder.materialize's breadth-first queue of arena ids
+	tkids     []int32
+	tlits     []string // builder.lits: node text the input does not contain
+	kscratch  []int32
+	iscratch  []int32 // builder.intern's child-id stack, disjoint from kscratch
+	mqueue    []int32 // builder.materialize's breadth-first queue of arena ids
 	spineBuf  []kidSpan
-	spineOut  []int
+	spineOut  []int32
 	gen       uint32 // bumps each Parse; lookup maps are not cleared
 }
 
@@ -223,7 +224,7 @@ func newGLL(c *Compiled, input, start string) *gll {
 func chartCells(p *gll) int {
 	n := cap(p.R) + cap(p.gss) + cap(p.edges) + cap(p.pops) + cap(p.steps)
 	n += cap(p.cells) + cap(p.wrapEnd) + cap(p.tnodes) + cap(p.tkids)
-	n += cap(p.kscratch) + cap(p.spineBuf) + cap(p.spineOut)
+	n += cap(p.kscratch) + cap(p.spineBuf) + cap(p.spineOut) + cap(p.tlits)
 	n += p.uset.cells() + p.gssAt.cells() + p.sym.cells() + p.moreAt.cells() + cap(p.moreSlab) + cap(p.pickBuf)
 	return n
 }
@@ -326,6 +327,7 @@ func (p *gll) release() {
 	}
 	p.tnodes = p.tnodes[:0]
 	p.tkids = p.tkids[:0]
+	p.tlits = p.tlits[:0]
 	p.kscratch = p.kscratch[:0]
 	p.pickBuf = p.pickBuf[:0]
 	p.spineBuf = p.spineBuf[:0]
