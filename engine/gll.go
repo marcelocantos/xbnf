@@ -432,7 +432,7 @@ func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 			msg := formatExpect(input, pos, []string{displayNT(start)}, start, true)
 			return &Result{Error: msg}, p
 		}
-		tree := c.dfaNode(input, start, pos, end)
+		tree := c.dfaNodeOwned(input, start, pos, end)
 		end = c.skipWrap(input, end)
 		if end != len(input) {
 			line, col := lineCol(input, end)
