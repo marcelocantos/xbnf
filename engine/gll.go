@@ -105,6 +105,8 @@ type gll struct {
 	tnodes    []inode
 	tkids     []int
 	kscratch  []int
+	iscratch  []int // builder.intern's child-id stack, disjoint from kscratch
+	mqueue    []int // builder.materialize's breadth-first queue of arena ids
 	spineBuf  []kidSpan
 	spineOut  []int
 	gen       uint32 // bumps each Parse; lookup maps are not cleared
