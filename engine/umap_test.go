@@ -6,7 +6,7 @@ package engine
 import "testing"
 
 func TestUMapGenAndGrow(t *testing.T) {
-	var m uMap
+	var m uMap[int32]
 	m.size(8)
 	const gen uint32 = 1
 	for i := uint64(0); i < 100; i++ {
@@ -14,8 +14,8 @@ func TestUMapGenAndGrow(t *testing.T) {
 		if _, hit := m.get(k, gen); hit {
 			t.Fatalf("unexpected hit %d", i)
 		}
-		m.put(k, gen, int(i))
-		if id, hit := m.get(k, gen); !hit || id != int(i) {
+		m.put(k, gen, int32(i))
+		if id, hit := m.get(k, gen); !hit || id != int32(i) {
 			t.Fatalf("missing after put %d: %d %v", i, id, hit)
 		}
 	}
@@ -58,11 +58,11 @@ func TestUMapGenAndGrow(t *testing.T) {
 // second grow reuses a spare that still holds this generation's keys.
 func TestUMapSpareReuse(t *testing.T) {
 	const keys = 1000
-	var m uMap
+	var m uMap[int32]
 	m.size(1 << 12)
 	const gen1 uint32 = 1
 	for i := uint64(0); i < keys; i++ {
-		m.put(i<<20|i, gen1, int(i))
+		m.put(i<<20|i, gen1, int32(i))
 	}
 	big := cap(m.slots)
 	m.size(0) // next generation, a tiny input
@@ -72,11 +72,11 @@ func TestUMapSpareReuse(t *testing.T) {
 		if _, hit := m.get(k, gen2); hit {
 			t.Fatalf("stale key %d visible in the new generation", i)
 		}
-		m.put(k, gen2, int(i)+1)
+		m.put(k, gen2, int32(i)+1)
 	}
 	for i := uint64(0); i < keys; i++ {
 		id, hit := m.get(i<<20|i, gen2)
-		if !hit || id != int(i)+1 {
+		if !hit || id != int32(i)+1 {
 			t.Fatalf("key %d after regrow: id %d hit %v", i, id, hit)
 		}
 	}
@@ -88,7 +88,7 @@ func TestUMapSpareReuse(t *testing.T) {
 // TestUMapProbePlace covers the one-probe path the parser takes: probe once,
 // then write into the slot the miss reported.
 func TestUMapProbePlace(t *testing.T) {
-	var m uMap
+	var m uMap[int32]
 	m.size(4)
 	const gen uint32 = 1
 	for i := uint64(0); i < 40; i++ {
@@ -97,7 +97,7 @@ func TestUMapProbePlace(t *testing.T) {
 		if hit {
 			t.Fatalf("unexpected hit %d", i)
 		}
-		m.placeAt(idx, k, gen, int(i)+1)
+		m.placeAt(idx, k, gen, int32(i)+1)
 	}
 	for i := uint64(0); i < 40; i++ {
 		k := i<<20 | i
@@ -105,7 +105,7 @@ func TestUMapProbePlace(t *testing.T) {
 		if !hit {
 			t.Fatalf("missing %d", i)
 		}
-		if id := m.idAt(idx); id != int(i)+1 {
+		if id := m.idAt(idx); id != int32(i)+1 {
 			t.Fatalf("key %d has id %d", i, id)
 		}
 	}
@@ -139,7 +139,7 @@ func BenchmarkMapVsUMap(b *testing.B) {
 		}
 	})
 	b.Run("umap", func(b *testing.B) {
-		var m uMap
+		var m uMap[int32]
 		m.size(n)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
