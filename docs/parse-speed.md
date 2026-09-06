@@ -130,6 +130,7 @@ Interleaved, 10 × 2 s pairs, `GOMAXPROCS=1`, idle-checked (load1 ≤ 2.5).
 | Gate | Candidate | old median | new median | pair speedup median | new faster | B/op | VERDICT |
 |---|---|---:|---:|---:|---:|---|---|
 | JSON 64K | 3aa5c02 (through H1) | 12.26 ms | 4.84 ms | 2.520 | 10/10 | 2.35 → 2.35 MB, allocs 3 → 2 | KEEP |
+| JSON 64K | ab03b6e (all rounds) | 11.78 ms | 4.06 ms | 2.882 | 10/10 | 2.35 → 2.35 MB, allocs 3 → 2 | KEEP |
 | Corpus aggregate | 681d1fb (all rounds) | — | — | 3.043 | 10/10 | 18.89 → 3.20 MB | KEEP |
 | Corpus commonmark | 681d1fb | | | 4.070 | 10/10 | 12.61 → 0.26 MB | KEEP |
 | Corpus xml | 681d1fb | | | 3.541 | 10/10 | 2.51 → 1.29 MB | KEEP |
@@ -165,8 +166,9 @@ wbnf: same machine and input, `BenchmarkJSON64K_wbnf` count=2 (25.7 ms).
 xbnf is ~1.2× wbnf, ~47× `Unmarshal`, ~180× `Valid`. A dedicated xbnf-only
 run at `c077348` was ~23–25 ms/op / 48 MB.
 
-Current xbnf-only (post-🎯T20+++ `sym`/`reach` as `uMap`, 3 s × 5 on the
-same machine): median **16.6 ms** / **2.35 MB** / 3 allocs. Same-session
+Current xbnf-only (post-🎯T25, final gate 2026-09-06, 10 × 2 s interleaved
+vs master on the same machine): median **4.06 ms** / **2.35 MB** / 2 allocs
+(master 11.78 ms in the same run). Same-session
 `a9c96f5` was median **19.8 ms** on a hot machine (quiet T20++ was 11.0 ms).
 `sym` and `reach` are `uMap`; `endAt` tracks max right without iterating
 `sym`; all step runs are sorted and binary-searched; tables grow at load
