@@ -17,14 +17,33 @@ import (
 // fail on its first terminal, so it is never created. This is the test-set
 // pruning from Scott & Johnstone's GLL; without it the parser explores every
 // alternative of every nonterminal at every position it reaches.
+//
+// The hot fields come first and the atoms slice last: slotFirst is one flat
+// array, and admits reads only ascii/nullable/asciiOK on the path that
+// matters, so keeping those adjacent lets one load reach them all.
 type firstInfo struct {
-	nullable bool
-	atoms    []firstAtom
 	// ascii is a bitset of bytes 0–255 that can begin this remainder, filled
 	// when every FIRST atom is an ASCII-start terminal or DFA. admits then
 	// does not walk atoms or DFAs on the hot path.
-	ascii   [4]uint64
-	asciiOK bool
+	ascii    [asciiWords]uint64
+	nullable bool
+	asciiOK  bool
+	atoms    []firstAtom
+}
+
+// The ascii bitset is 256 bits held in 64-bit words, so a byte splits into a
+// word index and a bit index.
+const (
+	asciiBitsetSize = 256
+	asciiWords      = asciiBitsetSize / 64
+	asciiWordShift  = 6
+	asciiWordMask   = 63
+)
+
+// admitsASCII reports whether byte b is in the ASCII bitset. It is only
+// meaningful when asciiOK; otherwise the bitset was never filled.
+func (f *firstInfo) admitsASCII(b byte) bool {
+	return f.ascii[b>>asciiWordShift]&(1<<(b&asciiWordMask)) != 0
 }
 
 // nonePID / manyPID are bytePred.byByte sentinels.
@@ -107,15 +126,15 @@ func (a firstAtom) eq(b firstAtom) bool {
 
 // admits reports whether r can begin the remainder. A nullable remainder
 // admits everything: the decision belongs to whatever follows.
-func (f firstInfo) admits(r rune) bool {
+func (f *firstInfo) admits(r rune) bool {
 	if f.nullable {
 		return true
 	}
 	if f.asciiOK {
-		if r < 0 || r > 255 {
+		if r < 0 || r > maxASCIIBitsetRune {
 			return false
 		}
-		return f.ascii[r>>6]&(1<<(uint(r)&63)) != 0
+		return f.admitsASCII(byte(r))
 	}
 	for _, a := range f.atoms {
 		if a.starts(r) {
@@ -124,6 +143,9 @@ func (f firstInfo) admits(r rune) bool {
 	}
 	return false
 }
+
+// maxASCIIBitsetRune is the largest rune the ascii bitset can represent.
+const maxASCIIBitsetRune = 255
 
 // union merges o into f and reports whether f grew.
 func (f *firstInfo) union(o firstInfo) bool {
@@ -206,21 +228,23 @@ func (c *Compiled) computeFirst() {
 			}
 		}
 	}
-	c.slotFirst = make([][]firstInfo, len(c.prods))
-	for i, pr := range c.prods {
-		c.slotFirst[i] = make([]firstInfo, len(pr.rhs)+1)
-		for ip := range c.slotFirst[i] {
+	slots := 0
+	for i := range c.prods {
+		c.prods[i].firstBase = int32(slots)
+		slots += len(c.prods[i].rhs) + 1
+	}
+	c.slotFirst = make([]firstInfo, slots)
+	for _, pr := range c.prods {
+		for ip := 0; ip <= len(pr.rhs); ip++ {
 			f := c.seqFirst(pr.rhs[ip:], nt)
 			f.buildASCII()
-			c.slotFirst[i][ip] = f
+			c.slotFirst[int(pr.firstBase)+ip] = f
 		}
 	}
 	for i := range c.slotFirst {
-		for ip := range c.slotFirst[i] {
-			atoms := c.slotFirst[i][ip].atoms
-			for j := range atoms {
-				atoms[j].internDesc()
-			}
+		atoms := c.slotFirst[i].atoms
+		for j := range atoms {
+			atoms[j].internDesc()
 		}
 	}
 	c.computeBytePred()
@@ -230,25 +254,25 @@ func (f *firstInfo) buildASCII() {
 	if f.nullable {
 		return
 	}
-	var seen [256]bool
-	if !fillASCII(*f, &seen) {
+	var seen [asciiBitsetSize]bool
+	if !fillASCII(f, &seen) {
 		return
 	}
 	f.asciiOK = true
-	for b := 0; b < 256; b++ {
+	for b := range seen {
 		if seen[b] {
-			f.ascii[b>>6] |= 1 << (uint(b) & 63)
+			f.ascii[b>>asciiWordShift] |= 1 << (uint(b) & asciiWordMask)
 		}
 	}
 }
 
-func fillASCII(f firstInfo, seen *[256]bool) bool {
+func fillASCII(f *firstInfo, seen *[asciiBitsetSize]bool) bool {
 	for _, a := range f.atoms {
 		if atomBeyondASCII(a) {
 			return false
 		}
 		if a.dfa != nil {
-			for b := 0; b < 256; b++ {
+			for b := 0; b < asciiBitsetSize; b++ {
 				if a.dfa.canStart(rune(b)) {
 					seen[b] = true
 				}
@@ -274,7 +298,7 @@ func fillASCII(f firstInfo, seen *[256]bool) bool {
 				}
 			}
 		case grammar.CharClass:
-			for b := 0; b < 256; b++ {
+			for b := 0; b < asciiBitsetSize; b++ {
 				ok := classMatch(x, rune(b))
 				if !ok && x.Fold {
 					ok = classMatchFold(x, rune(b))
@@ -284,7 +308,7 @@ func fillASCII(f firstInfo, seen *[256]bool) bool {
 				}
 			}
 		case grammar.Escape:
-			for b := 0; b < 256; b++ {
+			for b := 0; b < asciiBitsetSize; b++ {
 				if escapeMatch(x.Code, rune(b)) {
 					seen[b] = true
 				}
@@ -422,17 +446,17 @@ func (c *Compiled) computeBytePred() {
 		}
 		ok := true
 		for _, pid := range pids {
-			f := c.slotFirst[pid][0]
+			f := &c.slotFirst[c.prods[pid].firstBase]
 			if f.nullable {
 				ok = false
 				break
 			}
-			var seen [256]bool
+			var seen [asciiBitsetSize]bool
 			if !fillASCII(f, &seen) {
 				ok = false
 				break
 			}
-			for b := 0; b < 256; b++ {
+			for b := 0; b < asciiBitsetSize; b++ {
 				if !seen[b] {
 					continue
 				}
