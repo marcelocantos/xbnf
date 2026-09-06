@@ -63,6 +63,31 @@ manifest per iteration (warm varied) as one sub-benchmark per language.
 Bytes are the summed fixture sizes. It is the second half of keep/discard:
 a JSON win that loses a language corpus needs a written justification.
 
+`scripts/bench-json-stable.sh --bench corpus` (or `make bench-corpus` / `make
+bench-stable BENCH=corpus`) runs this gate with the same interleaved-pairs
+harness as the JSON gate: same idle wait, same alternating old/new at
+`GOMAXPROCS=1`, same pair-ratio statistics — but built with
+`go test -c -o ... ./eval` and run with cwd `eval/` so `testdata` resolves,
+parsing every `BenchmarkCorpus/<language>` line per run instead of one
+`BenchmarkJSON64K` line.
+
+```sh
+make bench-corpus                        # dirty tree vs HEAD
+make bench-stable BENCH=corpus BASE=a9c96f5
+make bench-stable BENCH=corpus SELF=1    # harness sanity, same binary both sides
+```
+
+It prints one pair-ratio row per language (median speedup, wins/pairs, B/op
+old/new, verdict) plus an **aggregate** row: the same statistics computed on
+the sum of per-language ns/op (and B/op, allocs/op) for each run. Final
+`TIME:` / `MEM:` / `VERDICT:` reflect the aggregate. `VERDICT: KEEP` requires
+the aggregate to be `KEEP` *and* no language individually `LOSE` (real
+regression, not just a flat tie); a language `LOSE` under an aggregate
+`KEEP` prints `VERDICT: MIXED` (exit 0) instead — cite it in the history
+note and justify the regressed language(s) explicitly. Aggregate `NOISY` or
+`SELF-FAIL` behave exactly as in the JSON gate (exit 2; do not decide).
+`--bench json` (the default) is unchanged.
+
 ## Latest (2026-09-05, Apple M4 Max)
 
 `nestedJSON(64<<10)`. xbnf and stdlib: `c077348`, count=2 side-by-side.
