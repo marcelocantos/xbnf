@@ -5,7 +5,17 @@ package engine
 
 import "math/bits"
 
-// uMap is an open-addressing map from uint64 key to int, stamped with a
+// umID is what a uMap slot may carry. int32 is the width every chart index
+// fits in — cells, gss nodes and moreSlab heads are all indices into
+// per-parse slabs that p.steps, itself int32-indexed, always outgrows — and
+// it makes a slot 16 bytes rather than 24, which is what the U set at four
+// slots per input byte cares about. int64 is for sym alone, whose value is a
+// packComp with the production in the high 32 bits.
+type umID interface {
+	~int32 | ~int64
+}
+
+// uMap is an open-addressing map from uint64 key to a umID, stamped with a
 // generation so reset is O(1). Hash is splitmix64 — packed GLL keys put
 // position in the low bits, so a raw k&mask table clusters and was measured
 // ~100× slower. It backs U, gssAt, sym and moreAt.
@@ -17,19 +27,21 @@ import "math/bits"
 // largest table a grow has ever demanded, per magnitude bucket of the sizing
 // hint. It is a sizing heuristic only, so a chart that carries it from one
 // grammar to another stays correct.
-type uMap struct {
-	slots  []umSlot
-	spare  []umSlot
+type uMap[T umID] struct {
+	slots  []umSlot[T]
+	spare  []umSlot[T]
 	n      int
 	mask   uint64
 	bucket int
 	demand [demandBuckets]int32
 }
 
-type umSlot struct {
+// umSlot is laid out so that an int32 id leaves no padding: key, then the
+// generation, then the id.
+type umSlot[T umID] struct {
 	key uint64
 	gen uint32
-	id  int
+	id  T
 }
 
 func mix64(k uint64) uint64 {
@@ -80,7 +92,7 @@ const uLoad = 4 // grow when n*uLoad >= cap (load 1/4; 1/2 clustered on packed k
 // magnitude actually demanded last time — a measurement, and one that does
 // not extrapolate from a 49 KB fixture to a 60-byte one, because demand for
 // each is recorded in its own bucket.
-func (m *uMap) size(hint int) {
+func (m *uMap[T]) size(hint int) {
 	if hint < 1 {
 		hint = 1
 	}
@@ -96,7 +108,7 @@ func (m *uMap) size(hint int) {
 	case cap(m.spare) >= n:
 		m.slots, m.spare = m.spare[:n], m.slots
 	default:
-		m.slots = make([]umSlot, n)
+		m.slots = make([]umSlot[T], n)
 	}
 	m.mask = uint64(n - 1)
 	m.n = 0
@@ -105,22 +117,22 @@ func (m *uMap) size(hint int) {
 // noteDemand records a size a grow demanded for the current hint bucket. Only
 // actual grows feed it: seeding it from size's own output would compound its
 // rounding bucket by bucket.
-func (m *uMap) noteDemand(n int) {
+func (m *uMap[T]) noteDemand(n int) {
 	if int32(n) > m.demand[m.bucket] {
 		m.demand[m.bucket] = int32(n)
 	}
 }
 
-func (m *uMap) clear() {
+func (m *uMap[T]) clear() {
 	clear(m.slots[:cap(m.slots)])
 	clear(m.spare[:cap(m.spare)])
 	m.n = 0
 }
 
 // cells is the table's retained capacity, both arrays, for the pool bound.
-func (m *uMap) cells() int { return cap(m.slots) + cap(m.spare) }
+func (m *uMap[T]) cells() int { return cap(m.slots) + cap(m.spare) }
 
-func (m *uMap) get(k uint64, gen uint32) (int, bool) {
+func (m *uMap[T]) get(k uint64, gen uint32) (T, bool) {
 	slots := m.slots
 	if len(slots) == 0 {
 		return 0, false
@@ -141,7 +153,7 @@ func (m *uMap) get(k uint64, gen uint32) (int, bool) {
 
 // probe returns the slot index for k. hit says whether the key is present;
 // on a miss the index is where placeAt writes it.
-func (m *uMap) probe(k uint64, gen uint32) (uint64, bool) {
+func (m *uMap[T]) probe(k uint64, gen uint32) (uint64, bool) {
 	slots := m.slots
 	if len(slots) == 0 {
 		return 0, false
@@ -160,11 +172,11 @@ func (m *uMap) probe(k uint64, gen uint32) (uint64, bool) {
 	}
 }
 
-func (m *uMap) idAt(idx uint64) int { return m.slots[idx].id }
+func (m *uMap[T]) idAt(idx uint64) T { return m.slots[idx].id }
 
 // placeAt writes a key known to be absent. idx is from a prior probe miss.
 // If the table must grow, idx is ignored and the key is re-inserted.
-func (m *uMap) placeAt(idx uint64, k uint64, gen uint32, id int) {
+func (m *uMap[T]) placeAt(idx uint64, k uint64, gen uint32, id T) {
 	if m.crowded() {
 		m.grow(gen)
 		m.insert(k, gen, id)
@@ -177,16 +189,16 @@ func (m *uMap) placeAt(idx uint64, k uint64, gen uint32, id int) {
 	m.n++
 }
 
-func (m *uMap) crowded() bool { return m.n*uLoad >= len(m.slots) }
+func (m *uMap[T]) crowded() bool { return m.n*uLoad >= len(m.slots) }
 
-func (m *uMap) put(k uint64, gen uint32, id int) {
+func (m *uMap[T]) put(k uint64, gen uint32, id T) {
 	if m.crowded() {
 		m.grow(gen)
 	}
 	m.insert(k, gen, id)
 }
 
-func (m *uMap) insert(k uint64, gen uint32, id int) {
+func (m *uMap[T]) insert(k uint64, gen uint32, id T) {
 	slots := m.slots
 	mask := m.mask
 	i := mix64(k) & mask
@@ -207,7 +219,7 @@ func (m *uMap) insert(k uint64, gen uint32, id int) {
 	}
 }
 
-func (m *uMap) grow(gen uint32) {
+func (m *uMap[T]) grow(gen uint32) {
 	old := m.slots
 	n := len(old) * 2
 	if n == 0 {
@@ -219,7 +231,7 @@ func (m *uMap) grow(gen uint32) {
 		// An earlier grow this generation may have left live keys behind.
 		clear(m.slots)
 	} else {
-		m.slots = make([]umSlot, n)
+		m.slots = make([]umSlot[T], n)
 	}
 	m.spare = old
 	m.mask = uint64(n - 1)

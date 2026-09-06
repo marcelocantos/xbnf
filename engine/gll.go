@@ -95,12 +95,14 @@ type gll struct {
 	c      *Compiled
 	input  string
 	R      []task
-	uset   uMap           // packDesc → evidence cell this generation
+	uset   uMap[int32]    // packDesc → evidence cell this generation
 	Ubig   map[desc]genID // used when pid/u/i do not pack into 64 bits
 	gss    []gssNode
-	gssAt  uMap
+	gssAt  uMap[int32]
 	gssBig map[gssKey]genID
-	sym    uMap // packFam(nid,l,r) → packComp of the first prod this generation
+	// sym is the one table with a wide slot: its value is a packComp, whose
+	// production sits above the evidence cell in the high 32 bits.
+	sym uMap[int64] // packFam(nid,l,r) → packComp of the first prod this generation
 	// startNT/startLeft identify the parse's root question; startEnd is the
 	// furthest completion of that question (-1 = none). Completions are only
 	// ever asked for their maximum end at the root, so this replaces a map.
@@ -108,7 +110,7 @@ type gll struct {
 	startLeft int
 	startEnd  int
 	symBig    map[famKey]genID
-	moreAt    uMap             // packFam(nid,l,r) → head+1 into moreSlab this generation
+	moreAt    uMap[int32]      // packFam(nid,l,r) → head+1 into moreSlab this generation
 	moreBig   map[famKey]genID // same, keyed by famKey when packFam does not fit in 64 bits
 	moreSlab  []moreItem       // dummy at 0; per-family singly linked lists of extra comps
 	pickBuf   []int            // builder.pick's scratch candidate list; reset per pickAt call
@@ -718,13 +720,13 @@ func (p *gll) claim(sl slot, u, i int) (cell int32, fresh, ok bool) {
 	if key, packed := packDesc(sl, u, i); packed {
 		idx, hit := p.uset.probe(key, p.gen)
 		if hit {
-			return int32(p.uset.idAt(idx)), false, true
+			return p.uset.idAt(idx), false, true
 		}
 		if !p.admits(sl, i) {
 			return 0, false, false
 		}
 		cell = p.newCell(sl.ip)
-		p.uset.placeAt(idx, key, p.gen, int(cell))
+		p.uset.placeAt(idx, key, p.gen, cell)
 		return cell, true, true
 	}
 	if p.Ubig == nil {
@@ -833,11 +835,11 @@ func (p *gll) gssNode(nid, i int) (int, bool) {
 	if key, ok := packGSS(nid, i); ok {
 		idx, hit := p.gssAt.probe(key, p.gen)
 		if hit {
-			return p.gssAt.idAt(idx), false
+			return int(p.gssAt.idAt(idx)), false
 		}
 		id := len(p.gss)
 		p.gss = append(p.gss, gssNode{nid: nid, i: i})
-		p.gssAt.placeAt(idx, key, p.gen, id)
+		p.gssAt.placeAt(idx, key, p.gen, int32(id))
 		return id, true
 	}
 	k := gssKey{nid: nid, i: i}
@@ -1032,13 +1034,13 @@ func (p *gll) recordProd(nid, left, right, pid int, cell int32) {
 	if key, ok := packFam(nid, left, right); ok {
 		idx, hit := p.sym.probe(key, p.gen)
 		if hit {
-			if compPID(p.sym.idAt(idx)) == pid {
+			if compPID(int(p.sym.idAt(idx))) == pid {
 				return
 			}
 			p.addSymMore(fk, comp)
 			return
 		}
-		p.sym.placeAt(idx, key, p.gen, comp)
+		p.sym.placeAt(idx, key, p.gen, int64(comp))
 		return
 	}
 	if ref, hit := p.symBig[fk]; hit && ref.gen == p.gen {
@@ -1076,10 +1078,10 @@ func (p *gll) rootAt(nid, left int) {
 // already pay for.
 func (p *gll) addSymMore(k famKey, comp int) {
 	if key, ok := packFam(k.nid, k.l, k.r); ok {
-		head, _ := p.moreAt.get(key, p.gen)
-		head, added := p.chainMore(head, comp)
+		stored, _ := p.moreAt.get(key, p.gen)
+		head, added := p.chainMore(int(stored), comp)
 		if added {
-			p.moreAt.put(key, p.gen, head)
+			p.moreAt.put(key, p.gen, int32(head))
 		}
 		return
 	}
@@ -1130,7 +1132,7 @@ func (p *gll) compsAt(nid, l, r int, dst []int) (int, []int) {
 			return 0, dst
 		}
 		head, _ := p.moreAt.get(key, p.gen)
-		return id, p.appendMoreChain(dst, head)
+		return int(id), p.appendMoreChain(dst, int(head))
 	}
 	ref, hit := p.symBig[fk]
 	if !hit || ref.gen != p.gen {
