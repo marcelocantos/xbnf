@@ -1121,15 +1121,28 @@ func (p *gll) chainMore(head, comp int) (int, bool) {
 	return head, true
 }
 
+// anyPacked reports whether any span recorded a second completion this
+// generation. Every extra completion is a moreSlab entry (chainMore appends
+// one for both the packed-key and the famKey path) and bind truncates the
+// slab to its dummy, so a slab holding only the dummy means no span packed
+// and the builder can skip the moreAt probe on every node it visits.
+func (p *gll) anyPacked() bool {
+	return len(p.moreSlab) > 1
+}
+
 // compsAt reports the primary completion recorded for family (nid, l, r),
 // plus any extra completions appended onto dst (in the order they were first
 // recorded), or (0, dst) if the family was never recorded this generation.
 func (p *gll) compsAt(nid, l, r int, dst []int) (int, []int) {
 	fk := famKey{nid: nid, l: l, r: r}
+	packed := p.anyPacked()
 	if key, ok := packFam(nid, l, r); ok {
 		id, hit := p.sym.get(key, p.gen)
 		if !hit {
 			return 0, dst
+		}
+		if !packed {
+			return id, dst
 		}
 		head, _ := p.moreAt.get(key, p.gen)
 		return int(id), p.appendMoreChain(dst, int(head))
@@ -1139,7 +1152,7 @@ func (p *gll) compsAt(nid, l, r int, dst []int) (int, []int) {
 		return 0, dst
 	}
 	head := 0
-	if mref, hit := p.moreBig[fk]; hit && mref.gen == p.gen {
+	if mref, hit := p.moreBig[fk]; packed && hit && mref.gen == p.gen {
 		head = mref.id
 	}
 	return ref.id, p.appendMoreChain(dst, head)
