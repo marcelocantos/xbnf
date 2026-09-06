@@ -5,7 +5,6 @@ package engine
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -14,21 +13,19 @@ import (
 
 // builder turns the derivations recorded by a GLL parse into one tree.
 //
-// The parse leaves two things behind: sym, which says which productions of
-// each nonterminal span (l, r), and trace, which says for each production
-// instance which input span every element matched. A tree is a path through
-// those records. Where more than one path exists the production's
-// disambiguation directives choose; where they do not, the choice is made
-// deterministically and counted in packed.
+// The parse leaves two things behind: sym, which says which productions
+// derive each nonterminal span (l, r) and with which evidence cell, and the
+// step links, which say for each descriptor where the matches reaching it
+// began and which cell they came from. A tree is a walk back along those
+// links from a completion. Where more than one match reaches a descriptor
+// the production's disambiguation directives choose; where they do not, the
+// choice is made deterministically and counted in packed.
 type builder struct {
 	p      *gll
 	packed int
 	err    string
 	nodes  []inode
 	kids   []int
-	run    []step
-	runK   instKey
-	hasRun bool
 }
 
 type inode struct {
@@ -36,10 +33,7 @@ type inode struct {
 	k0, kn           int
 }
 
-type instKey struct{ pid, l int }
-
 func newBuilder(p *gll) *builder {
-	p.packSteps()
 	n := len(p.input) + 1
 	nodes := p.tnodes[:0]
 	if cap(nodes) < n/2 {
@@ -50,212 +44,6 @@ func newBuilder(p *gll) *builder {
 		kids = make([]int, 0, n)
 	}
 	return &builder{p: p, nodes: nodes, kids: kids}
-}
-
-// packSteps flattens each instance into a contiguous run sorted by (ip, end).
-func (p *gll) packSteps() {
-	need := 0
-	for i := 1; i < len(p.slabs); i++ {
-		need += p.slabs[i].n
-	}
-	packed := keepCap(p.stepPack, need)
-	for i := 1; i < len(p.slabs); i++ {
-		sl := &p.slabs[i]
-		if sl.n == 0 {
-			sl.packed = false
-			continue
-		}
-		start := len(packed)
-		for id := sl.head; id != 0; id = p.steps[id].next {
-			packed = append(packed, p.steps[id])
-		}
-		p.sortTmp = sortRunByIPEnd(packed[start:], p.sortTmp)
-		sl.head = start
-		sl.packed = true
-	}
-	p.stepPack = packed
-}
-
-const sortIPCap = 16
-
-func sortRunByIPEnd(run, tmp []step) []step {
-	if len(run) < 2 {
-		return tmp
-	}
-	var cnt [sortIPCap]int
-	maxip := 0
-	used := 0
-	for i := range run {
-		ip := run[i].ip
-		if ip < 0 || ip >= sortIPCap {
-			slices.SortFunc(run, func(a, b step) int {
-				if a.ip != b.ip {
-					return a.ip - b.ip
-				}
-				return a.end - b.end
-			})
-			return tmp
-		}
-		if cnt[ip] == 0 {
-			used++
-		}
-		if ip > maxip {
-			maxip = ip
-		}
-		cnt[ip]++
-	}
-	if cap(tmp) < len(run) {
-		tmp = make([]step, len(run))
-	} else {
-		tmp = tmp[:len(run)]
-	}
-	if used == 1 {
-		sortByEnd(run, tmp)
-		return tmp
-	}
-	var off [sortIPCap]int
-	s := 0
-	for ip := 0; ip <= maxip; ip++ {
-		off[ip] = s
-		s += cnt[ip]
-	}
-	for i := range run {
-		ip := run[i].ip
-		tmp[off[ip]] = run[i]
-		off[ip]++
-	}
-	copy(run, tmp)
-	start := 0
-	for ip := 0; ip <= maxip; ip++ {
-		end := start + cnt[ip]
-		if cnt[ip] > 1 {
-			sortByEnd(run[start:end], tmp)
-		}
-		start = end
-	}
-	return tmp
-}
-
-func sortByEnd(run, tmp []step) {
-	n := len(run)
-	if n < 2 {
-		return
-	}
-	if n <= 48 {
-		for i := 1; i < n; i++ {
-			x := run[i]
-			j := i
-			for j > 0 && run[j-1].end > x.end {
-				run[j] = run[j-1]
-				j--
-			}
-			run[j] = x
-		}
-		return
-	}
-	radixByEnd(run, tmp)
-}
-
-func radixByEnd(run, tmp []step) {
-	n := len(run)
-	if cap(tmp) < n {
-		tmp = make([]step, n)
-	} else {
-		tmp = tmp[:n]
-	}
-	var cnt [256]int
-	for i := range run {
-		cnt[run[i].end&255]++
-	}
-	sum := 0
-	for i := range cnt {
-		c := cnt[i]
-		cnt[i] = sum
-		sum += c
-	}
-	for i := range run {
-		b := run[i].end & 255
-		tmp[cnt[b]] = run[i]
-		cnt[b]++
-	}
-	var cnt2 [256]int
-	for i := range tmp {
-		cnt2[(tmp[i].end>>8)&255]++
-	}
-	sum = 0
-	for i := range cnt2 {
-		c := cnt2[i]
-		cnt2[i] = sum
-		sum += c
-	}
-	for i := range tmp {
-		b := (tmp[i].end >> 8) & 255
-		run[cnt2[b]] = tmp[i]
-		cnt2[b]++
-	}
-	maxEnd := 0
-	for i := range run {
-		if run[i].end > maxEnd {
-			maxEnd = run[i].end
-		}
-	}
-	if maxEnd < 1<<16 {
-		return
-	}
-	clear(cnt[:])
-	for i := range run {
-		cnt[(run[i].end>>16)&255]++
-	}
-	sum = 0
-	for i := range cnt {
-		c := cnt[i]
-		cnt[i] = sum
-		sum += c
-	}
-	for i := range run {
-		b := (run[i].end >> 16) & 255
-		tmp[cnt[b]] = run[i]
-		cnt[b]++
-	}
-	copy(run, tmp)
-}
-
-func (b *builder) stepRun(pid, l int) []step {
-	k := instKey{pid: pid, l: l}
-	if b.hasRun && b.runK == k {
-		return b.run
-	}
-	var run []step
-	if id, ok := b.p.stepAt.get(packInst(pid, l), b.p.gen); ok {
-		sl := b.p.slabs[id]
-		if sl.n > 0 && sl.packed {
-			run = b.p.stepPack[sl.head : sl.head+sl.n]
-		}
-	}
-	b.runK = k
-	b.hasRun = true
-	b.run = run
-	return run
-}
-
-func matchSteps(run []step, ip, end int) []step {
-	if len(run) == 0 {
-		return nil
-	}
-	i := sort.Search(len(run), func(i int) bool {
-		if run[i].ip != ip {
-			return run[i].ip >= ip
-		}
-		return run[i].end >= end
-	})
-	if i >= len(run) || run[i].ip != ip || run[i].end != end {
-		return nil
-	}
-	j := i + 1
-	for j < len(run) && run[j].ip == ip && run[j].end == end {
-		j++
-	}
-	return run[i:j]
 }
 
 func (b *builder) keepArena() {
@@ -332,13 +120,16 @@ func (b *builder) root(start string, pos, end int) Node {
 	return b.materialize(id)
 }
 
-// pathScanCutoff is the step-run size above which reachability is memoised.
-// All runs are sorted by (ip, end) and matchSteps binary-searches.
-const pathScanCutoff = 32
-
 // path returns the element boundaries of one derivation of production pid
-// over input[l:r]: positions[0] == l and positions[len(rhs)] == r.
-func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
+// over input[l:r]: positions[0] == l and positions[len(rhs)] == r. cell is
+// the evidence cell of the completed production, from compsAt.
+//
+// Every step recorded against a descriptor is reachable from element 0 by
+// construction — a step exists only because the descriptor before it was
+// scheduled — so the walk needs no reachability test. The competitors for
+// element ip-1 are exactly the steps on the current cell, and the winner's
+// prev cell carries the competitors for the element before it.
+func (b *builder) path(pid, l, r int, cell int32, buf []int) ([]int, bool) {
 	pr := b.p.c.prods[pid]
 	n := len(pr.rhs)
 	var pos []int
@@ -351,58 +142,49 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 	if n == 0 {
 		return pos, l == r
 	}
-	run := b.stepRun(pid, l)
-	var memo *uMap
-	gen := b.p.gen
-	if len(run) > pathScanCutoff {
-		memo = &b.p.reach
-	}
+	steps := b.p.steps
+	right := pr.dirs.assoc == "right"
 	ambiguous := false
-	var candBuf [8]int
-	assoc := pr.dirs.assoc
+	var candBuf [8]int32
 	for ip := n; ip >= 1; ip-- {
-		cands := candBuf[:0]
-		end := pos[ip]
-		for _, st := range matchSteps(run, ip-1, end) {
-			if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
+		h := b.p.cells[cell]
+		if h == 0 {
+			return nil, false
+		}
+		st := steps[h]
+		best, from := st.i, st.prev
+		if st.next != 0 {
+			cands := append(candBuf[:0], st.i)
+			for k := st.next; k != 0; k = steps[k].next {
+				c := steps[k]
 				dup := false
-				for _, c := range cands {
-					if c == st.i {
+				for _, x := range cands {
+					if x == c.i {
 						dup = true
 						break
 					}
 				}
-				if !dup {
-					cands = append(cands, st.i)
+				if dup {
+					continue
+				}
+				cands = append(cands, c.i)
+				if (c.i > best) != right {
+					best, from = c.i, c.prev
 				}
 			}
-		}
-		if len(cands) == 0 {
-			return nil, false
-		}
-		best := cands[0]
-		if len(cands) > 1 {
-			if assoc == "right" {
-				for _, c := range cands[1:] {
-					if c < best {
-						best = c
-					}
-				}
-			} else {
-				for _, c := range cands[1:] {
-					if c > best {
-						best = c
-					}
-				}
-				if assoc == "none" {
+			if len(cands) > 1 && !right {
+				switch pr.dirs.assoc {
+				case "none":
 					b.fail(fmt.Sprintf("ambiguous derivation of %s at %s: #assoc=none forbids chaining",
 						displayNT(pr.nt), b.where(l)))
-				} else if assoc != "left" {
+				case "left":
+				default:
 					ambiguous = true
 				}
 			}
 		}
-		pos[ip-1] = best
+		pos[ip-1] = int(best)
+		cell = from
 	}
 	if pos[0] != l {
 		return nil, false
@@ -411,33 +193,6 @@ func (b *builder) path(pid, l, r int, buf []int) ([]int, bool) {
 		b.packed++
 	}
 	return pos, true
-}
-
-func stepReach(run []step, pid, l, ip, pos int, memo *uMap, gen uint32) bool {
-	if ip == 0 {
-		return pos == l
-	}
-	if key, ok := packReach(pid, l, ip, pos); ok && memo != nil {
-		if v, hit := memo.get(key, gen); hit {
-			return v != 0
-		}
-		memo.put(key, gen, 0) // cycle guard
-		out := stepReachOnce(run, pid, l, ip, pos, memo, gen)
-		if out {
-			memo.put(key, gen, 1)
-		}
-		return out
-	}
-	return stepReachOnce(run, pid, l, ip, pos, nil, gen)
-}
-
-func stepReachOnce(run []step, pid, l, ip, pos int, memo *uMap, gen uint32) bool {
-	for _, st := range matchSteps(run, ip-1, pos) {
-		if stepReach(run, pid, l, ip-1, st.i, memo, gen) {
-			return true
-		}
-	}
-	return false
 }
 
 func (b *builder) fail(msg string) {
@@ -451,39 +206,43 @@ func (b *builder) where(pos int) string {
 	return fmt.Sprintf("%d:%d", line, col)
 }
 
-// pick chooses among productions that all span the same input. Priority is
+// pickAt chooses among the productions that all span the same input, and
+// returns the winner with the evidence cell of its completion. Priority is
 // compared first, then #prefer / #avoid. Stack fallbacks lose to anything.
-func (b *builder) pickAt(nt string, l, r int) int {
-	pid, extra := b.p.pidsAt(b.p.c.ntNID[nt], l, r)
-	if pid < 0 {
-		return -1
+func (b *builder) pickAt(nt string, l, r int) (int, int32) {
+	comp, extra := b.p.compsAt(b.p.c.ntNID[nt], l, r)
+	if comp == 0 {
+		return -1, 0
 	}
 	if extra == nil {
-		return pid
+		return compPID(comp), compCell(comp)
 	}
-	pids := make([]int, 1, 1+len(extra))
-	pids[0] = pid
-	pids = append(pids, extra...)
-	return b.pick(pids)
+	comps := make([]int, 1, 1+len(extra))
+	comps[0] = comp
+	comps = append(comps, extra...)
+	win := b.pick(comps)
+	return compPID(win), compCell(win)
 }
 
-func (b *builder) pick(pids []int) int {
-	if len(pids) == 1 {
-		return pids[0]
+// pick compares packComp values. The production is in the high bits, so
+// sorting the packed values orders them by production as before.
+func (b *builder) pick(comps []int) int {
+	if len(comps) == 1 {
+		return comps[0]
 	}
 	prods := b.p.c.prods
-	cands := append([]int{}, pids...)
-	best := prods[cands[0]].dirs.priority
-	for _, pid := range cands[1:] {
-		if p := prods[pid].dirs.priority; p > best {
+	cands := append([]int{}, comps...)
+	best := prods[compPID(cands[0])].dirs.priority
+	for _, c := range cands[1:] {
+		if p := prods[compPID(c)].dirs.priority; p > best {
 			best = p
 		}
 	}
-	cands = filter(cands, func(pid int) bool { return prods[pid].dirs.priority == best })
-	if pref := filter(cands, func(pid int) bool { return prods[pid].dirs.prefer }); len(pref) > 0 {
+	cands = filter(cands, func(c int) bool { return prods[compPID(c)].dirs.priority == best })
+	if pref := filter(cands, func(c int) bool { return prods[compPID(c)].dirs.prefer }); len(pref) > 0 {
 		cands = pref
-	} else if keep := filter(cands, func(pid int) bool {
-		return !prods[pid].dirs.avoid && !prods[pid].fallback
+	} else if keep := filter(cands, func(c int) bool {
+		return !prods[compPID(c)].dirs.avoid && !prods[compPID(c)].fallback
 	}); len(keep) > 0 {
 		cands = keep
 	}
@@ -536,7 +295,7 @@ func (b *builder) deriveInto(dst []int, nt string, l, r int) []int {
 	if c.IsDFA(nt) {
 		return append(dst, b.intern(c.dfaNode(b.p.input, nt, b.p.skip(l), r)))
 	}
-	pid := b.pickAt(nt, l, r)
+	pid, cell := b.pickAt(nt, l, r)
 	if pid < 0 {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 		return append(dst, b.addNode("rule", nt, b.text(l, r), nil))
@@ -547,7 +306,7 @@ func (b *builder) deriveInto(dst []int, nt string, l, r int) []int {
 	if splices(nt) && leftRec(c.prods[pid]) {
 		dst = b.leftRecKidsInto(dst, nt, l, r)
 	} else {
-		dst = b.prodKidsInto(dst, pid, l, r)
+		dst = b.prodKidsInto(dst, pid, l, r, cell)
 	}
 	kids := dst[kidStart:]
 	switch {
@@ -587,7 +346,7 @@ func (b *builder) leftRecKidsInto(dst []int, nt string, l, r int) []int {
 	start := len(dst)
 	curR := r
 	for {
-		pid := b.pickAt(nt, l, curR)
+		pid, cell := b.pickAt(nt, l, curR)
 		if pid < 0 {
 			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 			b.p.spineBuf = b.p.spineBuf[:mark]
@@ -595,13 +354,13 @@ func (b *builder) leftRecKidsInto(dst []int, nt string, l, r int) []int {
 		}
 		pr := b.p.c.prods[pid]
 		if !leftRec(pr) {
-			dst = b.prodKidsInto(dst, pid, l, curR)
+			dst = b.prodKidsInto(dst, pid, l, curR, cell)
 			dst = reorderSpine(dst, start, b.p.spineBuf[mark:], &b.p.spineOut)
 			b.p.spineBuf = b.p.spineBuf[:mark]
 			return dst
 		}
 		var buf [8]int
-		pos, ok := b.path(pid, l, curR, buf[:])
+		pos, ok := b.path(pid, l, curR, cell, buf[:])
 		if !ok {
 			b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
 			b.p.spineBuf = b.p.spineBuf[:mark]
@@ -641,10 +400,10 @@ func reorderSpine(dst []int, start int, spans []kidSpan, buf *[]int) []int {
 	return dst[:start+n]
 }
 
-func (b *builder) prodKidsInto(dst []int, pid, l, r int) []int {
+func (b *builder) prodKidsInto(dst []int, pid, l, r int, cell int32) []int {
 	pr := b.p.c.prods[pid]
 	var buf [8]int
-	pos, ok := b.path(pid, l, r, buf[:])
+	pos, ok := b.path(pid, l, r, cell, buf[:])
 	if !ok {
 		b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
 		return dst
