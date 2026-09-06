@@ -6,7 +6,7 @@ export GOWORK := off
 
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all build test vet clean smoke sandbox bullseye bench-json bench-stable eval-corpus eval-languages golden-update
+.PHONY: all build test vet clean smoke sandbox bullseye bench-json bench-stable bench-corpus eval-corpus eval-languages golden-update
 
 all: build
 
@@ -51,10 +51,16 @@ eval-languages:
 golden-update:
 	XBNF_GOLDEN=update go test ./engine ./eval -run '^TestGolden$$' -count=1
 
-# Interleaved BenchmarkJSON64K keep/discard. BASE=HEAD (dirty tree) or a SHA. SELF=1 is A vs A.
-# See docs/parse-speed.md.
+# Interleaved keep/discard. BENCH=json (default, BenchmarkJSON64K) or BENCH=corpus
+# (BenchmarkCorpus, one row per live language + aggregate). BASE=HEAD (dirty tree)
+# or a SHA. SELF=1 is A vs A. See docs/parse-speed.md.
 bench-stable:
-	./scripts/bench-json-stable.sh $(if $(SELF),--self,$(if $(BASE),--base $(BASE),)) $(if $(PAIRS),--pairs $(PAIRS),) $(if $(SKIP_IDLE),--skip-idle,) $(if $(BENCHTIME),--benchtime $(BENCHTIME),)
+	./scripts/bench-json-stable.sh $(if $(SELF),--self,$(if $(BASE),--base $(BASE),)) $(if $(PAIRS),--pairs $(PAIRS),) $(if $(SKIP_IDLE),--skip-idle,) $(if $(BENCHTIME),--benchtime $(BENCHTIME),) $(if $(BENCH),--bench $(BENCH),)
+
+# Interleaved BenchmarkCorpus keep/discard across all live language corpora (🎯T25.2).
+# Same flags as bench-stable (BASE, SELF, PAIRS, BENCHTIME, SKIP_IDLE). See docs/parse-speed.md.
+bench-corpus:
+	$(MAKE) bench-stable BENCH=corpus
 
 # Standing invariants hook read by /cv (bullseye_convergence).
 bullseye:
