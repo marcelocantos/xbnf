@@ -59,9 +59,14 @@ type moreItem struct {
 	next int
 }
 
+// failInfo tracks the furthest-right failure the parse has seen. want holds
+// the set of expectations at that position: a small slice, deduplicated by
+// linear scan at insert time, instead of a map — frontier sets are tiny
+// (single digits), so a scan beats hashing, and truncating want to :0 to
+// reset it is allocation-free as long as capacity survives across parses.
 type failInfo struct {
 	pos  int
-	want map[string]bool
+	want []string
 	rule string
 	dfa  bool
 }
@@ -219,9 +224,7 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	p.fail.pos = -1
 	p.fail.rule = ""
 	p.fail.dfa = false
-	if p.fail.want != nil {
-		clear(p.fail.want)
-	}
+	p.fail.want = p.fail.want[:0]
 	p.R = p.R[:0]
 	if cap(p.R) < 64 {
 		p.R = make([]task, 0, 64)
@@ -310,9 +313,7 @@ func (p *gll) release() {
 	p.fail.pos = -1
 	p.fail.rule = ""
 	p.fail.dfa = false
-	if p.fail.want != nil {
-		clear(p.fail.want)
-	}
+	p.fail.want = p.fail.want[:0]
 	if chartCells(p) > maxPooledCells {
 		return
 	}
@@ -531,22 +532,26 @@ func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 }
 
 func (p *gll) noteFail(pos int, want, rule string, dfa bool) {
-	if p.fail.want == nil {
-		p.fail.want = map[string]bool{}
-		p.fail.pos = -1
-	}
 	if pos < p.fail.pos {
 		return
 	}
 	if pos > p.fail.pos {
 		p.fail.pos = pos
-		clear(p.fail.want)
-		p.fail.want[want] = true
+		p.fail.want = append(p.fail.want[:0], want)
 		p.fail.rule = rule
 		p.fail.dfa = dfa
 		return
 	}
-	p.fail.want[want] = true
+	dup := false
+	for _, w := range p.fail.want {
+		if w == want {
+			dup = true
+			break
+		}
+	}
+	if !dup {
+		p.fail.want = append(p.fail.want, want)
+	}
 	if !dfa {
 		p.fail.dfa = false
 		if !strings.HasPrefix(rule, "$") || strings.HasPrefix(p.fail.rule, "$") {
@@ -560,11 +565,7 @@ func (p *gll) failMessage() string {
 		line, col := lineCol(p.input, 0)
 		return fmt.Sprintf("in rule %s, expected start at %d:%d; got end of input", displayNT(p.start), line, col)
 	}
-	want := make([]string, 0, len(p.fail.want))
-	for w := range p.fail.want {
-		want = append(want, w)
-	}
-	return formatExpect(p.input, p.fail.pos, want, p.fail.rule, p.fail.dfa)
+	return formatExpect(p.input, p.fail.pos, p.fail.want, p.fail.rule, p.fail.dfa)
 }
 
 func (c *Compiled) skipWrap(input string, pos int) int {
