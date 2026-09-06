@@ -6,9 +6,21 @@ package engine
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/marcelocantos/xbnf/grammar"
+)
+
+// The Node.Kind vocabulary the builder emits. Compile time picks the kind for
+// each nonterminal and each element, so these are the strings it stores.
+const (
+	nodeKindRule   = "rule"
+	nodeKindQuant  = "quant"
+	nodeKindDelim  = "delim"
+	nodeKindSeq    = "seq"
+	nodeKindLeaf   = "leaf"
+	nodeKindRef    = "ref"
+	nodeKindString = "string"
+	nodeKindChar   = "char"
 )
 
 // builder turns the derivations recorded by a GLL parse into one tree.
@@ -59,40 +71,54 @@ func (b *builder) addNode(kind, name, text string, kids []int) int {
 	return id
 }
 
+// intern copies a Node tree the DFA walker produced into the arena. Child ids
+// accumulate on a shared scratch stack rather than one slice per node; the
+// scratch is separate from the derivation scratch, which is live in the caller
+// while this runs.
 func (b *builder) intern(n Node) int {
 	if len(n.Children) == 0 {
 		return b.addNode(n.Kind, n.Name, n.Text, nil)
 	}
-	ids := make([]int, len(n.Children))
-	for i, c := range n.Children {
-		ids[i] = b.intern(c)
+	mark := len(b.p.iscratch)
+	for _, c := range n.Children {
+		b.p.iscratch = append(b.p.iscratch, b.intern(c))
 	}
-	return b.addNode(n.Kind, n.Name, n.Text, ids)
+	id := b.addNode(n.Kind, n.Name, n.Text, b.p.iscratch[mark:])
+	b.p.iscratch = b.p.iscratch[:mark]
+	return id
 }
 
+// materialize copies the arena tree rooted at id into the one []Node the
+// public API hands back, breadth first: a node's children are the run of
+// output slots that follows everything already queued, so the queue index is
+// the output index and the whole copy is a single forward loop.
 func (b *builder) materialize(id int) Node {
 	n := len(b.nodes)
 	if n == 0 {
 		return Node{}
 	}
 	out := make([]Node, n)
-	next := 1
-	var fill func(inodeID, outIdx int)
-	fill = func(inodeID, outIdx int) {
-		in := b.nodes[inodeID]
+	// The queue never exceeds the arena: every node has one parent, so it is
+	// enqueued once.
+	q := b.p.mqueue
+	if cap(q) < n {
+		q = make([]int, 1, n)
+	} else {
+		q = q[:1]
+	}
+	q[0] = id
+	for i := 0; i < len(q); i++ {
+		in := &b.nodes[q[i]]
+		child0 := len(q)
 		nk := in.kn - in.k0
-		child0 := next
-		next += nk
+		q = append(q, b.kids[in.k0:in.kn]...)
 		var children []Node
 		if nk > 0 {
 			children = out[child0 : child0+nk]
 		}
-		out[outIdx] = Node{Kind: in.kind, Name: in.name, Text: in.text, Children: children}
-		for i, k := range b.kids[in.k0:in.kn] {
-			fill(k, child0+i)
-		}
+		out[i] = Node{Kind: in.kind, Name: in.name, Text: in.text, Children: children}
 	}
-	fill(id, 0)
+	b.p.mqueue = q
 	return out[0]
 }
 
@@ -104,18 +130,28 @@ func (b *builder) text(l, r int) string {
 	return b.p.input[l:r]
 }
 
-// root builds the tree for the start rule over input[pos:end].
+// root builds the tree for the start rule over input[pos:end]. It is the one
+// place a nonterminal is still named: everything below works on ids.
 func (b *builder) root(start string, pos, end int) Node {
 	defer b.keepArena()
+	c := b.p.c
+	if c.IsDFA(start) {
+		return b.materialize(b.intern(c.dfaNode(b.p.input, start, b.p.skip(pos), end)))
+	}
+	nid, ok := c.ntNID[start]
+	if !ok {
+		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(start), b.where(pos)))
+		return b.materialize(b.addNode(nodeKindRule, start, b.text(pos, end), nil))
+	}
 	mark := len(b.p.kscratch)
-	b.p.kscratch = b.deriveInto(b.p.kscratch[:mark], start, pos, end)
+	b.p.kscratch = b.deriveInto(b.p.kscratch[:mark], nid, pos, end)
 	kids := b.p.kscratch[mark:]
 	if len(kids) == 1 {
 		n := b.materialize(kids[0])
 		b.p.kscratch = b.p.kscratch[:mark]
 		return n
 	}
-	id := b.addNode("rule", start, b.text(pos, end), kids)
+	id := b.addNode(nodeKindRule, start, b.text(pos, end), kids)
 	b.p.kscratch = b.p.kscratch[:mark]
 	return b.materialize(id)
 }
@@ -130,7 +166,7 @@ func (b *builder) root(start string, pos, end int) Node {
 // element ip-1 are exactly the steps on the current cell, and the winner's
 // prev cell carries the competitors for the element before it.
 func (b *builder) path(pid, l, r int, cell int32, buf []int) ([]int, bool) {
-	pr := b.p.c.prods[pid]
+	pr := &b.p.c.prods[pid]
 	n := len(pr.rhs)
 	var pos []int
 	if n+1 <= len(buf) {
@@ -143,7 +179,7 @@ func (b *builder) path(pid, l, r int, cell int32, buf []int) ([]int, bool) {
 		return pos, l == r
 	}
 	steps := b.p.steps
-	right := pr.dirs.assoc == "right"
+	right := pr.dirs.assoc == assocRight
 	ambiguous := false
 	var candBuf [8]int32
 	for ip := n; ip >= 1; ip-- {
@@ -174,10 +210,10 @@ func (b *builder) path(pid, l, r int, cell int32, buf []int) ([]int, bool) {
 			}
 			if len(cands) > 1 && !right {
 				switch pr.dirs.assoc {
-				case "none":
+				case assocNone:
 					b.fail(fmt.Sprintf("ambiguous derivation of %s at %s: #assoc=none forbids chaining",
 						displayNT(pr.nt), b.where(l)))
-				case "left":
+				case assocLeft:
 				default:
 					ambiguous = true
 				}
@@ -215,9 +251,9 @@ func (b *builder) where(pos int) string {
 // (after a slot reserved for the primary one), and pick filters it in place,
 // so a packed span costs no allocation once the buffer has grown to its
 // high-water mark.
-func (b *builder) pickAt(nt string, l, r int) (int, int32) {
+func (b *builder) pickAt(nid, l, r int) (int, int32) {
 	buf := append(b.p.pickBuf[:0], 0) // reserve slot 0 for the primary completion
-	comp, buf := b.p.compsAt(b.p.c.ntNID[nt], l, r, buf)
+	comp, buf := b.p.compsAt(nid, l, r, buf)
 	b.p.pickBuf = buf
 	if comp == 0 {
 		return -1, 0
@@ -286,73 +322,58 @@ func filter(xs []int, keep func(int) bool) ([]int, bool) {
 	return xs[:w], true
 }
 
-// splices reports whether a synthetic nonterminal is transparent: its
-// children are returned as-is instead of being wrapped in a rule/quant/delim/seq
-// node. Named rules and the $q/$d/$st wrappers are not spliced.
-func splices(nt string) bool {
-	if !strings.HasPrefix(nt, "$") {
-		return false
-	}
-	switch {
-	case strings.HasPrefix(nt, "$q") && !strings.HasPrefix(nt, "$qs") && !strings.HasPrefix(nt, "$qo"):
-		return false
-	case strings.HasPrefix(nt, "$d") && !strings.HasPrefix(nt, "$dl") && !strings.HasPrefix(nt, "$dtrail"):
-		return false
-	case strings.HasPrefix(nt, "$st"):
-		return false
-	default:
-		return true
-	}
-}
-
-func leftRec(pr prod) bool {
+func leftRec(pr *prod) bool {
 	return len(pr.rhs) > 0 && pr.rhs[0].kind == ekNT && pr.rhs[0].nt == pr.nt
 }
 
-// deriveInto appends the nodes for nonterminal nt over input[l:r] onto dst.
-// Synthetic nonterminals are transparent, or become the quant / delim / seq
-// node their construct calls for. dst is the builder scratch (same backing
-// across recursive calls) so kid lists are not allocated per node.
-func (b *builder) deriveInto(dst []int, nt string, l, r int) []int {
+// deriveInto appends the nodes for the nonterminal with dense id nid over
+// input[l:r] onto dst. Synthetic nonterminals are transparent, or become the
+// quant / delim / seq node their construct calls for; which of those it is was
+// decided at compile time and is read out of ntInfo. dst is the builder
+// scratch (same backing across recursive calls) so kid lists are not allocated
+// per node.
+//
+// No DFA rule reaches here: resolveElems turned every reference to one into an
+// ekDFA element, and runOn handles a regular start rule before the builder
+// runs.
+func (b *builder) deriveInto(dst []int, nid, l, r int) []int {
 	c := b.p.c
-	if c.IsDFA(nt) {
-		return append(dst, b.intern(c.dfaNode(b.p.input, nt, b.p.skip(l), r)))
+	if nid < 0 || nid >= len(c.ntInfo) {
+		// resolveElems leaves nid == -1 on a reference it could not resolve.
+		// The parse cannot have reached here, but a tree is no place to panic.
+		b.fail(fmt.Sprintf("internal: unresolved nonterminal over %s", b.where(l)))
+		return dst
 	}
-	pid, cell := b.pickAt(nt, l, r)
+	info := &c.ntInfo[nid]
+	pid, cell := b.pickAt(nid, l, r)
 	if pid < 0 {
-		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
-		return append(dst, b.addNode("rule", nt, b.text(l, r), nil))
+		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(info.nt), b.where(l)))
+		return append(dst, b.addNode(nodeKindRule, info.nt, b.text(l, r), nil))
 	}
 	kidStart := len(dst)
 	// Transparent left-recursive lists ($dl, $qs) must not append the prefix
 	// children at every spine node — that is O(n²) Node copies.
-	if splices(nt) && leftRec(c.prods[pid]) {
-		dst = b.leftRecKidsInto(dst, nt, l, r)
+	if c.spineProd[pid] {
+		dst = b.leftRecKidsInto(dst, nid, l, r)
 	} else {
 		dst = b.prodKidsInto(dst, pid, l, r, cell)
 	}
 	kids := dst[kidStart:]
-	switch {
-	case !strings.HasPrefix(nt, "$"):
-		id := b.addNode("rule", nt, b.text(l, r), kids)
+	switch info.class {
+	case ntClassRule:
+		id := b.addNode(info.kind, info.name, b.text(l, r), kids)
 		return append(dst[:kidStart], id)
-	case strings.HasPrefix(nt, "$q") && !strings.HasPrefix(nt, "$qs") && !strings.HasPrefix(nt, "$qo"):
+	case ntClassQuant:
 		if len(kids) == 0 {
 			return dst[:kidStart]
 		}
-		id := b.addNode("quant", "", b.text(l, r), kids)
+		id := b.addNode(info.kind, info.name, b.text(l, r), kids)
 		return append(dst[:kidStart], id)
-	case strings.HasPrefix(nt, "$d") && !strings.HasPrefix(nt, "$dl") && !strings.HasPrefix(nt, "$dtrail"):
+	case ntClassDelim, ntClassSeq:
 		if len(kids) == 1 {
 			return dst[:kidStart+1]
 		}
-		id := b.addNode("delim", "", b.text(l, r), kids)
-		return append(dst[:kidStart], id)
-	case strings.HasPrefix(nt, "$st"):
-		if len(kids) == 1 {
-			return dst[:kidStart+1]
-		}
-		id := b.addNode("seq", "", b.text(l, r), kids)
+		id := b.addNode(info.kind, info.name, b.text(l, r), kids)
 		return append(dst[:kidStart], id)
 	default:
 		return dst
@@ -364,24 +385,26 @@ type kidSpan struct{ start, n int }
 // leftRecKidsInto walks a transparent left-recursive spine N ::= N rest | base
 // once and appends base+rest onto dst. User-level left recursion is not
 // spliced and still nests via prodKidsInto.
-func (b *builder) leftRecKidsInto(dst []int, nt string, l, r int) []int {
+func (b *builder) leftRecKidsInto(dst []int, nid, l, r int) []int {
+	c := b.p.c
+	nt := c.ntInfo[nid].nt
 	mark := len(b.p.spineBuf)
 	start := len(dst)
 	curR := r
 	for {
-		pid, cell := b.pickAt(nt, l, curR)
+		pid, cell := b.pickAt(nid, l, curR)
 		if pid < 0 {
 			b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(nt), b.where(l)))
 			b.p.spineBuf = b.p.spineBuf[:mark]
 			return dst[:start]
 		}
-		pr := b.p.c.prods[pid]
-		if !leftRec(pr) {
+		if !c.spineProd[pid] {
 			dst = b.prodKidsInto(dst, pid, l, curR, cell)
 			dst = reorderSpine(dst, start, b.p.spineBuf[mark:], &b.p.spineOut)
 			b.p.spineBuf = b.p.spineBuf[:mark]
 			return dst
 		}
+		pr := &c.prods[pid]
 		var buf [8]int
 		pos, ok := b.path(pid, l, curR, cell, buf[:])
 		if !ok {
@@ -395,7 +418,7 @@ func (b *builder) leftRecKidsInto(dst []int, nt string, l, r int) []int {
 			return dst[:start]
 		}
 		restStart := len(dst)
-		dst = b.rhsNodesInto(dst, pr, pos, 1)
+		dst = b.rhsNodesInto(dst, pr.rhs, pos, 1)
 		b.p.spineBuf = append(b.p.spineBuf, kidSpan{start: restStart, n: len(dst) - restStart})
 		curR = pos[1]
 	}
@@ -424,40 +447,38 @@ func reorderSpine(dst []int, start int, spans []kidSpan, buf *[]int) []int {
 }
 
 func (b *builder) prodKidsInto(dst []int, pid, l, r int, cell int32) []int {
-	pr := b.p.c.prods[pid]
+	pr := &b.p.c.prods[pid]
 	var buf [8]int
 	pos, ok := b.path(pid, l, r, cell, buf[:])
 	if !ok {
 		b.fail(fmt.Sprintf("internal: no path through %s over %s", displayNT(pr.nt), b.where(l)))
 		return dst
 	}
-	return b.rhsNodesInto(dst, pr, pos, 0)
+	return b.rhsNodesInto(dst, pr.rhs, pos, 0)
 }
 
-func (b *builder) rhsNodesInto(dst []int, pr prod, pos []int, from int) []int {
-	for ip := from; ip < len(pr.rhs); ip++ {
-		dst = b.appendElem(dst, pr.rhs[ip], pos[ip], pos[ip+1])
+func (b *builder) rhsNodesInto(dst []int, rhs []elem, pos []int, from int) []int {
+	for ip := from; ip < len(rhs); ip++ {
+		dst = b.appendElem(dst, &rhs[ip], pos[ip], pos[ip+1])
 	}
 	return dst
 }
 
-func (b *builder) appendElem(kids []int, e elem, i, end int) []int {
+// appendElem appends the nodes for one right-hand-side element matched over
+// input[i:end]. Terminals and flat DFA elements carry their node kind and name
+// from compile time, so this path inspects neither the term nor a name.
+func (b *builder) appendElem(kids []int, e *elem, i, end int) []int {
 	switch e.kind {
 	case ekTerm:
-		switch e.term.(type) {
-		case grammar.Empty, grammar.PosProp:
-			return kids
-		case grammar.Ref:
-			return append(kids, b.addNode("ref", e.name, b.text(i, end), nil))
-		case grammar.String:
-			return append(kids, b.addNode("string", e.name, b.text(i, end), nil))
-		default:
-			return append(kids, b.addNode("char", e.name, b.text(i, end), nil))
+		if e.treeKind == "" {
+			return kids // Empty / PosProp match no text and make no node
 		}
+		return append(kids, b.addNode(e.treeKind, e.treeName, b.text(i, end), nil))
 	case ekDFA:
-		if strings.HasPrefix(e.nt, "$lf") {
-			return append(kids, b.addNode("leaf", e.name, b.text(i, end), nil))
+		if e.treeKind != "" {
+			return append(kids, b.addNode(e.treeKind, e.treeName, b.text(i, end), nil))
 		}
+		// A regular rule with structure: recover it by walking the body.
 		n := b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)
 		if e.name != "" {
 			n.Name = e.name
@@ -465,13 +486,13 @@ func (b *builder) appendElem(kids []int, e elem, i, end int) []int {
 		return append(kids, b.intern(n))
 	case ekNT:
 		start := len(kids)
-		kids = b.deriveInto(kids, e.nt, i, end)
+		kids = b.deriveInto(kids, e.nid, i, end)
 		if e.name != "" {
 			added := kids[start:]
 			if len(added) == 1 {
 				b.nodes[added[0]].name = e.name
 			} else if len(added) > 1 {
-				id := b.addNode("seq", e.name, b.text(i, end), added)
+				id := b.addNode(nodeKindSeq, e.name, b.text(i, end), added)
 				kids = append(kids[:start], id)
 			}
 		}

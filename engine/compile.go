@@ -29,6 +29,13 @@ type elem struct {
 	df    *dfa   // set for ekDFA
 	nid   int    // dense id of nt, for ekNT / lookahead
 	desc  string // interned describeElem text, for parse-failure messages
+	// treeKind and treeName are the Node.Kind and Node.Name of the leaf node
+	// the tree builder makes for this element, resolved at compile time so
+	// appendElem does no type switch and no rule-table lookup. treeKind is ""
+	// when the element makes no node of its own: an Empty/PosProp terminal
+	// contributes nothing, and a structured regular body is walked instead.
+	treeKind string
+	treeName string
 }
 
 type prod struct {
@@ -41,12 +48,21 @@ type prod struct {
 	fallback bool
 }
 
+// #assoc values, resolved at compile time so the tree builder compares an int
+// per production instead of a string.
+const (
+	assocUnset = iota // no #assoc directive, or one with an unknown value
+	assocLeft
+	assocRight
+	assocNone // #assoc=none: chaining the operator is an error
+)
+
 // prodDirs is the disambiguation vocabulary attached to one production.
 type prodDirs struct {
 	prefer   bool
 	avoid    bool
 	priority int
-	assoc    string // "left", "right", "none", or ""
+	assoc    int
 }
 
 func parseDirs(ds []grammar.Directive) prodDirs {
@@ -61,7 +77,14 @@ func parseDirs(ds []grammar.Directive) prodDirs {
 			n, _ := strconv.Atoi(x.Value)
 			d.priority = n
 		case "assoc":
-			d.assoc = x.Value
+			switch x.Value {
+			case "left":
+				d.assoc = assocLeft
+			case "right":
+				d.assoc = assocRight
+			case "none":
+				d.assoc = assocNone
+			}
 		}
 	}
 	return d
@@ -89,6 +112,12 @@ type Compiled struct {
 	predN    []*bytePred
 	ntProdsN [][]int
 	ntNID    map[string]int
+	// ntInfo[nid] is everything the tree builder needs to know about a
+	// nonterminal, so that building a tree touches no nonterminal name.
+	ntInfo []ntInfo
+	// spineProd[pid] marks a production the builder must walk as a
+	// transparent left-recursive spine rather than nest.
+	spineProd []bool
 	// tw is the scratch tree walker reused by dfaNode. Like the DFA
 	// transition caches it makes one Compiled single-parse-at-a-time.
 	tw       twalk
@@ -181,9 +210,80 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 	}
 	bindDFAOwner(out)
 	out.computeFirst()
+	out.buildNTInfo()
 	out.resolveElems()
 	out.markUnitProds()
+	out.markSpineProds()
 	return out, nil
+}
+
+// ntClass says which public node a derivation of a nonterminal becomes. It is
+// the shape of the name — a user rule, one of the $q/$d/$st wrappers, or a
+// transparent synthetic — decided once per nonterminal instead of by prefix
+// tests on every node the builder makes.
+const (
+	ntClassRule   = iota // a named rule: wrap the kids in a "rule" node
+	ntClassQuant         // $q…: a "quant" node, or nothing when it matched nothing
+	ntClassDelim         // $d…: a "delim" node, or the kid itself when there is one
+	ntClassSeq           // $st…: a "seq" node, or the kid itself when there is one
+	ntClassSplice        // transparent: the kids stand in for the nonterminal
+)
+
+// ntInfo is the per-nonterminal tree-building data, indexed by dense
+// nonterminal id.
+type ntInfo struct {
+	nt    string // the nonterminal's name, for diagnostics
+	kind  string // Node.Kind of the wrapper this nonterminal builds
+	name  string // Node.Name of that wrapper
+	class int
+}
+
+// classifyNT decides a nonterminal's ntClass from its name. Named rules and
+// the $q/$d/$st wrappers build a node; every other synthetic nonterminal is
+// transparent, so its children are returned as-is.
+func classifyNT(nt string) int {
+	if !strings.HasPrefix(nt, "$") {
+		return ntClassRule
+	}
+	switch {
+	case strings.HasPrefix(nt, "$q") && !strings.HasPrefix(nt, "$qs") && !strings.HasPrefix(nt, "$qo"):
+		return ntClassQuant
+	case strings.HasPrefix(nt, "$d") && !strings.HasPrefix(nt, "$dl") && !strings.HasPrefix(nt, "$dtrail"):
+		return ntClassDelim
+	case strings.HasPrefix(nt, "$st"):
+		return ntClassSeq
+	default:
+		return ntClassSplice
+	}
+}
+
+func (c *Compiled) buildNTInfo() {
+	c.ntInfo = make([]ntInfo, len(c.ntNID))
+	for nt, id := range c.ntNID {
+		info := ntInfo{nt: nt, class: classifyNT(nt)}
+		switch info.class {
+		case ntClassRule:
+			info.kind, info.name = nodeKindRule, nt
+		case ntClassQuant:
+			info.kind = nodeKindQuant
+		case ntClassDelim:
+			info.kind = nodeKindDelim
+		case ntClassSeq:
+			info.kind = nodeKindSeq
+		}
+		c.ntInfo[id] = info
+	}
+}
+
+// markSpineProds records the productions of a transparent left-recursive list
+// ($qs, $dl). Nesting those through prodKidsInto would append the prefix
+// children again at every spine node, which is O(n²) node copies.
+func (c *Compiled) markSpineProds() {
+	c.spineProd = make([]bool, len(c.prods))
+	for i := range c.prods {
+		pr := &c.prods[i]
+		c.spineProd[i] = c.ntInfo[pr.nid].class == ntClassSplice && leftRec(pr)
+	}
 }
 
 // markUnitProds records which productions are `A ::= B` for a nonterminal B.
@@ -235,6 +335,42 @@ func (c *Compiled) resolveElems() {
 			// failed element match, and quoting a string term there was one
 			// allocation per failure.
 			e.desc = describeElem(*e)
+			c.resolveElemNode(e)
+		}
+	}
+}
+
+// resolveElemNode fills the element's treeKind/treeName: the node the builder
+// makes for it without inspecting the term, the name or the rule table.
+func (c *Compiled) resolveElemNode(e *elem) {
+	switch e.kind {
+	case ekTerm:
+		e.treeName = e.name
+		switch e.term.(type) {
+		case grammar.Empty, grammar.PosProp:
+			e.treeKind = ""
+		case grammar.Ref:
+			e.treeKind = nodeKindRef
+		case grammar.String:
+			e.treeKind = nodeKindString
+		default:
+			e.treeKind = nodeKindChar
+		}
+	case ekDFA:
+		// dfaNode flattens a /leaf/ body — and an unknown name — to one text
+		// node, so those need neither the rule table nor the tree walk. A
+		// $lf element is a leaf too, but it is anonymous: it carries only the
+		// `name=` label its reference gave it.
+		if strings.HasPrefix(e.nt, leafDFAPrefix) {
+			e.treeKind, e.treeName = nodeKindLeaf, e.name
+			return
+		}
+		rule, ok := c.rules[e.nt]
+		if _, isLeaf := rule.Body.(grammar.Leaf); !ok || isLeaf {
+			e.treeKind, e.treeName = nodeKindLeaf, e.nt
+			if e.name != "" {
+				e.treeName = e.name
+			}
 		}
 	}
 }
@@ -422,8 +558,16 @@ func (c *compiler) analyzeRegular() {
 	}
 }
 
+// A /leaf/ body is lifted into its own DFA under a synthetic name. The tree
+// builder recognises one by prefix: it is the only DFA element that flattens
+// to a "leaf" node with no rule name of its own.
+const (
+	leafDFAKind   = "lf"
+	leafDFAPrefix = "$" + leafDFAKind
+)
+
 func (c *compiler) leafDFA(x grammar.Leaf) string {
-	h := c.fresh("lf")
+	h := c.fresh(leafDFAKind)
 	d := compileOneDFA(x, c)
 	if c.extraDFA == nil {
 		c.extraDFA = map[string]*dfa{}
