@@ -561,6 +561,33 @@ func (p *gll) forkID(nid, u, i int) {
 	}
 }
 
+// forkUnit is the `A ::= B` case of add. Neither slot of a unit production
+// matches anything: the descriptor at element 0 would only link the caller
+// frame and fork B, and the descriptor at element 1 would only record the
+// completion and pop (see pop). Run the first one here instead. claim takes
+// the slot out of U exactly as add would, so no other caller runs it twice,
+// and create still shares one GSS node per (unit production, position), so
+// B is forked once however many callers reach A there. A chain of unit
+// productions — what a precedence stack lowers to, one level per link — is
+// walked in this one call instead of two descriptors per level. The chain
+// terminates because each link claims a distinct (slot, frame, position),
+// and a cycle of unit productions never compiles: every link derives the
+// same language, which checkDisambiguation rejects.
+func (p *gll) forkUnit(pid, u, i int) {
+	sl := slot{pid: pid, ip: 0}
+	cell, fresh, ok := p.claim(sl, u, i)
+	if !ok || !fresh {
+		return
+	}
+	e := p.c.prods[pid].rhs[0]
+	v := p.create(slot{pid: pid, ip: 1}, u, i, cell)
+	if e.nid >= 0 {
+		p.forkID(e.nid, v, i)
+		return
+	}
+	p.fork(e.nt, v, i)
+}
+
 func (p *gll) forkNamed(nt string, u, i int) {
 	if bp := p.c.pred[nt]; bp != nil {
 		j := p.skip(i)
@@ -637,8 +664,13 @@ func (p *gll) push(sl slot, u, i int, cell int32) {
 }
 
 // add schedules a production's first slot. fork is the only caller, and an
-// element-0 slot has no incoming matches, so the cell stays 0.
+// element-0 slot has no incoming matches, so the cell stays 0. A unit
+// production is run in place instead of scheduled — see forkUnit.
 func (p *gll) add(sl slot, u, i int) {
+	if p.c.unitProd[sl.pid] {
+		p.forkUnit(sl.pid, u, i)
+		return
+	}
 	if cell, fresh, ok := p.claim(sl, u, i); ok && fresh {
 		p.push(sl, u, i, cell)
 	}
@@ -748,8 +780,31 @@ func (p *gll) pop(u, i int) {
 	p.gss[u].phead = len(p.pops) - 1
 	ret := p.gss[u].sl
 	from := p.gss[u].i
+	// A unit production ends the moment its one nonterminal does, so the
+	// descriptor advance would enqueue has nothing left to match: it would
+	// record the completion and pop again. Do both here, on the same cell
+	// advance would have linked the match onto, so the builder walks the
+	// same evidence. A later competing match still links onto that cell and
+	// is still seen, because sym holds the cell, not a snapshot of it.
+	// Nothing below creates a GSS edge, so u's edge list cannot grow under
+	// the loop, and the recursion climbs a chain of unit productions in one
+	// pass.
+	unit := p.c.unitProd[ret.pid]
 	for e := p.gss[u].ehead; e != 0; e = p.edges[e].next {
-		p.advance(ret, p.edges[e].to, from, i, p.edges[e].cell)
+		to := p.edges[e].to
+		if !unit {
+			p.advance(ret, to, from, i, p.edges[e].cell)
+			continue
+		}
+		cell, fresh, ok := p.claim(ret, to, i)
+		if !ok {
+			continue
+		}
+		p.link(cell, from, p.edges[e].cell)
+		if fresh {
+			p.complete(ret.pid, p.gss[to].i, i, cell)
+			p.pop(to, i)
+		}
 	}
 }
 
