@@ -37,13 +37,30 @@ type builder struct {
 	packed int
 	err    string
 	nodes  []inode
-	kids   []int
+	kids   []int32
+	// lits holds the text of the nodes whose text is not a span of the
+	// input; see inode.lo.
+	lits []string
 }
 
+// inode is one node of the arena the builder derives into, before
+// materialize copies the tree out. Node ids, child ranges and input offsets
+// are int32: an input large enough to overflow one would need tens of
+// gigabytes of chart, and the arena is walked once per node, so its width is
+// memory traffic on the hottest loop in the builder.
 type inode struct {
-	kind, name, text string
-	k0, kn           int
+	kind, name string
+	// The node's text is input[lo:hi], except when lo == litText: a node
+	// interned from the DFA walker can carry text that is not a span of the
+	// input — a case-folded string literal keeps the grammar's spelling —
+	// and then hi indexes builder.lits.
+	lo, hi int32
+	k0, kn int32
 }
+
+// litText marks an inode whose text is in builder.lits rather than a span of
+// the input.
+const litText = -1
 
 func newBuilder(p *gll) *builder {
 	n := len(p.input) + 1
@@ -53,37 +70,44 @@ func newBuilder(p *gll) *builder {
 	}
 	kids := p.tkids[:0]
 	if cap(kids) < n {
-		kids = make([]int, 0, n)
+		kids = make([]int32, 0, n)
 	}
-	return &builder{p: p, nodes: nodes, kids: kids}
+	return &builder{p: p, nodes: nodes, kids: kids, lits: p.tlits[:0]}
 }
 
 func (b *builder) keepArena() {
 	b.p.tnodes = b.nodes
 	b.p.tkids = b.kids
+	b.p.tlits = b.lits
 }
 
-func (b *builder) addNode(kind, name, text string, kids []int) int {
-	k0 := len(b.kids)
+func (b *builder) addNode(kind, name string, lo, hi int32, kids []int32) int32 {
+	k0 := int32(len(b.kids))
 	b.kids = append(b.kids, kids...)
-	id := len(b.nodes)
-	b.nodes = append(b.nodes, inode{kind: kind, name: name, text: text, k0: k0, kn: k0 + len(kids)})
+	id := int32(len(b.nodes))
+	b.nodes = append(b.nodes, inode{kind: kind, name: name, lo: lo, hi: hi, k0: k0, kn: int32(len(b.kids))})
 	return id
+}
+
+// addLit is addNode for text the input does not contain verbatim.
+func (b *builder) addLit(kind, name, text string, kids []int32) int32 {
+	b.lits = append(b.lits, text)
+	return b.addNode(kind, name, litText, int32(len(b.lits)-1), kids)
 }
 
 // intern copies a Node tree the DFA walker produced into the arena. Child ids
 // accumulate on a shared scratch stack rather than one slice per node; the
 // scratch is separate from the derivation scratch, which is live in the caller
 // while this runs.
-func (b *builder) intern(n Node) int {
+func (b *builder) intern(n Node) int32 {
 	if len(n.Children) == 0 {
-		return b.addNode(n.Kind, n.Name, n.Text, nil)
+		return b.addLit(n.Kind, n.Name, n.Text, nil)
 	}
 	mark := len(b.p.iscratch)
 	for _, c := range n.Children {
 		b.p.iscratch = append(b.p.iscratch, b.intern(c))
 	}
-	id := b.addNode(n.Kind, n.Name, n.Text, b.p.iscratch[mark:])
+	id := b.addLit(n.Kind, n.Name, n.Text, b.p.iscratch[mark:])
 	b.p.iscratch = b.p.iscratch[:mark]
 	return id
 }
@@ -92,7 +116,7 @@ func (b *builder) intern(n Node) int {
 // public API hands back, breadth first: a node's children are the run of
 // output slots that follows everything already queued, so the queue index is
 // the output index and the whole copy is a single forward loop.
-func (b *builder) materialize(id int) Node {
+func (b *builder) materialize(id int32) Node {
 	n := len(b.nodes)
 	if n == 0 {
 		return Node{}
@@ -102,32 +126,41 @@ func (b *builder) materialize(id int) Node {
 	// enqueued once.
 	q := b.p.mqueue
 	if cap(q) < n {
-		q = make([]int, 1, n)
+		q = make([]int32, 1, n)
 	} else {
 		q = q[:1]
 	}
 	q[0] = id
+	input := b.p.input
 	for i := 0; i < len(q); i++ {
 		in := &b.nodes[q[i]]
-		child0 := len(q)
-		nk := in.kn - in.k0
-		q = append(q, b.kids[in.k0:in.kn]...)
 		var children []Node
-		if nk > 0 {
-			children = out[child0 : child0+nk]
+		if in.kn > in.k0 {
+			child0 := len(q)
+			q = append(q, b.kids[in.k0:in.kn]...)
+			children = out[child0:len(q)]
 		}
-		out[i] = Node{Kind: in.kind, Name: in.name, Text: in.text, Children: children}
+		text := ""
+		if in.lo >= 0 {
+			text = input[in.lo:in.hi]
+		} else {
+			text = b.lits[in.hi]
+		}
+		out[i] = Node{Kind: in.kind, Name: in.name, Text: text, Children: children}
 	}
 	b.p.mqueue = q
 	return out[0]
 }
 
-func (b *builder) text(l, r int) string {
+// span is the text of a node covering input[l:r] as the offsets an inode
+// stores: leading #wrap text belongs to whatever preceded the node, so the
+// left edge moves past it.
+func (b *builder) span(l, r int) (int32, int32) {
 	l = b.p.skip(l)
 	if l > r {
 		l = r
 	}
-	return b.p.input[l:r]
+	return int32(l), int32(r)
 }
 
 // root builds the tree for the start rule over input[pos:end]. It is the one
@@ -141,7 +174,8 @@ func (b *builder) root(start string, pos, end int) Node {
 	nid, ok := c.ntNID[start]
 	if !ok {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(start), b.where(pos)))
-		return b.materialize(b.addNode(nodeKindRule, start, b.text(pos, end), nil))
+		lo, hi := b.span(pos, end)
+		return b.materialize(b.addNode(nodeKindRule, start, lo, hi, nil))
 	}
 	mark := len(b.p.kscratch)
 	b.p.kscratch = b.deriveInto(b.p.kscratch[:mark], nid, pos, end)
@@ -151,7 +185,8 @@ func (b *builder) root(start string, pos, end int) Node {
 		b.p.kscratch = b.p.kscratch[:mark]
 		return n
 	}
-	id := b.addNode(nodeKindRule, start, b.text(pos, end), kids)
+	lo, hi := b.span(pos, end)
+	id := b.addNode(nodeKindRule, start, lo, hi, kids)
 	b.p.kscratch = b.p.kscratch[:mark]
 	return b.materialize(id)
 }
@@ -336,7 +371,7 @@ func leftRec(pr *prod) bool {
 // No DFA rule reaches here: resolveElems turned every reference to one into an
 // ekDFA element, and runOn handles a regular start rule before the builder
 // runs.
-func (b *builder) deriveInto(dst []int, nid, l, r int) []int {
+func (b *builder) deriveInto(dst []int32, nid, l, r int) []int32 {
 	c := b.p.c
 	if nid < 0 || nid >= len(c.ntInfo) {
 		// resolveElems leaves nid == -1 on a reference it could not resolve.
@@ -348,7 +383,8 @@ func (b *builder) deriveInto(dst []int, nid, l, r int) []int {
 	pid, cell := b.pickAt(nid, l, r)
 	if pid < 0 {
 		b.fail(fmt.Sprintf("internal: no derivation of %s over %s", displayNT(info.nt), b.where(l)))
-		return append(dst, b.addNode(nodeKindRule, info.nt, b.text(l, r), nil))
+		lo, hi := b.span(l, r)
+		return append(dst, b.addNode(nodeKindRule, info.nt, lo, hi, nil))
 	}
 	kidStart := len(dst)
 	// Transparent left-recursive lists ($dl, $qs) must not append the prefix
@@ -360,24 +396,21 @@ func (b *builder) deriveInto(dst []int, nid, l, r int) []int {
 	}
 	kids := dst[kidStart:]
 	switch info.class {
-	case ntClassRule:
-		id := b.addNode(info.kind, info.name, b.text(l, r), kids)
-		return append(dst[:kidStart], id)
 	case ntClassQuant:
 		if len(kids) == 0 {
 			return dst[:kidStart]
 		}
-		id := b.addNode(info.kind, info.name, b.text(l, r), kids)
-		return append(dst[:kidStart], id)
 	case ntClassDelim, ntClassSeq:
 		if len(kids) == 1 {
 			return dst[:kidStart+1]
 		}
-		id := b.addNode(info.kind, info.name, b.text(l, r), kids)
-		return append(dst[:kidStart], id)
+	case ntClassRule:
 	default:
 		return dst
 	}
+	lo, hi := b.span(l, r)
+	id := b.addNode(info.kind, info.name, lo, hi, kids)
+	return append(dst[:kidStart], id)
 }
 
 type kidSpan struct{ start, n int }
@@ -385,7 +418,7 @@ type kidSpan struct{ start, n int }
 // leftRecKidsInto walks a transparent left-recursive spine N ::= N rest | base
 // once and appends base+rest onto dst. User-level left recursion is not
 // spliced and still nests via prodKidsInto.
-func (b *builder) leftRecKidsInto(dst []int, nid, l, r int) []int {
+func (b *builder) leftRecKidsInto(dst []int32, nid, l, r int) []int32 {
 	c := b.p.c
 	nt := c.ntInfo[nid].nt
 	mark := len(b.p.spineBuf)
@@ -424,14 +457,14 @@ func (b *builder) leftRecKidsInto(dst []int, nid, l, r int) []int {
 	}
 }
 
-func reorderSpine(dst []int, start int, spans []kidSpan, buf *[]int) []int {
+func reorderSpine(dst []int32, start int, spans []kidSpan, buf *[]int32) []int32 {
 	if len(spans) == 0 {
 		return dst
 	}
 	n := len(dst) - start
 	out := *buf
 	if cap(out) < n {
-		out = make([]int, n)
+		out = make([]int32, n)
 	} else {
 		out = out[:n]
 	}
@@ -446,7 +479,7 @@ func reorderSpine(dst []int, start int, spans []kidSpan, buf *[]int) []int {
 	return dst[:start+n]
 }
 
-func (b *builder) prodKidsInto(dst []int, pid, l, r int, cell int32) []int {
+func (b *builder) prodKidsInto(dst []int32, pid, l, r int, cell int32) []int32 {
 	pr := &b.p.c.prods[pid]
 	var buf [8]int
 	pos, ok := b.path(pid, l, r, cell, buf[:])
@@ -457,7 +490,7 @@ func (b *builder) prodKidsInto(dst []int, pid, l, r int, cell int32) []int {
 	return b.rhsNodesInto(dst, pr.rhs, pos, 0)
 }
 
-func (b *builder) rhsNodesInto(dst []int, rhs []elem, pos []int, from int) []int {
+func (b *builder) rhsNodesInto(dst []int32, rhs []elem, pos []int, from int) []int32 {
 	for ip := from; ip < len(rhs); ip++ {
 		dst = b.appendElem(dst, &rhs[ip], pos[ip], pos[ip+1])
 	}
@@ -467,16 +500,18 @@ func (b *builder) rhsNodesInto(dst []int, rhs []elem, pos []int, from int) []int
 // appendElem appends the nodes for one right-hand-side element matched over
 // input[i:end]. Terminals and flat DFA elements carry their node kind and name
 // from compile time, so this path inspects neither the term nor a name.
-func (b *builder) appendElem(kids []int, e *elem, i, end int) []int {
+func (b *builder) appendElem(kids []int32, e *elem, i, end int) []int32 {
 	switch e.kind {
 	case ekTerm:
 		if e.treeKind == "" {
 			return kids // Empty / PosProp match no text and make no node
 		}
-		return append(kids, b.addNode(e.treeKind, e.treeName, b.text(i, end), nil))
+		lo, hi := b.span(i, end)
+		return append(kids, b.addNode(e.treeKind, e.treeName, lo, hi, nil))
 	case ekDFA:
 		if e.treeKind != "" {
-			return append(kids, b.addNode(e.treeKind, e.treeName, b.text(i, end), nil))
+			lo, hi := b.span(i, end)
+			return append(kids, b.addNode(e.treeKind, e.treeName, lo, hi, nil))
 		}
 		// A regular rule with structure: recover it by walking the body.
 		n := b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)
@@ -492,7 +527,8 @@ func (b *builder) appendElem(kids []int, e *elem, i, end int) []int {
 			if len(added) == 1 {
 				b.nodes[added[0]].name = e.name
 			} else if len(added) > 1 {
-				id := b.addNode(nodeKindSeq, e.name, b.text(i, end), added)
+				lo, hi := b.span(i, end)
+				id := b.addNode(nodeKindSeq, e.name, lo, hi, added)
 				kids = append(kids[:start], id)
 			}
 		}
