@@ -188,6 +188,44 @@ func (m *uMap) get(k uint64, gen uint32) (int, bool) {
 	}
 }
 
+// probe returns the slot index for k. hit says whether the key is present;
+// on a miss the index is where placeAt writes it.
+func (m *uMap) probe(k uint64, gen uint32) (uint64, bool) {
+	slots := m.slots
+	if len(slots) == 0 {
+		return 0, false
+	}
+	mask := m.mask
+	i := mix64(k) & mask
+	for {
+		e := &slots[i]
+		if e.gen != gen {
+			return i, false
+		}
+		if e.key == k {
+			return i, true
+		}
+		i = (i + 1) & mask
+	}
+}
+
+func (m *uMap) idAt(idx uint64) int { return m.slots[idx].id }
+
+// placeAt writes a key known to be absent. idx is from a prior probe miss.
+// If the table must grow, idx is ignored and the key is re-inserted.
+func (m *uMap) placeAt(idx uint64, k uint64, gen uint32, id int) {
+	if m.crowded() {
+		m.grow(gen)
+		m.insert(k, gen, id)
+		return
+	}
+	e := &m.slots[idx]
+	e.key = k
+	e.gen = gen
+	e.id = id
+	m.n++
+}
+
 func (m *uMap) crowded() bool { return m.n*uLoad >= len(m.slots) }
 
 func (m *uMap) put(k uint64, gen uint32, id int) {

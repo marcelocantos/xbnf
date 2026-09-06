@@ -65,7 +65,7 @@ func snapshotProfile(c *Compiled, p *gll, res *Result) *Profile {
 
 func chartBytes(p *gll) int64 {
 	n := int64(cap(p.R))*24 + int64(cap(p.gss))*32 + int64(cap(p.edges))*16
-	n += int64(cap(p.pops))*16 + int64(cap(p.steps))*24 + int64(cap(p.wrapEnd))*8
-	n += int64(cap(p.slabs))*16 + int64(cap(p.stepPack))*24
+	n += int64(cap(p.pops))*24 + int64(cap(p.steps))*12 + int64(cap(p.wrapEnd))*8
+	n += int64(cap(p.cells)) * 4
 	return n
 }

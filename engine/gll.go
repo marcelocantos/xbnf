@@ -22,6 +22,15 @@ type desc struct {
 	i  int
 }
 
+// task is a scheduled descriptor plus the evidence cell holding the element
+// matches that reach it. The builder walks those links backwards instead of
+// searching a sorted step log.
+type task struct {
+	sl   slot
+	u, i int
+	cell int32
+}
+
 type gssNode struct {
 	sl    slot
 	i     int
@@ -31,6 +40,7 @@ type gssNode struct {
 
 type gssEdge struct {
 	to, next int
+	cell     int32 // evidence cell of the caller descriptor that made this edge
 }
 
 type gssPop struct {
@@ -51,37 +61,31 @@ type failInfo struct {
 type gll struct {
 	c        *Compiled
 	input    string
-	R        []desc
-	uset     uSet
-	Ubig     map[desc]uint32 // used when pid/u/i do not pack into 64 bits
+	R        []task
+	uset     uMap           // packDesc → evidence cell this generation
+	Ubig     map[desc]genID // used when pid/u/i do not pack into 64 bits
 	gss      []gssNode
 	gssAt    uMap
 	gssBig   map[gssKey]genID
-	sym      uMap // packFam(nid,l,r) → first prod+1 this generation
+	sym      uMap // packFam(nid,l,r) → packComp of the first prod this generation
 	endAt    uMap // packNidLeft(nid,l) → max right this generation
 	symBig   map[famKey]genID
-	symMore  map[famKey][]int // extra prods when a span is packed
+	symMore  map[famKey][]int // extra packComp values when a span is packed
 	start    string
 	fail     failInfo
-	wrapEnd  []int      // memoised skipWrap per position; 0 = unknown, else end+1
-	wrapIn   string     // input wrapEnd was filled for
-	wrapC    *Compiled  // #wrap that wrapEnd was filled for; reuse needs both
-	work     int        // descriptors processed
-	stepAt   uMap       // packInst(pid,l) → slab this generation
-	slabs    []stepList // dummy at 0
-	steps    []step     // dummy at 0; linked per instance during parse
-	stepPack []step     // contiguous runs after packSteps
-	sortTmp  []step
+	wrapEnd  []int     // memoised skipWrap per position; 0 = unknown, else end+1
+	wrapIn   string    // input wrapEnd was filled for
+	wrapC    *Compiled // #wrap that wrapEnd was filled for; reuse needs both
+	work     int       // descriptors processed
+	cells    []int32   // cell → head of its incoming step list; dummy at 0
+	steps    []step    // dummy at 0
 	edges    []gssEdge
 	pops     []gssPop
 	tnodes   []inode
 	tkids    []int
 	kscratch []int
-	reach    uMap // packReach → 0 false / 1 true this generation
 	spineBuf []kidSpan
 	spineOut []int
-	stepAtK  instKey
-	stepAtID int
 	gen      uint32 // bumps each Parse; lookup maps are not cleared
 }
 
@@ -97,32 +101,30 @@ type genID struct {
 	id  int
 }
 
-type stepList struct {
-	head, n int
-	packed  bool // head indexes stepPack when true, else the live linked list
-}
-
-// step records that element ip of a production instance matched input[i:end].
-// During parse, next links steps of one instance. packSteps copies large
-// instances into a contiguous run in stepPack, sorted by (ip, end).
+// step is one element match that reaches a descriptor: the element started at
+// i, next is a competing match of the same element reaching the same
+// descriptor, and prev is the evidence cell of the descriptor the match came
+// from. The descriptor fixes the element index and the end position, so
+// neither is stored. int32 holds an input position and a step index; a parse
+// large enough to overflow one would need hundreds of gigabytes of chart.
 type step struct {
-	ip, i, end int
-	next       int
+	i, next, prev int32
 }
 
-func packInst(pid, l int) uint64 {
-	return uint64(uint32(pid))<<32 | uint64(uint32(l))
+// packComp is one completion: the production and the evidence cell of the
+// descriptor that completed it. pid+1 keeps the packed value non-zero, which
+// is how sym distinguishes a recorded span from an absent one. Like packGSS
+// this needs a 64-bit int.
+func packComp(pid int, cell int32) int {
+	return (pid+1)<<32 | int(cell)
 }
+
+func compPID(v int) int { return v>>32 - 1 }
+
+func compCell(v int) int32 { return int32(v & 0xFFFFFFFF) }
 
 func packNidLeft(nid, l int) uint64 {
 	return uint64(uint32(nid))<<32 | uint64(uint32(l))
-}
-
-func packReach(pid, l, ip, pos int) (uint64, bool) {
-	if pid < 0 || pid > 0xFFF || ip < 0 || ip > 0xF || l < 0 || l > 0xFFFFF || pos < 0 || pos > 0xFFFFF {
-		return 0, false
-	}
-	return uint64(pid)<<44 | uint64(ip)<<40 | uint64(l)<<20 | uint64(pos), true
 }
 
 var gllPool = sync.Pool{New: func() any { return new(gll) }}
@@ -150,14 +152,12 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	}
 	p.R = p.R[:0]
 	if cap(p.R) < 64 {
-		p.R = make([]desc, 0, 64)
+		p.R = make([]task, 0, 64)
 	}
 	p.gen++
 	if p.gen == 0 {
 		p.uset.clear()
 		p.gssAt.clear()
-		p.stepAt.clear()
-		p.reach.clear()
 		p.sym.clear()
 		p.endAt.clear()
 		clear(p.symBig)
@@ -167,11 +167,6 @@ func (p *gll) bind(c *Compiled, input, start string) {
 		p.uset.init(n * 4)
 	} else {
 		p.uset.reset()
-	}
-	if p.reach.slots == nil {
-		p.reach.init(n)
-	} else {
-		p.reach.reset()
 	}
 	p.gss = p.gss[:0]
 	if cap(p.gss) < n/2+1 {
@@ -192,17 +187,9 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	} else {
 		p.endAt.reset()
 	}
-	if p.stepAt.slots == nil {
-		p.stepAt.init(n / 8)
-	} else {
-		p.stepAt.reset()
-	}
-	p.stepAtK = instKey{}
-	p.stepAtID = 0
 	p.spineBuf = p.spineBuf[:0]
-	p.slabs = keepDummy(p.slabs, n/8)
+	p.cells = keepDummy(p.cells, n)
 	p.steps = keepDummy(p.steps, n)
-	p.stepPack = keepCap(p.stepPack, n)
 	p.edges = keepDummy(p.edges, n/2+1)
 	p.pops = keepDummy(p.pops, n/2+1)
 	if p.wrapC == c && p.wrapIn == input && len(p.wrapEnd) == n {
@@ -229,26 +216,18 @@ func keepDummy[T any](s []T, hint int) []T {
 	return s
 }
 
-func keepCap[T any](s []T, hint int) []T {
-	if cap(s) < hint {
-		return make([]T, 0, hint)
-	}
-	return s[:0]
-}
-
 func (p *gll) release() {
 	p.c = nil
 	p.input = ""
 	p.start = ""
 	p.R = p.R[:0]
 	p.gss = p.gss[:0]
-	if cap(p.slabs) > 0 {
-		p.slabs = p.slabs[:1]
+	if cap(p.cells) > 0 {
+		p.cells = p.cells[:1]
 	}
 	if cap(p.steps) > 0 {
 		p.steps = p.steps[:1]
 	}
-	p.stepPack = p.stepPack[:0]
 	if cap(p.edges) > 0 {
 		p.edges = p.edges[:1]
 	}
@@ -336,8 +315,12 @@ func colOK(input string, i int, p grammar.PosProp) bool {
 	}
 }
 
-func (p *gll) boundText(pid, left int, name string) (string, bool) {
-	pr := p.c.prods[pid]
+// boundText is the text an earlier element of this production instance
+// matched, for a %ref. cur is the element now being processed and cell its
+// evidence, so the walk back along the links reports the match on the
+// derivation that reached here rather than the newest match anywhere in the
+// instance.
+func (p *gll) boundText(pr prod, cur int, cell int32, end int, name string) (string, bool) {
 	ip := -1
 	for i, e := range pr.rhs {
 		if e.name == name {
@@ -345,34 +328,36 @@ func (p *gll) boundText(pid, left int, name string) (string, bool) {
 			break
 		}
 	}
-	if ip < 0 {
+	if ip < 0 || ip >= cur {
 		return "", false
 	}
-	id, ok := p.stepAt.get(packInst(pid, left), p.gen)
-	if !ok || id <= 0 || id >= len(p.slabs) {
-		return "", false
-	}
-	for h := p.slabs[id].head; h != 0; h = p.steps[h].next {
-		st := p.steps[h]
-		if st.ip != ip {
-			continue
-		}
-		a := st.i
-		if a < 0 {
-			a = 0
-		}
-		if e := p.skip(a); e <= st.end {
-			a = e
-		}
-		if a > st.end {
-			a = st.end
-		}
-		if st.end > len(p.input) {
+	for e := cur - 1; e > ip; e-- {
+		h := p.cells[cell]
+		if h == 0 {
 			return "", false
 		}
-		return p.input[a:st.end], true
+		st := p.steps[h]
+		end = int(st.i)
+		cell = st.prev
 	}
-	return "", false
+	h := p.cells[cell]
+	if h == 0 {
+		return "", false
+	}
+	a := int(p.steps[h].i)
+	if a < 0 {
+		a = 0
+	}
+	if e := p.skip(a); e <= end {
+		a = e
+	}
+	if a > end {
+		a = end
+	}
+	if end > len(p.input) {
+		return "", false
+	}
+	return p.input[a:end], true
 }
 
 func (p *gll) skip(i int) int {
@@ -389,10 +374,10 @@ func (p *gll) skip(i int) int {
 
 func (p *gll) drain() {
 	for len(p.R) > 0 {
-		d := p.R[len(p.R)-1]
+		t := p.R[len(p.R)-1]
 		p.R = p.R[:len(p.R)-1]
 		p.work++
-		p.process(d)
+		p.process(t)
 	}
 }
 
@@ -586,59 +571,59 @@ func packDesc(sl slot, u, i int) (uint64, bool) {
 	return uint64(sl.pid)<<48 | uint64(sl.ip)<<40 | uint64(u)<<20 | uint64(i), true
 }
 
-func (p *gll) add(sl slot, u, i int) {
+// claim looks up the descriptor for slot sl at position i under GSS node u
+// and returns the evidence cell that collects the element matches reaching
+// it. fresh is true when this call is the one that claimed it, so the caller
+// owns running it — either by pushing it onto R or by continuing in place.
+// ok is false when FIRST rejects the slot, in which case no match can reach
+// it and no evidence is kept. A slot at element 0 has nothing before it, so
+// it needs no cell.
+func (p *gll) claim(sl slot, u, i int) (cell int32, fresh, ok bool) {
 	d := desc{sl: sl, u: u, i: i}
-	if key, ok := packDesc(sl, u, i); ok {
+	if key, packed := packDesc(sl, u, i); packed {
 		idx, hit := p.uset.probe(key, p.gen)
 		if hit {
-			return
+			return int32(p.uset.idAt(idx)), false, true
 		}
 		if !p.admits(sl, i) {
-			return
+			return 0, false, false
 		}
-		p.uset.placeAt(idx, key, p.gen)
-		p.R = append(p.R, d)
-		return
+		cell = p.newCell(sl.ip)
+		p.uset.placeAt(idx, key, p.gen, int(cell))
+		return cell, true, true
 	}
 	if p.Ubig == nil {
-		p.Ubig = map[desc]uint32{}
+		p.Ubig = map[desc]genID{}
 	}
-	if p.Ubig[d] == p.gen {
-		return
+	if ref, hit := p.Ubig[d]; hit && ref.gen == p.gen {
+		return int32(ref.id), false, true
 	}
 	if !p.admits(sl, i) {
-		return
+		return 0, false, false
 	}
-	p.Ubig[d] = p.gen
-	p.R = append(p.R, d)
+	cell = p.newCell(sl.ip)
+	p.Ubig[d] = genID{gen: p.gen, id: int(cell)}
+	return cell, true, true
 }
 
-// mark is add without the R push: it claims the descriptor in U and reports
-// whether the caller may run it in place.
-func (p *gll) mark(sl slot, u, i int) bool {
-	d := desc{sl: sl, u: u, i: i}
-	if key, ok := packDesc(sl, u, i); ok {
-		idx, hit := p.uset.probe(key, p.gen)
-		if hit {
-			return false
-		}
-		if !p.admits(sl, i) {
-			return false
-		}
-		p.uset.placeAt(idx, key, p.gen)
-		return true
+func (p *gll) newCell(ip int) int32 {
+	if ip == 0 {
+		return 0
 	}
-	if p.Ubig == nil {
-		p.Ubig = map[desc]uint32{}
+	p.cells = append(p.cells, 0)
+	return int32(len(p.cells) - 1)
+}
+
+func (p *gll) push(sl slot, u, i int, cell int32) {
+	p.R = append(p.R, task{sl: sl, u: u, i: i, cell: cell})
+}
+
+// add schedules a production's first slot. fork is the only caller, and an
+// element-0 slot has no incoming matches, so the cell stays 0.
+func (p *gll) add(sl slot, u, i int) {
+	if cell, fresh, ok := p.claim(sl, u, i); ok && fresh {
+		p.push(sl, u, i, cell)
 	}
-	if p.Ubig[d] == p.gen {
-		return false
-	}
-	if !p.admits(sl, i) {
-		return false
-	}
-	p.Ubig[d] = p.gen
-	return true
 }
 
 // admits is the GLL test: can the remainder of the slot start at position i?
@@ -664,36 +649,27 @@ func (p *gll) admits(sl slot, i int) bool {
 	return false
 }
 
-// advance records that the element before slot next matched input[i:end]
-// and enqueues next.
-func (p *gll) advance(next slot, u, i, end int) {
-	p.step(next, u, i, end)
-	p.add(next, u, end)
+// advance records that the element before slot next matched input[i:end] and
+// enqueues next. prev is the evidence cell of the descriptor the match came
+// from, so the recorded step already knows its whole chain: the builder walks
+// prev links instead of matching and re-testing a sorted step log.
+func (p *gll) advance(next slot, u, i, end int, prev int32) {
+	cell, fresh, ok := p.claim(next, u, end)
+	if !ok {
+		return
+	}
+	p.link(cell, i, prev)
+	if fresh {
+		p.push(next, u, end, cell)
+	}
 }
 
-// step records that the element before slot next matched input[i:end],
-// without scheduling next. process calls it directly when it continues a
-// straight-line run in place.
-func (p *gll) step(next slot, u, i, end int) {
-	l := p.gss[u].i
-	k := instKey{pid: next.pid, l: l}
-	id := p.stepAtID
-	if id == 0 || p.stepAtK != k {
-		pk := packInst(next.pid, l)
-		if sid, ok := p.stepAt.get(pk, p.gen); ok {
-			id = sid
-		} else {
-			id = len(p.slabs)
-			p.slabs = append(p.slabs, stepList{})
-			p.stepAt.put(pk, p.gen, id)
-		}
-		p.stepAtK = k
-		p.stepAtID = id
-	}
-	sl := &p.slabs[id]
-	p.steps = append(p.steps, step{ip: next.ip - 1, i: i, end: end, next: sl.head})
-	sl.head = len(p.steps) - 1
-	sl.n++
+// link adds one element match to the descriptor cell it reaches. A match that
+// arrives later than the descriptor was scheduled is a competing derivation of
+// the same prefix, and joins the same list.
+func (p *gll) link(cell int32, i int, prev int32) {
+	p.steps = append(p.steps, step{i: int32(i), next: p.cells[cell], prev: prev})
+	p.cells[cell] = int32(len(p.steps) - 1)
 }
 
 func packGSS(sl slot, i int) (uint64, bool) {
@@ -727,17 +703,20 @@ func (p *gll) gssNode(sl slot, i int) int {
 	return id
 }
 
-func (p *gll) create(ret slot, u, i int) int {
+// create links the caller frame u into the GSS node for return slot ret. The
+// edge carries the caller descriptor's evidence cell, which is what a later
+// pop must record as the predecessor of the returning match.
+func (p *gll) create(ret slot, u, i int, cell int32) int {
 	v := p.gssNode(ret, i)
 	for e := p.gss[v].ehead; e != 0; e = p.edges[e].next {
 		if p.edges[e].to == u {
 			return v
 		}
 	}
-	p.edges = append(p.edges, gssEdge{to: u, next: p.gss[v].ehead})
+	p.edges = append(p.edges, gssEdge{to: u, next: p.gss[v].ehead, cell: cell})
 	p.gss[v].ehead = len(p.edges) - 1
 	for pop := p.gss[v].phead; pop != 0; pop = p.pops[pop].next {
-		p.advance(ret, u, i, p.pops[pop].i)
+		p.advance(ret, u, i, p.pops[pop].i, cell)
 	}
 	return v
 }
@@ -752,25 +731,25 @@ func (p *gll) pop(u, i int) {
 	ret := p.gss[u].sl
 	from := p.gss[u].i
 	for e := p.gss[u].ehead; e != 0; e = p.edges[e].next {
-		p.advance(ret, p.edges[e].to, from, i)
+		p.advance(ret, p.edges[e].to, from, i, p.edges[e].cell)
 	}
 }
 
 // process runs one descriptor, and then as much of the production as it can
 // without rescheduling. A terminal or DFA element that matches yields exactly
 // one endpoint, so the descriptor for the element after it can run here: the
-// step is recorded as advance would and mark claims it in U as add would, so
-// no other path can run it a second time. R is LIFO and a terminal's advance
-// was already the last act of process, so a fused run visits slots in the
-// order drain would have. A nonterminal, a lookahead or the end of the
-// production ends the run and goes through the usual create/fork/advance/
-// complete path.
-func (p *gll) process(d desc) {
-	sl, i := d.sl, d.i
+// match is linked to its cell as advance would and claim takes it out of U as
+// add would, so no other path can run it a second time. R is LIFO and a
+// terminal's advance was already the last act of process, so a fused run
+// visits slots in the order drain would have. A nonterminal, a lookahead or
+// the end of the production ends the run and goes through the usual
+// create/fork/advance/complete path.
+func (p *gll) process(d task) {
+	sl, i, cell := d.sl, d.i, d.cell
 	for {
 		pr := p.c.prods[sl.pid]
 		if sl.ip == len(pr.rhs) {
-			p.complete(sl.pid, p.gss[d.u].i, i)
+			p.complete(sl.pid, p.gss[d.u].i, i, cell)
 			p.pop(d.u, i)
 			return
 		}
@@ -788,7 +767,7 @@ func (p *gll) process(d desc) {
 				end = i
 			case grammar.Ref:
 				j := p.skip(i)
-				want, ok := p.boundText(sl.pid, p.gss[d.u].i, x.Name)
+				want, ok := p.boundText(pr, sl.ip, cell, i, x.Name)
 				if !ok && x.HasDefault {
 					want, ok = x.Default, true
 				}
@@ -826,7 +805,7 @@ func (p *gll) process(d desc) {
 			}
 			end = m
 		case ekNT:
-			v := p.create(next, d.u, i)
+			v := p.create(next, d.u, i, cell)
 			if e.nid >= 0 {
 				p.forkID(e.nid, v, i)
 			} else {
@@ -835,54 +814,62 @@ func (p *gll) process(d desc) {
 			return
 		case ekLook:
 			if p.succeeds(e.nt, i) {
-				p.advance(next, d.u, i, i)
+				p.advance(next, d.u, i, i, cell)
 			}
 			return
 		case ekNegLook:
 			if !p.succeeds(e.nt, i) {
-				p.advance(next, d.u, i, i)
+				p.advance(next, d.u, i, i, cell)
 			}
 			return
 		default:
 			return
 		}
-		p.step(next, d.u, i, end)
-		if !p.mark(next, d.u, end) {
+		nextCell, fresh, ok := p.claim(next, d.u, end)
+		if !ok {
 			return
 		}
-		sl, i = next, end
+		p.link(nextCell, i, cell)
+		if !fresh {
+			return
+		}
+		sl, i, cell = next, end, nextCell
 	}
 }
 
-func (p *gll) complete(pid, left, right int) {
-	p.recordProd(p.c.prods[pid].nid, left, right, pid)
+func (p *gll) complete(pid, left, right int, cell int32) {
+	p.recordProd(p.c.prods[pid].nid, left, right, pid, cell)
 }
 
-func (p *gll) recordProd(nid, left, right, pid int) {
+// recordProd records that pid derives (nid, left, right), together with the
+// evidence cell of the descriptor that completed it. The first production of
+// a span wins; competitors go to symMore for pick to sort out.
+func (p *gll) recordProd(nid, left, right, pid int, cell int32) {
 	p.noteEnd(nid, left, right)
 	fk := famKey{nid: nid, l: left, r: right}
+	comp := packComp(pid, cell)
 	if key, ok := packFam(nid, left, right); ok {
 		if id, hit := p.sym.get(key, p.gen); hit {
-			if id-1 == pid {
+			if compPID(id) == pid {
 				return
 			}
-			p.addSymMore(fk, pid)
+			p.addSymMore(fk, comp)
 			return
 		}
-		p.sym.put(key, p.gen, pid+1)
+		p.sym.put(key, p.gen, comp)
 		return
 	}
 	if ref, hit := p.symBig[fk]; hit && ref.gen == p.gen {
-		if ref.id-1 == pid {
+		if compPID(ref.id) == pid {
 			return
 		}
-		p.addSymMore(fk, pid)
+		p.addSymMore(fk, comp)
 		return
 	}
 	if p.symBig == nil {
 		p.symBig = map[famKey]genID{}
 	}
-	p.symBig[fk] = genID{gen: p.gen, id: pid + 1}
+	p.symBig[fk] = genID{gen: p.gen, id: comp}
 }
 
 func (p *gll) noteEnd(nid, left, right int) {
@@ -892,31 +879,34 @@ func (p *gll) noteEnd(nid, left, right int) {
 	}
 }
 
-func (p *gll) addSymMore(k famKey, pid int) {
+func (p *gll) addSymMore(k famKey, comp int) {
 	extra := p.symMore[k]
+	pid := compPID(comp)
 	for _, old := range extra {
-		if old == pid {
+		if compPID(old) == pid {
 			return
 		}
 	}
 	if p.symMore == nil {
 		p.symMore = map[famKey][]int{}
 	}
-	p.symMore[k] = append(extra, pid)
+	p.symMore[k] = append(extra, comp)
 }
 
-func (p *gll) pidsAt(nid, l, r int) (int, []int) {
+// compsAt returns the completions of (nid, l, r): the first one packed, and
+// any competitors. 0 means the span was never derived.
+func (p *gll) compsAt(nid, l, r int) (int, []int) {
 	fk := famKey{nid: nid, l: l, r: r}
 	if key, ok := packFam(nid, l, r); ok {
 		if id, hit := p.sym.get(key, p.gen); hit {
-			return id - 1, p.symMore[fk]
+			return id, p.symMore[fk]
 		}
-		return -1, nil
+		return 0, nil
 	}
 	if ref, hit := p.symBig[fk]; hit && ref.gen == p.gen {
-		return ref.id - 1, p.symMore[fk]
+		return ref.id, p.symMore[fk]
 	}
-	return -1, nil
+	return 0, nil
 }
 
 func (p *gll) maxRight(nid, left int) int {
