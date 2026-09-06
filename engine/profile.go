@@ -16,13 +16,12 @@ type Profile struct {
 	Steps       int   // derivation steps recorded
 	DFAStart    bool  // start rule ran as a DFA, not GLL
 	ChartBytes  int64 // approximate backing capacity of charts and steps
-	// CalleeReuse and CalleeDupDescriptors measure H1 (docs/parse-performance-research.md
-	// 5.1): the current GSS is keyed by (return slot, position), so two call sites that
-	// invoke the same nonterminal at the same position get distinct GSS nodes. CalleeReuse
-	// is GSSNodes minus the number of distinct (nonterminal, position) pairs among them.
-	// CalleeDupDescriptors sums, over each duplicated (nonterminal, position) group of size
-	// k>1, (k-1) times that nonterminal's production count: the descriptors that per-callee
-	// sharing would not have scheduled.
+	// CalleeReuse and CalleeDupDescriptors measured H1 (docs/parse-performance-research.md
+	// 5.1): how many GSS nodes asked the same (nonterminal, position) question as another
+	// node, and how many descriptors that duplication cost. The GSS is now keyed by
+	// (nonterminal, position) itself, so both are 0 by construction. calleeSharing still
+	// recomputes them from the chart rather than hardcoding 0, so a regression that
+	// reintroduced per-call-site nodes would show up here.
 	CalleeReuse          int
 	CalleeDupDescriptors int
 	// The following are not measured on this path; they stay 0.
@@ -74,53 +73,38 @@ func snapshotProfile(c *Compiled, p *gll, res *Result) *Profile {
 	}
 }
 
-// calleeKey identifies the (nonterminal, position) pair a GSS node calls. nid holds the
-// dense nonterminal id when resolved (>= 0); unresolved calls (nid < 0, e.g. a rule folded
-// into a DFA elsewhere) key on name instead, matching the fallback in the ekNT case of
-// process.
+// calleeKey identifies the (nonterminal, position) question a GSS node asks.
 type calleeKey struct {
-	nid  int
-	name string
-	pos  int
+	nid int
+	pos int
 }
 
-// calleeSharing implements the H1 measurement (docs/parse-performance-research.md 5.1):
-// how many GSS nodes ask the same (nonterminal, position) question as another node, and
-// how many descriptors that duplication costs. A GSS node is keyed by (return slot,
-// position); the nonterminal it calls is the element before the return slot,
-// c.prods[sl.pid].rhs[sl.ip-1]. The dummy start node (pid < 0) is not a call and is
+// calleeSharing is the H1 invariant check (docs/parse-performance-research.md 5.1). GSS
+// nodes are keyed by (nonterminal, position), so no two nodes can ask the same question
+// and both returns are 0. Recomputing them from the chart — rather than returning 0
+// outright — keeps the counter honest if the keying ever regresses to per-call-site
+// nodes. The sentinel nodes (dummyNID, unresolvedNID) name no nonterminal and are
 // skipped.
 func calleeSharing(c *Compiled, p *gll) (reuse, dupDescriptors int) {
 	counts := map[calleeKey]int{}
 	for _, n := range p.gss {
-		if n.sl.pid < 0 {
+		if n.nid < 0 {
 			continue
 		}
-		e := c.prods[n.sl.pid].rhs[n.sl.ip-1]
-		k := calleeKey{pos: n.i, nid: e.nid}
-		if e.nid < 0 {
-			k.name = e.nt
-		}
-		counts[k]++
+		counts[calleeKey{nid: n.nid, pos: n.i}]++
 	}
 	for k, n := range counts {
 		if n <= 1 {
 			continue
 		}
 		reuse += n - 1
-		nProds := 0
-		if k.nid >= 0 {
-			nProds = len(c.ntProdsN[k.nid])
-		} else {
-			nProds = len(c.ntProds[k.name])
-		}
-		dupDescriptors += (n - 1) * nProds
+		dupDescriptors += (n - 1) * len(c.ntProdsN[k.nid])
 	}
 	return reuse, dupDescriptors
 }
 
 func chartBytes(p *gll) int64 {
-	n := int64(cap(p.R))*24 + int64(cap(p.gss))*32 + int64(cap(p.edges))*16
+	n := int64(cap(p.R))*24 + int64(cap(p.gss))*32 + int64(cap(p.edges))*40
 	n += int64(cap(p.pops))*24 + int64(cap(p.steps))*12 + int64(cap(p.wrapEnd))*8
 	n += int64(cap(p.cells)) * 4
 	return n

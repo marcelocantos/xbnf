@@ -6,21 +6,21 @@ package engine
 import "testing"
 
 // TestAmbiguousInstanceTwoFrames pins the one place where the evidence links
-// could see less than the old per-instance step log did. A production
-// instance (pid, l) is shared by every caller, but its GSS frames are per
-// return slot: the links belong to the frame that completed the span, while
-// the step log merged every frame's matches. Here x is called at position 0
-// from both a and b, so instance (x, 0) has two frames, and x is internally
-// ambiguous over "aaa" — p q splits as ("a", "aa") or ("aa", "a").
+// could see less than the old per-instance step log did. Here x is called at
+// position 0 from both a and b, and x is internally ambiguous over "aaa" —
+// p q splits as ("a", "aa") or ("aa", "a").
 //
-// The pre-link rule, which the walk must reproduce: the competitors for
-// element 1 of x are the distinct start positions of every step recorded for
-// that element ending at 3, over both frames — {1, 2}. More than one, so
-// packed counts once, and with no #assoc the largest start wins, giving
-// p = "aa" and q = "a". top ::= a and top ::= b both derive the whole span,
-// so pick counts packed once more and takes the lower production id, the one
-// declared first. Total Packed 2. #longest only satisfies the compile-time
-// ambiguity check; nothing reads it, so selection is the default rule.
+// The GSS node for x at 0 is shared by both call sites, which carry their
+// return slots on its two edges, so x is expanded once and one evidence cell
+// per internal descriptor collects every match. That is exactly the pre-link
+// rule the walk must reproduce: the competitors for element 1 of x are the
+// distinct start positions of every step recorded for that element ending at
+// 3, over both call sites — {1, 2}. More than one, so packed counts once, and
+// with no #assoc the largest start wins, giving p = "aa" and q = "a".
+// top ::= a and top ::= b both derive the whole span, so pick counts packed
+// once more and takes the lower production id, the one declared first. Total
+// Packed 2. #longest only satisfies the compile-time ambiguity check; nothing
+// reads it, so selection is the default rule.
 func TestAmbiguousInstanceTwoFrames(t *testing.T) {
 	c := mustCompileXBNF(t, `
 top -> (a | b) #longest ;
@@ -36,21 +36,19 @@ q -> ("a" | "a" q) #longest ;
 		t.Fatalf("parse: %s", res.Error)
 	}
 
-	frames := 0
+	nodes, callers := 0, 0
 	for _, n := range p.gss {
-		if n.sl.pid < 0 || n.i != 0 || n.sl.ip == 0 {
+		if n.nid != c.ntNID["x"] || n.i != 0 {
 			continue
 		}
-		pr := c.prods[n.sl.pid]
-		if n.sl.ip > len(pr.rhs) {
-			continue
-		}
-		if e := pr.rhs[n.sl.ip-1]; e.kind == ekNT && e.nt == "x" {
-			frames++
+		nodes++
+		for e := n.ehead; e != 0; e = p.edges[e].next {
+			callers++
 		}
 	}
-	if frames != 2 {
-		t.Fatalf("instance (x, 0) has %d GSS frames, want 2 — the test no longer covers frame merging", frames)
+	if nodes != 1 || callers != 2 {
+		t.Fatalf("instance (x, 0) has %d GSS nodes and %d callers, want 1 and 2 — "+
+			"the test no longer covers caller merging", nodes, callers)
 	}
 
 	if res.Packed != 2 {
