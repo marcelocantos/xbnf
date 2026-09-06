@@ -105,7 +105,7 @@ func calleeSharing(c *Compiled, p *gll) (reuse, dupDescriptors int) {
 
 func chartBytes(p *gll) int64 {
 	n := int64(cap(p.R))*24 + int64(cap(p.gss))*32 + int64(cap(p.edges))*40
-	n += int64(cap(p.pops))*24 + int64(cap(p.steps))*12 + int64(cap(p.wrapEnd))*8
+	n += int64(cap(p.pops))*24 + int64(cap(p.steps))*12 + int64(cap(p.wrapEnd))*4
 	n += int64(cap(p.cells)) * 4
 	return n
 }

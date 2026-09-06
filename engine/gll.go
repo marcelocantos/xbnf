@@ -116,7 +116,7 @@ type gll struct {
 	pickBuf   []int            // builder.pick's scratch candidate list; reset per pickAt call
 	start     string
 	fail      failInfo
-	wrapEnd   []int     // memoised skipWrap per position; 0 = unknown, else end+1
+	wrapEnd   []int32   // memoised skipWrap per position; 0 = unknown, else end+1
 	wrapIn    string    // input wrapEnd was filled for
 	wrapC     *Compiled // #wrap that wrapEnd was filled for; reuse needs both
 	work      int       // descriptors processed
@@ -283,7 +283,7 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	if p.wrapC == c && p.wrapIn == input && len(p.wrapEnd) == n {
 		// same Compiled and input: skipWrap results are unchanged
 	} else if cap(p.wrapEnd) < n {
-		p.wrapEnd = make([]int, n)
+		p.wrapEnd = make([]int32, n)
 		p.wrapIn = input
 		p.wrapC = c
 	} else {
@@ -463,10 +463,10 @@ func (p *gll) skip(i int) int {
 		return i
 	}
 	if e := p.wrapEnd[i]; e != 0 {
-		return e - 1
+		return int(e) - 1
 	}
 	e := p.c.skipWrap(p.input, i)
-	p.wrapEnd[i] = e + 1
+	p.wrapEnd[i] = int32(e + 1)
 	return e
 }
 
@@ -1144,7 +1144,7 @@ func (p *gll) compsAt(nid, l, r int, dst []int) (int, []int) {
 			return 0, dst
 		}
 		if !packed {
-			return id, dst
+			return int(id), dst
 		}
 		head, _ := p.moreAt.get(key, p.gen)
 		return int(id), p.appendMoreChain(dst, int(head))
