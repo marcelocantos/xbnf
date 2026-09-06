@@ -16,6 +16,8 @@ func TestProfileNestedJSON(t *testing.T) {
 	if !res.OK {
 		t.Fatalf("parse failed: %s", res.Error)
 	}
-	t.Logf("nestedJSON(64<<10): Descriptors=%d GSSNodes=%d CalleeReuse=%d CalleeDupDescriptors=%d",
-		prof.Descriptors, prof.GSSNodes, prof.CalleeReuse, prof.CalleeDupDescriptors)
+	t.Logf("nestedJSON(64<<10): Descriptors=%d GSSNodes=%d GSSEdges=%d Completions=%d Steps=%d "+
+		"CalleeReuse=%d CalleeDupDescriptors=%d",
+		prof.Descriptors, prof.GSSNodes, prof.GSSEdges, prof.Completions, prof.Steps,
+		prof.CalleeReuse, prof.CalleeDupDescriptors)
 }

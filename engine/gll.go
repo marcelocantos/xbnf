@@ -31,16 +31,35 @@ type task struct {
 	cell int32
 }
 
+// gssNode is one parsing question: nonterminal nid asked at position i. Every
+// call site that asks it shares this node, so the nonterminal's productions are
+// forked once and each completion is published once, however many places called
+// it (H1, docs/parse-performance-research.md 5.1). The return slots live on the
+// edges instead.
 type gssNode struct {
-	sl    slot
+	nid   int // dummyNID for the root's caller; unresolvedNID for a dead call
 	i     int
 	ehead int // 0 = none; index into gll.edges
 	phead int // 0 = none; index into gll.pops
 }
 
+// The two GSS node ids that name no nonterminal. dummyNID is the root's
+// caller: the start rule is forked under it and its completion returns to
+// nobody. unresolvedNID is an ekNT element whose name has no productions and
+// is not a DFA, so nothing can ever complete through it; one shared dead node
+// saves keying those calls by name.
+const (
+	dummyNID      = -1
+	unresolvedNID = -2
+)
+
+// gssEdge is one subscription to a node's completions: caller frame to
+// resumes at slot ret, with cell as the evidence of the descriptor that made
+// the call.
 type gssEdge struct {
 	to, next int
-	cell     int32 // evidence cell of the caller descriptor that made this edge
+	ret      slot
+	cell     int32
 }
 
 type gssPop struct {
@@ -456,7 +475,7 @@ func (p *gll) drain() {
 }
 
 type gssKey struct {
-	pid, ip, i int
+	nid, i int
 }
 
 func (c *Compiled) gll(start, input string) *Result {
@@ -484,7 +503,7 @@ func (c *Compiled) run(start, input string) (*Result, *gll) {
 
 func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 	pos := p.skip(0)
-	dummy := p.gssNode(slot{pid: -1, ip: 0}, pos)
+	dummy, _ := p.gssNode(dummyNID, pos)
 	if c.IsDFA(start) {
 		end, _, ok := c.dfa[start].match(input, pos)
 		if !ok {
@@ -637,12 +656,25 @@ func (p *gll) forkUnit(pid, u, i int) {
 		return
 	}
 	e := p.c.prods[pid].rhs[0]
-	v := p.create(slot{pid: pid, ip: 1}, u, i, cell)
+	v, vfresh := p.create(callNID(e.nid), slot{pid: pid, ip: 1}, u, i, cell)
+	if !vfresh {
+		return
+	}
 	if e.nid >= 0 {
 		p.forkID(e.nid, v, i)
 		return
 	}
 	p.fork(e.nt, v, i)
+}
+
+// callNID is the GSS key of the nonterminal an ekNT element calls. A name that
+// resolved to no productions and no DFA (nid < 0) can never complete, so every
+// such call shares one dead node instead of needing a name-keyed table.
+func callNID(nid int) int {
+	if nid < 0 {
+		return unresolvedNID
+	}
+	return nid
 }
 
 func (p *gll) forkNamed(nt string, u, i int) {
@@ -779,63 +811,71 @@ func (p *gll) link(cell int32, i int, prev int32) {
 	p.cells[cell] = int32(len(p.steps) - 1)
 }
 
-func packGSS(sl slot, i int) (uint64, bool) {
-	pid := sl.pid + 1 // dummy slot uses pid -1
-	if pid < 0 || pid > 0xFFFF || sl.ip < 0 || sl.ip > 0xFF || i < 0 || i > 0xFFFFFFFF {
+func packGSS(nid, i int) (uint64, bool) {
+	k := nid - unresolvedNID // shifts the two sentinel ids up to 0 and 1
+	if k < 0 || k > 0xFFFFFFFF || i < 0 || i > 0xFFFFFFFF {
 		return 0, false
 	}
-	return uint64(pid)<<40 | uint64(sl.ip)<<32 | uint64(uint32(i)), true
+	return uint64(k)<<32 | uint64(uint32(i)), true
 }
 
-func (p *gll) gssNode(sl slot, i int) int {
-	if key, ok := packGSS(sl, i); ok {
-		if id, ok := p.gssAt.get(key, p.gen); ok {
-			return id
+// gssNode finds or creates the node for nonterminal nid at position i. fresh
+// says this call created it, which is the one call that must fork nid's
+// productions: every later call site subscribes to the expansion already
+// running under the node.
+func (p *gll) gssNode(nid, i int) (int, bool) {
+	if key, ok := packGSS(nid, i); ok {
+		idx, hit := p.gssAt.probe(key, p.gen)
+		if hit {
+			return p.gssAt.idAt(idx), false
 		}
 		id := len(p.gss)
-		p.gss = append(p.gss, gssNode{sl: sl, i: i})
-		p.gssAt.put(key, p.gen, id)
-		return id
+		p.gss = append(p.gss, gssNode{nid: nid, i: i})
+		p.gssAt.placeAt(idx, key, p.gen, id)
+		return id, true
 	}
-	k := gssKey{pid: sl.pid, ip: sl.ip, i: i}
+	k := gssKey{nid: nid, i: i}
 	if p.gssBig == nil {
 		p.gssBig = map[gssKey]genID{}
 	}
 	if ref, ok := p.gssBig[k]; ok && ref.gen == p.gen {
-		return ref.id
+		return ref.id, false
 	}
 	id := len(p.gss)
-	p.gss = append(p.gss, gssNode{sl: sl, i: i})
+	p.gss = append(p.gss, gssNode{nid: nid, i: i})
 	p.gssBig[k] = genID{gen: p.gen, id: id}
-	return id
+	return id, true
 }
 
-// create links the caller frame u into the GSS node for return slot ret. The
-// edge carries the caller descriptor's evidence cell, which is what a later
-// pop must record as the predecessor of the returning match.
-func (p *gll) create(ret slot, u, i int, cell int32) int {
-	v := p.gssNode(ret, i)
+// create subscribes caller frame u, resuming at slot ret, to the node for
+// nonterminal nid at i. The edge carries the caller descriptor's evidence
+// cell, which is what a later pop records as the predecessor of the returning
+// match; completions already recorded on the node are replayed to the new
+// subscriber. The edge is in place before create returns, so a fresh node's
+// productions — which the caller must fork — can recurse straight back into
+// this node and still see the subscription.
+func (p *gll) create(nid int, ret slot, u, i int, cell int32) (int, bool) {
+	v, fresh := p.gssNode(nid, i)
 	for e := p.gss[v].ehead; e != 0; e = p.edges[e].next {
-		if p.edges[e].to == u {
-			return v
+		if ed := &p.edges[e]; ed.to == u && ed.ret == ret {
+			return v, fresh
 		}
 	}
-	p.edges = append(p.edges, gssEdge{to: u, next: p.gss[v].ehead, cell: cell})
+	p.edges = append(p.edges, gssEdge{to: u, next: p.gss[v].ehead, ret: ret, cell: cell})
 	p.gss[v].ehead = len(p.edges) - 1
 	for pop := p.gss[v].phead; pop != 0; pop = p.pops[pop].next {
 		p.advance(ret, u, i, p.pops[pop].i, cell)
 	}
-	return v
+	return v, fresh
 }
 
 func (p *gll) pop(u, i int) {
-	if u < 0 || p.gss[u].sl.pid < 0 {
+	if u < 0 || p.gss[u].nid < 0 {
 		// dummy GSS: completing start production
 		return
 	}
 	p.pops = append(p.pops, gssPop{i: i, next: p.gss[u].phead})
 	p.gss[u].phead = len(p.pops) - 1
-	ret := p.gss[u].sl
 	from := p.gss[u].i
 	// A unit production ends the moment its one nonterminal does, so the
 	// descriptor advance would enqueue has nothing left to match: it would
@@ -845,22 +885,24 @@ func (p *gll) pop(u, i int) {
 	// is still seen, because sym holds the cell, not a snapshot of it.
 	// Nothing below creates a GSS edge, so u's edge list cannot grow under
 	// the loop, and the recursion climbs a chain of unit productions in one
-	// pass.
-	unit := p.c.unitProd[ret.pid]
-	for e := p.gss[u].ehead; e != 0; e = p.edges[e].next {
-		to := p.edges[e].to
-		if !unit {
-			p.advance(ret, to, from, i, p.edges[e].cell)
+	// pass. Whether the return is a unit production is now a property of the
+	// edge, not of the node: one node serves every call site of nid at i,
+	// and only some of them may be `A ::= nid`.
+	for e := p.gss[u].ehead; e != 0; {
+		ed := p.edges[e]
+		e = ed.next
+		if !p.c.unitProd[ed.ret.pid] {
+			p.advance(ed.ret, ed.to, from, i, ed.cell)
 			continue
 		}
-		cell, fresh, ok := p.claim(ret, to, i)
+		cell, fresh, ok := p.claim(ed.ret, ed.to, i)
 		if !ok {
 			continue
 		}
-		p.link(cell, from, p.edges[e].cell)
+		p.link(cell, from, ed.cell)
 		if fresh {
-			p.complete(ret.pid, p.gss[to].i, i, cell)
-			p.pop(to, i)
+			p.complete(ed.ret.pid, p.gss[ed.to].i, i, cell)
+			p.pop(ed.to, i)
 		}
 	}
 }
@@ -935,7 +977,10 @@ func (p *gll) process(d task) {
 			}
 			end = m
 		case ekNT:
-			v := p.create(next, d.u, i, cell)
+			v, fresh := p.create(callNID(e.nid), next, d.u, i, cell)
+			if !fresh {
+				return // another call site already forked this node's productions
+			}
 			if e.nid >= 0 {
 				p.forkID(e.nid, v, i)
 			} else {
@@ -1116,7 +1161,7 @@ func (p *gll) succeeds(nt string, i int) bool {
 	q := newGLL(p.c, p.input, nt)
 	saved := q.wrapEnd
 	q.wrapEnd = p.wrapEnd
-	dummy := q.gssNode(slot{pid: -1, ip: 0}, i)
+	dummy, _ := q.gssNode(dummyNID, i)
 	q.rootAt(q.c.ntNID[nt], i)
 	q.fork(nt, dummy, i)
 	q.drain()
