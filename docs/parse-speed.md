@@ -69,11 +69,10 @@ bindings while preserving shared callees. The fresh full suite, vet, standing bu
 42/42 live language comparisons pass. All existing successful golden fingerprints remain unchanged; T30's deliberate
 failed-tree fingerprint update is described above.
 
-Stable timing is **not established** for this correction. The normal corpus gate against `9c47802`, with its default
-ten pairs and two-second duration, stopped at the idle check after 90 seconds: load1 was 24.15 against a 2.5 maximum.
-Two subsequent diagnostic runs used `--skip-idle --pairs 4 --benchtime 500ms` to inspect allocations on the same shipped
-`Compiled.Parse` benchmark and unchanged fixtures. The first was NOISY. It exposed capture-descriptor map reconstruction;
-reusable chart indexing removed most of that allocation:
+Earlier the same day, the normal corpus gate against `9c47802` stopped at the idle check after 90 seconds: load1 was
+24.15 against a 2.5 maximum. Two diagnostic runs used `--skip-idle --pairs 4 --benchtime 500ms` to inspect allocations
+on the same shipped `Compiled.Parse` benchmark and unchanged fixtures. The first was NOISY. It exposed
+capture-descriptor map reconstruction; reusable chart indexing removed most of that allocation:
 
 | Workload | Pre-fix baseline B/op | First correction B/op | Final pooled correction B/op |
 |---|---:|---:|---:|
@@ -87,13 +86,67 @@ maps still allocate. These figures do not measure total retained memory or compi
 The final diagnostic reported an aggregate old/new timing ratio of 0.974×, with one candidate win in four pairs.
 Python and YAML reported 0.942× and 0.947× respectively; XML's timing row was NOISY. Its overall script verdict was
 DISCARD (TIME: TIE, MEM: LOSE), an optimization keep/discard classification rather than a reason to restore incorrect
-capture semantics. The idle check was deliberately skipped and the run was short, so these are cost signals for
-investigation, not a stable latency estimate. 🎯T31 records the standard corpus and auxiliary JSON measurements still
-needed. No claim that T25's exact speedup survives this correction has been made.
+capture semantics. The idle check was deliberately skipped and the run was short, so those are cost signals for
+investigation, not a stable latency estimate. No claim that T25's exact speedup survives this correction has been made.
 
-Raw local logs: `/tmp/xbnf-t2930-corpus-gate.txt`, `/tmp/xbnf-t2930-corpus-allocation-probe.txt`, and
-`/tmp/xbnf-t2930-pooled-allocation-probe.txt`. The standard follow-up command is
-`scripts/bench-json-stable.sh --base 9c47802 --bench corpus`; omit `--bench corpus` for the auxiliary JSON gate.
+Raw diagnostic logs: `/tmp/xbnf-t2930-corpus-gate.txt`, `/tmp/xbnf-t2930-corpus-allocation-probe.txt`, and
+`/tmp/xbnf-t2930-pooled-allocation-probe.txt`.
+
+## T31 stable gates vs `9c47802` (2026-09-06)
+
+HEAD `41ffcd3` (T29/T30) versus `9c47802`, default **10 × 2 s**, `GOMAXPROCS=1`, idle and noise checks **not** skipped.
+Benchmark definitions and fixtures were not changed. The seven-language corpus is primary; JSON 64 KB is auxiliary.
+
+### Corpus (primary)
+
+Two full-discipline runs both **passed idle** and both finished **`VERDICT: NOISY`**. A NOISY result is not evidence of
+unchanged speed; 🎯T31 stays open.
+
+| Run | Idle load1 | End load1 | Aggregate speedup | wins | TIME | MEM | VERDICT |
+|---|---:|---:|---:|---:|---|---|---|
+| 1 | 2.44 | 3.00 | 0.969× | 3/10 | NOISY | LOSE | NOISY |
+| 2 | 2.44 | 4.85 | 1.000× | 5/10 | NOISY | LOSE | NOISY |
+
+Per-language rows (B/op is median of the ten pairs; identical at display precision on both runs):
+
+| Language | Run 1 speedup | Run 1 tag | Run 2 speedup | Run 2 tag | B/op old | B/op new |
+|---|---:|---|---:|---|---:|---:|
+| commonmark | 0.990× | DISCARD | 1.004× | NOISY | 0.26 MB | 0.26 MB |
+| go | 0.981× | DISCARD | 0.969× | LOSE | 0.13 MB | 0.13 MB |
+| javascript | 0.982× | DISCARD | 0.983× | DISCARD | 0.05 MB | 0.05 MB |
+| python | 0.948× | LOSE | 0.943× | LOSE | 0.19 MB | 0.19 MB |
+| sql | 0.986× | NOISY | 1.022× | NOISY | 1.26 MB | 1.26 MB |
+| xml | 0.928× | LOSE | 0.961× | NOISY | 1.29 MB | 1.38 MB |
+| yaml | 0.985× | DISCARD | 0.990× | DISCARD | 0.03 MB | 0.03 MB |
+| **aggregate** | **0.969×** | **NOISY** | **1.000×** | **NOISY** | **3.20 MB** | **3.30 MB** |
+
+**Allocation vs retained memory.** B/op is repeated-parse allocation on `Compiled.Parse`, not RSS and not compile-time
+retained size. XML +0.09 MB and aggregate +0.10 MB match the pooled-correction diagnostic. That extra B/op is the
+capture-descriptor chart index participating in the existing chart-pool capacity bound: it is retained storage reused
+across parses, not a per-parse map rebuild. The other six languages' B/op are unchanged at the harness's displayed
+precision. Binding-intern and completed-context maps remain per-parse allocations (`docs/capture-context.md`). These
+B/op figures do not measure total retained process memory.
+
+Python was `LOSE` on both runs (0.948× then 0.943×, 0/10). That is a language-level timing cost signal, not an aggregate
+keep/discard: the corpus `VERDICT` is still NOISY. Do not restore pre-T29 capture semantics to recover old timings.
+
+### JSON 64 KB (auxiliary)
+
+One full-discipline run, idle load1=2.29, end load1=1.87. Valid (not NOISY):
+
+| | old `9c47802` | new `41ffcd3` |
+|---|---:|---:|
+| median ns/op | 3.44 ms | 3.49 ms |
+| pair speedup median | 0.986× (2/10 new-faster, ratio cv 7.7%) | |
+| B/op | 2.35 MB | 2.35 MB |
+| allocs/op | 2 | 2 |
+| TIME / MEM / VERDICT | TIE / TIE / **DISCARD** | |
+
+JSON allocation is unchanged. The DISCARD is the optimisation keep/discard label for a tie, not a reason to revert T29.
+
+Raw logs: `/tmp/xbnf-t31/corpus-gate-attempt1-noisy.txt`, `/tmp/xbnf-t31/corpus-gate-attempt2-noisy.txt`,
+`/tmp/xbnf-t31/json-gate.txt`. Repeat with `scripts/bench-json-stable.sh --base 9c47802 --bench corpus` when the host
+can hold load1 ≤ 2.5 for the whole interleaved corpus (about seven minutes here), then omit `--bench corpus` for JSON.
 
 ## Corpus gate (🎯T25.2)
 
