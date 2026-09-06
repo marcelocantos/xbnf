@@ -209,18 +209,24 @@ func (b *builder) where(pos int) string {
 // pickAt chooses among the productions that all span the same input, and
 // returns the winner with the evidence cell of its completion. Priority is
 // compared first, then #prefer / #avoid. Stack fallbacks lose to anything.
+//
+// pickAt and pick share one scratch slice (b.p.pickBuf) across every
+// ambiguous span in the parse: compsAt appends the extra completions onto it
+// (after a slot reserved for the primary one), and pick filters it in place,
+// so a packed span costs no allocation once the buffer has grown to its
+// high-water mark.
 func (b *builder) pickAt(nt string, l, r int) (int, int32) {
-	comp, extra := b.p.compsAt(b.p.c.ntNID[nt], l, r)
+	buf := append(b.p.pickBuf[:0], 0) // reserve slot 0 for the primary completion
+	comp, buf := b.p.compsAt(b.p.c.ntNID[nt], l, r, buf)
+	b.p.pickBuf = buf
 	if comp == 0 {
 		return -1, 0
 	}
-	if extra == nil {
+	if len(buf) == 1 {
 		return compPID(comp), compCell(comp)
 	}
-	comps := make([]int, 1, 1+len(extra))
-	comps[0] = comp
-	comps = append(comps, extra...)
-	win := b.pick(comps)
+	buf[0] = comp
+	win := b.pick(buf)
 	return compPID(win), compCell(win)
 }
 
@@ -231,19 +237,19 @@ func (b *builder) pick(comps []int) int {
 		return comps[0]
 	}
 	prods := b.p.c.prods
-	cands := append([]int{}, comps...)
+	cands := comps
 	best := prods[compPID(cands[0])].dirs.priority
 	for _, c := range cands[1:] {
 		if p := prods[compPID(c)].dirs.priority; p > best {
 			best = p
 		}
 	}
-	cands = filter(cands, func(c int) bool { return prods[compPID(c)].dirs.priority == best })
-	if pref := filter(cands, func(c int) bool { return prods[compPID(c)].dirs.prefer }); len(pref) > 0 {
+	cands, _ = filter(cands, func(c int) bool { return prods[compPID(c)].dirs.priority == best })
+	if pref, ok := filter(cands, func(c int) bool { return prods[compPID(c)].dirs.prefer }); ok {
 		cands = pref
-	} else if keep := filter(cands, func(c int) bool {
+	} else if keep, ok := filter(cands, func(c int) bool {
 		return !prods[compPID(c)].dirs.avoid && !prods[compPID(c)].fallback
-	}); len(keep) > 0 {
+	}); ok {
 		cands = keep
 	}
 	if len(cands) > 1 {
@@ -253,14 +259,31 @@ func (b *builder) pick(comps []int) int {
 	return cands[0]
 }
 
-func filter(xs []int, keep func(int) bool) []int {
-	var out []int
+// filter compacts xs in place to the elements for which keep is true and
+// reports whether any matched. When none match, xs is returned unchanged
+// (matched=false) so a caller can fall back to a broader candidate set
+// without having kept a separate copy around.
+func filter(xs []int, keep func(int) bool) ([]int, bool) {
+	n := 0
 	for _, x := range xs {
 		if keep(x) {
-			out = append(out, x)
+			n++
 		}
 	}
-	return out
+	if n == 0 {
+		return xs, false
+	}
+	if n == len(xs) {
+		return xs, true
+	}
+	w := 0
+	for _, x := range xs {
+		if keep(x) {
+			xs[w] = x
+			w++
+		}
+	}
+	return xs[:w], true
 }
 
 // splices reports whether a synthetic nonterminal is transparent: its

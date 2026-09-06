@@ -51,6 +51,14 @@ type famKey struct {
 	nid, l, r int
 }
 
+// moreItem is one node of a per-family singly linked list of extra packComp
+// values recorded when a span packs more than one production. Index 0 is the
+// dummy slot; a real chain's terminal node has next == 0.
+type moreItem struct {
+	comp int
+	next int
+}
+
 type failInfo struct {
 	pos  int
 	want map[string]bool
@@ -75,7 +83,10 @@ type gll struct {
 	startLeft int
 	startEnd  int
 	symBig    map[famKey]genID
-	symMore   map[famKey][]int // extra packComp values when a span is packed
+	moreAt    uMap             // packFam(nid,l,r) → head+1 into moreSlab this generation
+	moreBig   map[famKey]genID // same, keyed by famKey when packFam does not fit in 64 bits
+	moreSlab  []moreItem       // dummy at 0; per-family singly linked lists of extra comps
+	pickBuf   []int            // builder.pick's scratch candidate list; reset per pickAt call
 	start     string
 	fail      failInfo
 	wrapEnd   []int     // memoised skipWrap per position; 0 = unknown, else end+1
@@ -144,7 +155,6 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	p.work = 0
 	p.Ubig = nil
 	p.gssBig = nil
-	p.symMore = nil
 	p.fail.pos = -1
 	p.fail.rule = ""
 	p.fail.dfa = false
@@ -160,7 +170,9 @@ func (p *gll) bind(c *Compiled, input, start string) {
 		p.uset.clear()
 		p.gssAt.clear()
 		p.sym.clear()
+		p.moreAt.clear()
 		clear(p.symBig)
+		clear(p.moreBig)
 		p.gen = 1
 	}
 	if p.uset.slots == nil {
@@ -182,11 +194,17 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	} else {
 		p.sym.reset()
 	}
+	if p.moreAt.slots == nil {
+		p.moreAt.init(n / 16)
+	} else {
+		p.moreAt.reset()
+	}
 	p.spineBuf = p.spineBuf[:0]
 	p.cells = keepDummy(p.cells, n)
 	p.steps = keepDummy(p.steps, n)
 	p.edges = keepDummy(p.edges, n/2+1)
 	p.pops = keepDummy(p.pops, n/2+1)
+	p.moreSlab = keepDummy(p.moreSlab, n/16)
 	if p.wrapC == c && p.wrapIn == input && len(p.wrapEnd) == n {
 		// same Compiled and input: skipWrap results are unchanged
 	} else if cap(p.wrapEnd) < n {
@@ -229,14 +247,18 @@ func (p *gll) release() {
 	if cap(p.pops) > 0 {
 		p.pops = p.pops[:1]
 	}
+	if cap(p.moreSlab) > 0 {
+		p.moreSlab = p.moreSlab[:1]
+	}
 	p.tnodes = p.tnodes[:0]
 	p.tkids = p.tkids[:0]
 	p.kscratch = p.kscratch[:0]
+	p.pickBuf = p.pickBuf[:0]
 	p.spineBuf = p.spineBuf[:0]
 	p.Ubig = nil
 	p.gssBig = nil
 	p.symBig = nil
-	p.symMore = nil
+	p.moreBig = nil
 	p.work = 0
 	p.fail.pos = -1
 	p.fail.rule = ""
@@ -882,34 +904,87 @@ func (p *gll) rootAt(nid, left int) {
 	p.startEnd = -1
 }
 
+// addSymMore records comp as an extra completion for family k, deduplicating
+// on production against whatever is already chained there. The chain lives
+// in moreSlab, a pooled slab of (comp, next) nodes; its head (or, when
+// packFam doesn't fit k in 64 bits, its famKey-keyed head) is tracked per
+// generation exactly like sym/symBig track the family's primary completion,
+// so a cleared generation costs no work beyond the gen bump those tables
+// already pay for.
 func (p *gll) addSymMore(k famKey, comp int) {
-	extra := p.symMore[k]
-	pid := compPID(comp)
-	for _, old := range extra {
-		if compPID(old) == pid {
-			return
+	if key, ok := packFam(k.nid, k.l, k.r); ok {
+		head, _ := p.moreAt.get(key, p.gen)
+		head, added := p.chainMore(head, comp)
+		if added {
+			p.moreAt.put(key, p.gen, head)
 		}
+		return
 	}
-	if p.symMore == nil {
-		p.symMore = map[famKey][]int{}
+	head := 0
+	if ref, hit := p.moreBig[k]; hit && ref.gen == p.gen {
+		head = ref.id
 	}
-	p.symMore[k] = append(extra, comp)
+	head, added := p.chainMore(head, comp)
+	if added {
+		if p.moreBig == nil {
+			p.moreBig = map[famKey]genID{}
+		}
+		p.moreBig[k] = genID{gen: p.gen, id: head}
+	}
 }
 
-// compsAt returns the completions of (nid, l, r): the first one packed, and
-// any competitors. 0 means the span was never derived.
-func (p *gll) compsAt(nid, l, r int) (int, []int) {
+// chainMore appends comp to the tail of the moreSlab chain starting at head,
+// preserving insertion order, unless a completion of the same production is
+// already present. It reports the (possibly unchanged) head and whether comp
+// was newly added.
+func (p *gll) chainMore(head, comp int) (int, bool) {
+	pid := compPID(comp)
+	tail := 0
+	for h := head; h != 0; h = p.moreSlab[h].next {
+		if compPID(p.moreSlab[h].comp) == pid {
+			return head, false
+		}
+		tail = h
+	}
+	p.moreSlab = append(p.moreSlab, moreItem{comp: comp})
+	id := len(p.moreSlab) - 1
+	if tail == 0 {
+		head = id
+	} else {
+		p.moreSlab[tail].next = id
+	}
+	return head, true
+}
+
+// compsAt reports the primary completion recorded for family (nid, l, r),
+// plus any extra completions appended onto dst (in the order they were first
+// recorded), or (0, dst) if the family was never recorded this generation.
+func (p *gll) compsAt(nid, l, r int, dst []int) (int, []int) {
 	fk := famKey{nid: nid, l: l, r: r}
 	if key, ok := packFam(nid, l, r); ok {
-		if id, hit := p.sym.get(key, p.gen); hit {
-			return id, p.symMore[fk]
+		id, hit := p.sym.get(key, p.gen)
+		if !hit {
+			return 0, dst
 		}
-		return 0, nil
+		head, _ := p.moreAt.get(key, p.gen)
+		return id, p.appendMoreChain(dst, head)
 	}
-	if ref, hit := p.symBig[fk]; hit && ref.gen == p.gen {
-		return ref.id, p.symMore[fk]
+	ref, hit := p.symBig[fk]
+	if !hit || ref.gen != p.gen {
+		return 0, dst
 	}
-	return 0, nil
+	head := 0
+	if mref, hit := p.moreBig[fk]; hit && mref.gen == p.gen {
+		head = mref.id
+	}
+	return ref.id, p.appendMoreChain(dst, head)
+}
+
+func (p *gll) appendMoreChain(dst []int, head int) []int {
+	for h := head; h != 0; h = p.moreSlab[h].next {
+		dst = append(dst, p.moreSlab[h].comp)
+	}
+	return dst
 }
 
 // maxRight is the furthest end of the root question; -1 if it never completed.
