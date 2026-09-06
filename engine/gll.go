@@ -59,34 +59,39 @@ type failInfo struct {
 }
 
 type gll struct {
-	c        *Compiled
-	input    string
-	R        []task
-	uset     uMap           // packDesc → evidence cell this generation
-	Ubig     map[desc]genID // used when pid/u/i do not pack into 64 bits
-	gss      []gssNode
-	gssAt    uMap
-	gssBig   map[gssKey]genID
-	sym      uMap // packFam(nid,l,r) → packComp of the first prod this generation
-	endAt    uMap // packNidLeft(nid,l) → max right this generation
-	symBig   map[famKey]genID
-	symMore  map[famKey][]int // extra packComp values when a span is packed
-	start    string
-	fail     failInfo
-	wrapEnd  []int     // memoised skipWrap per position; 0 = unknown, else end+1
-	wrapIn   string    // input wrapEnd was filled for
-	wrapC    *Compiled // #wrap that wrapEnd was filled for; reuse needs both
-	work     int       // descriptors processed
-	cells    []int32   // cell → head of its incoming step list; dummy at 0
-	steps    []step    // dummy at 0
-	edges    []gssEdge
-	pops     []gssPop
-	tnodes   []inode
-	tkids    []int
-	kscratch []int
-	spineBuf []kidSpan
-	spineOut []int
-	gen      uint32 // bumps each Parse; lookup maps are not cleared
+	c      *Compiled
+	input  string
+	R      []task
+	uset   uMap           // packDesc → evidence cell this generation
+	Ubig   map[desc]genID // used when pid/u/i do not pack into 64 bits
+	gss    []gssNode
+	gssAt  uMap
+	gssBig map[gssKey]genID
+	sym    uMap // packFam(nid,l,r) → packComp of the first prod this generation
+	// startNT/startLeft identify the parse's root question; startEnd is the
+	// furthest completion of that question (-1 = none). Completions are only
+	// ever asked for their maximum end at the root, so this replaces a map.
+	startNT   int
+	startLeft int
+	startEnd  int
+	symBig    map[famKey]genID
+	symMore   map[famKey][]int // extra packComp values when a span is packed
+	start     string
+	fail      failInfo
+	wrapEnd   []int     // memoised skipWrap per position; 0 = unknown, else end+1
+	wrapIn    string    // input wrapEnd was filled for
+	wrapC     *Compiled // #wrap that wrapEnd was filled for; reuse needs both
+	work      int       // descriptors processed
+	cells     []int32   // cell → head of its incoming step list; dummy at 0
+	steps     []step    // dummy at 0
+	edges     []gssEdge
+	pops      []gssPop
+	tnodes    []inode
+	tkids     []int
+	kscratch  []int
+	spineBuf  []kidSpan
+	spineOut  []int
+	gen       uint32 // bumps each Parse; lookup maps are not cleared
 }
 
 func packFam(nid, l, r int) (uint64, bool) {
@@ -123,10 +128,6 @@ func compPID(v int) int { return v>>32 - 1 }
 
 func compCell(v int) int32 { return int32(v & 0xFFFFFFFF) }
 
-func packNidLeft(nid, l int) uint64 {
-	return uint64(uint32(nid))<<32 | uint64(uint32(l))
-}
-
 var gllPool = sync.Pool{New: func() any { return new(gll) }}
 
 func newGLL(c *Compiled, input, start string) *gll {
@@ -159,7 +160,6 @@ func (p *gll) bind(c *Compiled, input, start string) {
 		p.uset.clear()
 		p.gssAt.clear()
 		p.sym.clear()
-		p.endAt.clear()
 		clear(p.symBig)
 		p.gen = 1
 	}
@@ -181,11 +181,6 @@ func (p *gll) bind(c *Compiled, input, start string) {
 		p.sym.init(n)
 	} else {
 		p.sym.reset()
-	}
-	if p.endAt.slots == nil {
-		p.endAt.init(n / 4)
-	} else {
-		p.endAt.reset()
 	}
 	p.spineBuf = p.spineBuf[:0]
 	p.cells = keepDummy(p.cells, n)
@@ -429,6 +424,7 @@ func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 		}
 		return &Result{OK: true, End: end, Tree: tree}, p
 	}
+	p.rootAt(c.ntNID[start], pos)
 	p.fork(start, dummy, pos)
 	p.drain()
 	end := p.maxRight(c.ntNID[start], pos)
@@ -849,14 +845,15 @@ func (p *gll) recordProd(nid, left, right, pid int, cell int32) {
 	fk := famKey{nid: nid, l: left, r: right}
 	comp := packComp(pid, cell)
 	if key, ok := packFam(nid, left, right); ok {
-		if id, hit := p.sym.get(key, p.gen); hit {
-			if compPID(id) == pid {
+		idx, hit := p.sym.probe(key, p.gen)
+		if hit {
+			if compPID(p.sym.idAt(idx)) == pid {
 				return
 			}
 			p.addSymMore(fk, comp)
 			return
 		}
-		p.sym.put(key, p.gen, comp)
+		p.sym.placeAt(idx, key, p.gen, comp)
 		return
 	}
 	if ref, hit := p.symBig[fk]; hit && ref.gen == p.gen {
@@ -873,10 +870,16 @@ func (p *gll) recordProd(nid, left, right, pid int, cell int32) {
 }
 
 func (p *gll) noteEnd(nid, left, right int) {
-	k := packNidLeft(nid, left)
-	if cur, ok := p.endAt.get(k, p.gen); !ok || right > cur {
-		p.endAt.put(k, p.gen, right)
+	if nid == p.startNT && left == p.startLeft && right > p.startEnd {
+		p.startEnd = right
 	}
+}
+
+// rootAt declares the parse's root question before the first fork.
+func (p *gll) rootAt(nid, left int) {
+	p.startNT = nid
+	p.startLeft = left
+	p.startEnd = -1
 }
 
 func (p *gll) addSymMore(k famKey, comp int) {
@@ -909,35 +912,13 @@ func (p *gll) compsAt(nid, l, r int) (int, []int) {
 	return 0, nil
 }
 
+// maxRight is the furthest end of the root question; -1 if it never completed.
+// Only the root is ever asked (runOn and succeeds), so it must match rootAt.
 func (p *gll) maxRight(nid, left int) int {
-	if end, ok := p.endAt.get(packNidLeft(nid, left), p.gen); ok {
-		return end
+	if nid != p.startNT || left != p.startLeft {
+		panic("maxRight asked for a non-root question")
 	}
-	end := -1
-	for k, v := range p.symBig {
-		if v.gen != p.gen {
-			continue
-		}
-		if k.nid == nid && k.l == left && k.r > end {
-			end = k.r
-		}
-	}
-	return end
-}
-
-func (p *gll) hasLeft(nid, left int) bool {
-	if _, ok := p.endAt.get(packNidLeft(nid, left), p.gen); ok {
-		return true
-	}
-	for k, v := range p.symBig {
-		if v.gen != p.gen {
-			continue
-		}
-		if k.nid == nid && k.l == left {
-			return true
-		}
-	}
-	return false
+	return p.startEnd
 }
 
 func (p *gll) succeeds(nt string, i int) bool {
@@ -949,9 +930,10 @@ func (p *gll) succeeds(nt string, i int) bool {
 	saved := q.wrapEnd
 	q.wrapEnd = p.wrapEnd
 	dummy := q.gssNode(slot{pid: -1, ip: 0}, i)
+	q.rootAt(q.c.ntNID[nt], i)
 	q.fork(nt, dummy, i)
 	q.drain()
-	ok := q.hasLeft(q.c.ntNID[nt], i)
+	ok := q.maxRight(q.c.ntNID[nt], i) >= 0
 	q.wrapEnd = saved
 	q.release()
 	return ok
