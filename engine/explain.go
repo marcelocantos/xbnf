@@ -133,6 +133,9 @@ func displayNT(nt string) string {
 }
 
 func describeElem(e elem) string {
+	if e.desc != "" {
+		return e.desc
+	}
 	switch e.kind {
 	case ekTerm:
 		return describeTerm(e.term)

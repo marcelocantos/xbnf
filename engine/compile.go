@@ -26,8 +26,9 @@ type elem struct {
 	label string
 	name  string // `name=` label from grammar.Named
 	term  grammar.Term
-	df    *dfa // set for ekDFA
-	nid   int  // dense id of nt, for ekNT / lookahead
+	df    *dfa   // set for ekDFA
+	nid   int    // dense id of nt, for ekNT / lookahead
+	desc  string // interned describeElem text, for parse-failure messages
 }
 
 type prod struct {
@@ -84,6 +85,9 @@ type Compiled struct {
 	predN    []*bytePred
 	ntProdsN [][]int
 	ntNID    map[string]int
+	// tw is the scratch tree walker reused by dfaNode. Like the DFA
+	// transition caches it makes one Compiled single-parse-at-a-time.
+	tw       twalk
 	Warnings []string
 }
 
@@ -210,6 +214,10 @@ func (c *Compiled) resolveElems() {
 					e.nid = -1
 				}
 			}
+			// Intern the failure description: noteFail asks for it on every
+			// failed element match, and quoting a string term there was one
+			// allocation per failure.
+			e.desc = describeElem(*e)
 		}
 	}
 }

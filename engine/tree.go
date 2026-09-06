@@ -703,6 +703,10 @@ func (b *builder) appendElem(kids []int, e elem, i, end int) []int {
 // body is one string. Other regular bodies keep their structure by walking
 // the rule body over the span; if that walk does not land exactly on r the
 // node degrades to the matched text.
+//
+// The Children of the result borrow the walker's arena and stay valid only
+// until the next dfaNode call on this Compiled. Every caller here interns
+// the node immediately; one that keeps it must use dfaNodeOwned.
 func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 	rule, ok := c.rules[name]
 	if !ok {
@@ -711,7 +715,12 @@ func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 	if _, isLeaf := rule.Body.(grammar.Leaf); isLeaf {
 		return Node{Kind: "leaf", Name: name, Text: input[l:r]}
 	}
-	w := &twalk{c: c, input: input, busy: map[string]int{}}
+	w := &c.tw
+	w.c = c
+	w.input = input
+	w.busy = w.busy[:0]
+	w.stack = w.stack[:0]
+	w.arena = w.arena[:0]
 	end, n, ok := w.term(rule.Body, l, false)
 	if !ok || end != r {
 		return Node{Kind: "leaf", Name: name, Text: input[l:r]}
@@ -726,6 +735,24 @@ func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 	return n
 }
 
+// dfaNodeOwned is dfaNode for a caller that keeps the tree past the next
+// call: it copies the children out of the walker's arena.
+func (c *Compiled) dfaNodeOwned(input, name string, l, r int) Node {
+	return cloneNode(c.dfaNode(input, name, l, r))
+}
+
+func cloneNode(n Node) Node {
+	if len(n.Children) == 0 {
+		return n
+	}
+	kids := make([]Node, len(n.Children))
+	for i, c := range n.Children {
+		kids[i] = cloneNode(c)
+	}
+	n.Children = kids
+	return n
+}
+
 // twalk walks a regular rule body over input to recover structure that the
 // DFA match flattened. It is greedy: alternatives take the longest match and
 // repetition never backs off. dfaNode checks its result against the DFA's
@@ -733,25 +760,68 @@ func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 type twalk struct {
 	c     *Compiled
 	input string
-	busy  map[string]int
+	// busy is the set of rules already being walked, one entry per name, as
+	// the map it replaces was.
+	busy []busyRule
+	// stack holds the kids of every node under construction; commit moves a
+	// finished run into arena, which backs the Children of the tree handed
+	// back to the caller.
+	stack []Node
+	arena []Node
 }
 
-// appendKid adds n to kids the way the derivation builder would: unnamed
-// groups are spliced, and nodes that match nothing are dropped.
-func appendKid(kids []Node, n Node) []Node {
+type busyRule struct {
+	name string
+	pos  int
+}
+
+func (w *twalk) busyIndex(name string) int {
+	for i := range w.busy {
+		if w.busy[i].name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (w *twalk) dropBusy(name string) {
+	if i := w.busyIndex(name); i >= 0 {
+		w.busy = append(w.busy[:i], w.busy[i+1:]...)
+	}
+}
+
+// push adds n to the scratch stack the way the derivation builder would:
+// unnamed groups are spliced, and nodes that match nothing are dropped.
+func (w *twalk) push(n Node) {
 	switch n.Kind {
 	case "empty", "lookahead", "neg_lookahead":
-		return kids
+		return
 	case "seq":
 		if n.Name == "" {
-			return append(kids, n.Children...)
+			w.stack = append(w.stack, n.Children...)
+			return
 		}
 	case "quant":
 		if len(n.Children) == 0 {
-			return kids
+			return
 		}
 	}
-	return append(kids, n)
+	w.stack = append(w.stack, n)
+}
+
+// commit copies the scratch entries above mark into the arena and returns
+// them as one node's Children. Growing the arena leaves earlier runs behind
+// in the old backing array, which is what they already point at.
+func (w *twalk) commit(mark int) []Node {
+	kids := w.stack[mark:]
+	if len(kids) == 0 {
+		w.stack = w.stack[:mark]
+		return nil
+	}
+	off := len(w.arena)
+	w.arena = append(w.arena, kids...)
+	w.stack = w.stack[:mark]
+	return w.arena[off:len(w.arena):len(w.arena)]
 }
 
 func (w *twalk) skip(pos int, nowrap bool) int {
@@ -766,11 +836,15 @@ func (w *twalk) rule(name, label string, pos int, nowrap bool) (int, Node, bool)
 	if !ok {
 		return pos, Node{}, false
 	}
-	if p, busy := w.busy[name]; busy && p == pos {
-		return pos, Node{}, false
+	if i := w.busyIndex(name); i >= 0 {
+		if w.busy[i].pos == pos {
+			return pos, Node{}, false
+		}
+		w.busy[i].pos = pos
+	} else {
+		w.busy = append(w.busy, busyRule{name: name, pos: pos})
 	}
-	w.busy[name] = pos
-	defer delete(w.busy, name)
+	defer w.dropBusy(name)
 
 	if w.c.IsDFA(name) {
 		if _, isLeaf := r.Body.(grammar.Leaf); isLeaf {
@@ -830,17 +904,18 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 	case grammar.Ref:
 		return pos, Node{}, false
 	case grammar.Seq:
-		kids := make([]Node, 0, len(x.Terms))
+		mark := len(w.stack)
 		cur := pos
 		for _, t := range x.Terms {
 			end, n, ok := w.term(t, cur, nowrap)
 			if !ok {
+				w.stack = w.stack[:mark]
 				return pos, Node{}, false
 			}
-			kids = appendKid(kids, n)
+			w.push(n)
 			cur = end
 		}
-		return cur, Node{Kind: "seq", Children: kids, Text: w.input[pos:cur]}, true
+		return cur, Node{Kind: "seq", Children: w.commit(mark), Text: w.input[pos:cur]}, true
 	case grammar.OrderedAlt:
 		for _, a := range x.Terms {
 			end, n, ok := w.term(a, pos, nowrap)
@@ -869,7 +944,7 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 		}
 		return bestEnd, best, true
 	case grammar.Quant:
-		var kids []Node
+		mark := len(w.stack)
 		cur := pos
 		n := 0
 		for x.Max == grammar.Unbounded || n < x.Max {
@@ -881,18 +956,19 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 				if x.Max == grammar.Unbounded {
 					break
 				}
-				kids = appendKid(kids, node)
+				w.push(node)
 				n++
 				break
 			}
-			kids = appendKid(kids, node)
+			w.push(node)
 			cur = end
 			n++
 		}
 		if n < x.Min {
+			w.stack = w.stack[:mark]
 			return pos, Node{}, false
 		}
-		return cur, Node{Kind: "quant", Children: kids, Text: w.input[pos:cur]}, true
+		return cur, Node{Kind: "quant", Children: w.commit(mark), Text: w.input[pos:cur]}, true
 	case grammar.Delim:
 		return w.delim(x, pos, nowrap)
 	case grammar.Scope:
@@ -921,19 +997,20 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 }
 
 func (w *twalk) delim(d grammar.Delim, pos int, nowrap bool) (int, Node, bool) {
+	mark := len(w.stack)
 	cur := pos
-	var kids []Node
 	if d.Leading {
 		if end, n, ok := w.term(d.Sep, cur, nowrap); ok {
-			kids = appendKid(kids, n)
+			w.push(n)
 			cur = end
 		}
 	}
 	end, n, ok := w.term(d.Term, cur, nowrap)
 	if !ok {
+		w.stack = w.stack[:mark]
 		return pos, Node{}, false
 	}
-	kids = appendKid(kids, n)
+	w.push(n)
 	cur = end
 	for {
 		save := cur
@@ -944,18 +1021,21 @@ func (w *twalk) delim(d grammar.Delim, pos int, nowrap bool) (int, Node, bool) {
 		te, tn, tok := w.term(d.Term, se, nowrap)
 		if !tok {
 			if d.Trailing {
-				kids = appendKid(kids, sn)
+				w.push(sn)
 				cur = se
 			} else {
 				cur = save
 			}
 			break
 		}
-		kids = appendKid(appendKid(kids, sn), tn)
+		w.push(sn)
+		w.push(tn)
 		cur = te
 	}
-	if len(kids) == 1 {
-		return cur, kids[0], true
+	if len(w.stack)-mark == 1 {
+		only := w.stack[mark]
+		w.stack = w.stack[:mark]
+		return cur, only, true
 	}
-	return cur, Node{Kind: "delim", Children: kids, Text: w.input[pos:cur]}, true
+	return cur, Node{Kind: "delim", Children: w.commit(mark), Text: w.input[pos:cur]}, true
 }

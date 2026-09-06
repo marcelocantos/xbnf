@@ -52,9 +52,17 @@ type labAlt struct {
 	d    *dfa
 }
 
+// asciiRange is the number of code points that get a direct slot in
+// dfaState.ascii. Everything at or above it goes through the rune map.
+const asciiRange = utf8.RuneSelf
+
 type dfaState struct {
-	set    intset
-	trans  map[rune]*dfaState
+	set intset
+	// ascii is the transition table for r < asciiRange, filled on demand.
+	// nil means "not computed yet"; dead means "no transition", the same
+	// miss caching trans uses.
+	ascii  [asciiRange]*dfaState
+	trans  map[rune]*dfaState // r >= asciiRange only; created on first miss
 	acc    bool
 	labels []string
 }
@@ -427,7 +435,7 @@ func (d *dfa) state(set intset) *dfaState {
 	if st, ok := d.memo[k]; ok {
 		return st
 	}
-	st := &dfaState{set: set, trans: map[rune]*dfaState{}}
+	st := &dfaState{set: set}
 	labs := map[string]bool{}
 	for _, i := range set {
 		ns := d.nfa.states[i]
@@ -488,10 +496,24 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 	labels = st.labels
 	ok = st.acc
 	for cur < len(input) {
-		r, n := decodeRune(input, cur)
-		nx := d.step(st, r)
-		if nx == nil {
-			break
+		// ASCII is one table load per byte with no rune decode; the rest
+		// falls back to step's rune map.
+		n := 1
+		var nx *dfaState
+		if c := input[cur]; c < asciiRange {
+			nx = st.ascii[c]
+			if nx == nil {
+				nx = d.fillASCII(st, rune(c))
+			}
+			if nx == dead {
+				break
+			}
+		} else {
+			r, sz := utf8.DecodeRuneInString(input[cur:])
+			if nx = d.step(st, r); nx == nil {
+				break
+			}
+			n = sz
 		}
 		st = nx
 		cur += n
@@ -513,19 +535,41 @@ func (d *dfa) initial() *dfaState {
 
 // step returns the state after consuming r from st, or nil. Misses are cached.
 func (d *dfa) step(st *dfaState, r rune) *dfaState {
-	nx := st.trans[r]
-	if nx == nil {
-		mv := d.move(st.set, r)
-		if len(mv) == 0 {
-			st.trans[r] = dead
+	if uint32(r) < asciiRange {
+		nx := st.ascii[r]
+		if nx == nil {
+			nx = d.fillASCII(st, r)
+		}
+		if nx == dead {
 			return nil
 		}
-		nx = d.state(mv)
+		return nx
+	}
+	nx := st.trans[r]
+	if nx == nil {
+		nx = dead
+		if mv := d.move(st.set, r); len(mv) > 0 {
+			nx = d.state(mv)
+		}
+		if st.trans == nil {
+			st.trans = map[rune]*dfaState{}
+		}
 		st.trans[r] = nx
 	}
 	if nx == dead {
 		return nil
 	}
+	return nx
+}
+
+// fillASCII computes st's transition on an ASCII rune and caches it, using
+// dead for "no transition". It never returns nil.
+func (d *dfa) fillASCII(st *dfaState, r rune) *dfaState {
+	nx := dead
+	if mv := d.move(st.set, r); len(mv) > 0 {
+		nx = d.state(mv)
+	}
+	st.ascii[r] = nx
 	return nx
 }
 
