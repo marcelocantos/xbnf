@@ -79,6 +79,10 @@ type Compiled struct {
 	rules   map[string]grammar.Rule
 	// slotFirst[pid][ip] is the FIRST set of prods[pid].rhs[ip:].
 	slotFirst [][]firstInfo
+	// unitProd[pid] marks a production whose whole right-hand side is one
+	// nonterminal. Neither of its two slots matches anything, so fork and
+	// pop run them in place instead of scheduling a descriptor for each.
+	unitProd []bool
 	// pred[nt] maps the first input byte to a unique production of nt when
 	// the alternatives are non-nullable and FIRST-disjoint on ASCII.
 	pred     map[string]*bytePred
@@ -178,7 +182,20 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 	bindDFAOwner(out)
 	out.computeFirst()
 	out.resolveElems()
+	out.markUnitProds()
 	return out, nil
+}
+
+// markUnitProds records which productions are `A ::= B` for a nonterminal B.
+// It runs after resolveElems, so a right-hand side that turned out to be a
+// regular rule is already ekDFA and is not counted: those match in place
+// inside process and never reach the create/fork path this marks.
+func (c *Compiled) markUnitProds() {
+	c.unitProd = make([]bool, len(c.prods))
+	for i := range c.prods {
+		rhs := c.prods[i].rhs
+		c.unitProd[i] = len(rhs) == 1 && rhs[0].kind == ekNT
+	}
 }
 
 // resolveElems fills per-element DFA pointers and nid indexes, and turns
