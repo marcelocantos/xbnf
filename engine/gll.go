@@ -139,13 +139,74 @@ func compPID(v int) int { return v>>32 - 1 }
 
 func compCell(v int) int32 { return int32(v & 0xFFFFFFFF) }
 
-var gllPool = sync.Pool{New: func() any { return new(gll) }}
+// maxPooledCharts is the depth of the chart free list. A parse holds one
+// chart plus one per nested succeeds() lookahead, and CommonMark runs a few
+// hundred of those per parse, so the list only ever needs to cover the live
+// nesting depth plus a few concurrent parsers. Charts past the bound are
+// dropped rather than retained.
+const maxPooledCharts = 8
+
+// maxPooledCells caps what one retained chart may pin, counted in backing
+// array elements across every chart slice and hash table. Elements run 4–32
+// bytes, so the bound is on the order of a hundred megabytes of chart.
+// Charts are retained whole — that is what stops warm varied parsing from
+// rebuilding tables — so without a cap one outsized parse would pin its
+// input-proportional tables for the life of the process. A chart over the
+// bound is dropped at release; rebuilding it is cheap next to the parse that
+// needed it, and 64 KB of nested JSON stays an order of magnitude below it.
+const maxPooledCells = 16 << 20
+
+// gllPool retains released charts so their grown tables and slices serve the
+// next parse whatever its size. It is deliberately not a sync.Pool: that is
+// emptied at every GC and its per-P private slot cannot be stolen by another
+// P, so a chart worth megabytes of doubled tables gets dropped and rebuilt
+// through the whole doubling series again. Those losses were only ~0.2% of
+// newGLL calls on the CommonMark corpus, and still over half its bytes: they
+// were also why its B/op wandered by tens of percent run to run. A retained
+// chart also
+// pins its wrapEnd memo key (one *Compiled and one input string), which is
+// what lets repeated parses of the same input skip re-clearing wrapEnd;
+// maxPooledCells bounds that too.
+var gllPool struct {
+	mu   sync.Mutex
+	free []*gll
+}
 
 func newGLL(c *Compiled, input, start string) *gll {
-	p := gllPool.Get().(*gll)
+	var p *gll
+	gllPool.mu.Lock()
+	if n := len(gllPool.free); n > 0 {
+		p = gllPool.free[n-1]
+		gllPool.free[n-1] = nil
+		gllPool.free = gllPool.free[:n-1]
+	}
+	gllPool.mu.Unlock()
+	if p == nil {
+		p = new(gll)
+	}
 	p.bind(c, input, start)
 	return p
 }
+
+// chartCells is the total capacity of a chart's backing arrays in elements.
+// Per-type byte sizes would add nothing: every array here is sized from the
+// input length, so the element total tracks what retaining the chart pins.
+func chartCells(p *gll) int {
+	n := cap(p.R) + cap(p.gss) + cap(p.edges) + cap(p.pops) + cap(p.steps)
+	n += cap(p.cells) + cap(p.wrapEnd) + cap(p.tnodes) + cap(p.tkids)
+	n += cap(p.kscratch) + cap(p.spineBuf) + cap(p.spineOut)
+	n += p.uset.cells() + p.gssAt.cells() + p.sym.cells() + p.moreAt.cells() + cap(p.moreSlab) + cap(p.pickBuf)
+	return n
+}
+
+// Starting table sizes, in slots per input byte or input bytes per slot. They
+// are opening bids only — every table grows on demand, and uMap.size raises a
+// bid once a grow has shown it to be low — but a bid close to the truth saves
+// the rehashing that a doubling series costs.
+const (
+	usetSlotsPerByte   = 4  // one descriptor per byte is already an undercount
+	moreAtSlotsDivisor = 16 // packed spans are rare; keyed by (nid, l, r)
+)
 
 func (p *gll) bind(c *Compiled, input, start string) {
 	n := len(input) + 1
@@ -175,30 +236,16 @@ func (p *gll) bind(c *Compiled, input, start string) {
 		clear(p.moreBig)
 		p.gen = 1
 	}
-	if p.uset.slots == nil {
-		p.uset.init(n * 4)
-	} else {
-		p.uset.reset()
-	}
+	// The tables keep their arrays across parses and only re-point at a window
+	// sized for this input; see uMap.size for why both halves are needed.
+	p.uset.size(n * usetSlotsPerByte)
 	p.gss = p.gss[:0]
 	if cap(p.gss) < n/2+1 {
 		p.gss = make([]gssNode, 0, n/2+1)
 	}
-	if p.gssAt.slots == nil {
-		p.gssAt.init(n)
-	} else {
-		p.gssAt.reset()
-	}
-	if p.sym.slots == nil {
-		p.sym.init(n)
-	} else {
-		p.sym.reset()
-	}
-	if p.moreAt.slots == nil {
-		p.moreAt.init(n / 16)
-	} else {
-		p.moreAt.reset()
-	}
+	p.gssAt.size(n)
+	p.sym.size(n)
+	p.moreAt.size(n / moreAtSlotsDivisor)
 	p.spineBuf = p.spineBuf[:0]
 	p.cells = keepDummy(p.cells, n)
 	p.steps = keepDummy(p.steps, n)
@@ -266,7 +313,14 @@ func (p *gll) release() {
 	if p.fail.want != nil {
 		clear(p.fail.want)
 	}
-	gllPool.Put(p)
+	if chartCells(p) > maxPooledCells {
+		return
+	}
+	gllPool.mu.Lock()
+	if len(gllPool.free) < maxPooledCharts {
+		gllPool.free = append(gllPool.free, p)
+	}
+	gllPool.mu.Unlock()
 }
 
 // skip is skipWrap memoised per position.
