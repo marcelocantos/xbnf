@@ -96,33 +96,37 @@ investigation, not a stable latency estimate. No claim that T25's exact speedup 
 Raw diagnostic logs: `/tmp/xbnf-t2930-corpus-gate.txt`, `/tmp/xbnf-t2930-corpus-allocation-probe.txt`, and
 `/tmp/xbnf-t2930-pooled-allocation-probe.txt`.
 
-## T31 stable gates vs `9c47802` (2026-09-06)
+## T31 stable gates vs `9c47802` (2026-09-07)
 
-HEAD `41ffcd3` (T29/T30) versus `9c47802`, default **10 × 2 s**, `GOMAXPROCS=1`, idle and noise checks **not** skipped.
-Benchmark definitions and fixtures were not changed. The seven-language corpus is primary; JSON 64 KB is auxiliary.
+HEAD `2545a56` (T29/T30 engine from `41ffcd3`, idle bar `LOAD_FRAC=0.50`) versus `9c47802`, default **10 × 2 s**,
+`GOMAXPROCS=1`, idle and pair-ratio noise checks **not** skipped. Benchmark definitions and fixtures were not changed.
+The seven-language corpus is primary; JSON 64 KB is auxiliary. Earlier same-week corpus runs that printed
+`VERDICT: NOISY` are not a speed baseline.
 
 ### Corpus (primary)
 
-Two full-discipline runs both **passed idle** and both finished **`VERDICT: NOISY`**. A NOISY result is not evidence of
-unchanged speed; 🎯T31 stays open.
+One full-discipline run, idle load1=4.20 (max 8.00 = 0.50 × 16 cpus), end load1=3.70. Valid (not `NOISY`):
 
-| Run | Idle load1 | End load1 | Aggregate speedup | wins | TIME | MEM | VERDICT |
-|---|---:|---:|---:|---:|---|---|---|
-| 1 | 2.44 | 3.00 | 0.969× | 3/10 | NOISY | LOSE | NOISY |
-| 2 | 2.44 | 4.85 | 1.000× | 5/10 | NOISY | LOSE | NOISY |
+| | old `9c47802` | new `2545a56` |
+|---|---:|---:|
+| aggregate speedup | 0.950× (2/10 new-faster) | |
+| B/op | 3.20 MB | 3.30 MB |
+| TIME / MEM / VERDICT | LOSE / LOSE / **DISCARD** | |
 
-Per-language rows (B/op is median of the ten pairs; identical at display precision on both runs):
+Per-language rows (B/op is median of the ten pairs):
 
-| Language | Run 1 speedup | Run 1 tag | Run 2 speedup | Run 2 tag | B/op old | B/op new |
-|---|---:|---|---:|---|---:|---:|
-| commonmark | 0.990× | DISCARD | 1.004× | NOISY | 0.26 MB | 0.26 MB |
-| go | 0.981× | DISCARD | 0.969× | LOSE | 0.13 MB | 0.13 MB |
-| javascript | 0.982× | DISCARD | 0.983× | DISCARD | 0.05 MB | 0.05 MB |
-| python | 0.948× | LOSE | 0.943× | LOSE | 0.19 MB | 0.19 MB |
-| sql | 0.986× | NOISY | 1.022× | NOISY | 1.26 MB | 1.26 MB |
-| xml | 0.928× | LOSE | 0.961× | NOISY | 1.29 MB | 1.38 MB |
-| yaml | 0.985× | DISCARD | 0.990× | DISCARD | 0.03 MB | 0.03 MB |
-| **aggregate** | **0.969×** | **NOISY** | **1.000×** | **NOISY** | **3.20 MB** | **3.30 MB** |
+| Language | speedup | wins | tag | B/op old | B/op new |
+|---|---:|---:|---|---:|---:|
+| commonmark | 1.001× | 5/10 | NOISY | 0.26 MB | 0.26 MB |
+| go | 0.969× | 0/10 | LOSE | 0.13 MB | 0.13 MB |
+| javascript | 0.986× | 0/10 | DISCARD | 0.05 MB | 0.05 MB |
+| python | 0.939× | 0/10 | LOSE | 0.19 MB | 0.19 MB |
+| sql | 0.966× | 3/10 | NOISY | 1.26 MB | 1.26 MB |
+| xml | 0.848× | 1/10 | LOSE | 1.29 MB | 1.38 MB |
+| yaml | 0.983× | 1/10 | DISCARD | 0.03 MB | 0.03 MB |
+| **aggregate** | **0.950×** | **2/10** | **DISCARD** | **3.20 MB** | **3.30 MB** |
+
+Pair totals (ms): old 22.81 23.54 26.57 25.04 23.42 24.26 26.59 25.40 27.55 25.11; new 32.86 24.98 27.73 25.26 27.35 24.75 25.83 29.69 23.40 33.52.
 
 **Allocation vs retained memory.** B/op is repeated-parse allocation on `Compiled.Parse`, not RSS and not compile-time
 retained size. XML +0.09 MB and aggregate +0.10 MB match the pooled-correction diagnostic. That extra B/op is the
@@ -131,29 +135,31 @@ across parses, not a per-parse map rebuild. The other six languages' B/op are un
 precision. Binding-intern and completed-context maps remain per-parse allocations (`docs/capture-context.md`). These
 B/op figures do not measure total retained process memory.
 
-Python was `LOSE` on both runs (0.948× then 0.943×, 0/10). That is a language-level timing cost signal, not an aggregate
-keep/discard: the corpus `VERDICT` is still NOISY. Do not restore pre-T29 capture semantics to recover old timings.
+Python (0.939×, 0/10), Go (0.969×, 0/10) and XML (0.848×, 1/10) are language-level `LOSE` rows under an aggregate
+`TIME: LOSE`. That is a measured cost of the T29/T30 correction, not a reason to restore pre-T29 capture semantics.
+`DISCARD` is the optimisation keep/discard label for a valid slower-or-tied run.
 
 ### JSON 64 KB (auxiliary)
 
-One full-discipline run, idle load1=2.29, end load1=1.87. Valid (not NOISY):
+One full-discipline run, idle load1=3.70, end load1=3.76. Valid (not `NOISY`):
 
-| | old `9c47802` | new `41ffcd3` |
+| | old `9c47802` | new `2545a56` |
 |---|---:|---:|
-| median ns/op | 3.44 ms | 3.49 ms |
-| pair speedup median | 0.986× (2/10 new-faster, ratio cv 7.7%) | |
+| median ns/op | 3.58 ms | 3.82 ms |
+| pair speedup median | 0.953× (2/10 new-faster, ratio cv 8.2%) | |
 | B/op | 2.35 MB | 2.35 MB |
 | allocs/op | 2 | 2 |
-| TIME / MEM / VERDICT | TIE / TIE / **DISCARD** | |
+| TIME / MEM / VERDICT | LOSE / TIE / **DISCARD** | |
 
-JSON allocation is unchanged. The DISCARD is the optimisation keep/discard label for a tie, not a reason to revert T29.
+JSON allocation is unchanged. The DISCARD is the optimisation keep/discard label, not a reason to revert T29.
 
-Raw logs: `/tmp/xbnf-t31/corpus-gate-attempt1-noisy.txt`, `/tmp/xbnf-t31/corpus-gate-attempt2-noisy.txt`,
-`/tmp/xbnf-t31/json-gate.txt`. Those two corpus runs already passed the start idle bar at load1=2.44; they were
-`NOISY` because pair-ratio CV exceeded 4%, not because 2.5 was tight. The idle start bar is now 0.50 × ncpu
-(8.0 here) rather than a fixed 2.5 cores; that does not make a noisy pair-ratio run a speed result. Repeat with
-`scripts/bench-json-stable.sh --base 9c47802 --bench corpus` when pair ratios are stable, then omit `--bench corpus`
-for JSON.
+Raw logs of the valid pair: implementer scratch `corpus-gate.txt` and `json-gate.txt` from 2026-09-07 (idle bar 8.00,
+`VERDICT: DISCARD` both). Prior `NOISY` corpus attempts the same day are not this baseline.
+
+An independent `/vcheck T31` re-run of the same two commands at `2545a56` in a detached worktree printed `VERDICT: NOISY`
+for both (corpus idle load1=6.55, end 10.95, aggregate 1.009× 5/10; JSON median 1.003× 5/10, ratio cv 8.8%). B/op
+matched (corpus 3.20→3.30 MB, JSON 2.35 MB). A `NOISY` re-run is not a second speed baseline and does not confirm the
+`DISCARD` rows above, so 🎯T31 stays open.
 
 ## Corpus gate (🎯T25.2)
 
