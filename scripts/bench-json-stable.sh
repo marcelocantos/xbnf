@@ -23,7 +23,35 @@ BENCHTIME="${BENCHTIME:-2s}"
 SKIP_IDLE=0
 IDLE_SECS="${IDLE_SECS:-90}"
 HOG_CPU="${HOG_CPU:-40}"
-LOAD_MAX="${LOAD_MAX:-2.5}"
+
+# load1 is a runnable-thread count (≈ busy cores), not a utilisation fraction.
+# Default bar is LOAD_FRAC of logical CPUs so a 16-core host is not held to the
+# same 2.5-core absolute that a 4-core machine would be. LOAD_MAX overrides.
+ncpu() {
+	local n
+	n="$(sysctl -n hw.ncpu 2>/dev/null || true)"
+	if [ -n "$n" ]; then
+		printf '%s\n' "$n"
+		return 0
+	fi
+	n="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+	if [ -n "$n" ]; then
+		printf '%s\n' "$n"
+		return 0
+	fi
+	printf '1\n'
+}
+
+NCPU="$(ncpu)"
+LOAD_FRAC="${LOAD_FRAC:-0.25}"
+if [ -z "${LOAD_MAX:-}" ]; then
+	LOAD_MAX="$(awk -v n="$NCPU" -v f="$LOAD_FRAC" 'BEGIN {
+		if (n < 1) n = 1
+		m = n * f
+		if (m < 1) m = 1
+		printf "%.2f", m
+	}')"
+fi
 
 usage() {
 	cat <<'EOF'
@@ -34,8 +62,9 @@ Interleave a benchmark of the working tree against REF (default HEAD).
 --bench json (default) runs BenchmarkJSON64K in ./engine. --bench corpus runs
 BenchmarkCorpus in ./eval — one sub-benchmark per live language manifest,
 plus an aggregate row summing per-language ns/op. --self runs the same
-binary as both sides (harness sanity). Waits for load1 ≤ 2.5 and no
-transient >40% CPU before starting.
+binary as both sides (harness sanity). Waits for load1 ≤ LOAD_MAX (default
+0.25 × logical CPUs; override LOAD_MAX or LOAD_FRAC) and no transient >40%
+CPU before starting.
 
 Prints TIME / MEM / VERDICT (plus one row per language and an aggregate row
 for --bench corpus). Exit 0 on KEEP, DISCARD, MIXED, or SELF-OK; 2 on NOISY
@@ -261,6 +290,7 @@ OLD_DIR="$ROOT/$SUBDIR"
 echo "=== bench-json-stable ($BENCH) ==="
 echo "root: $ROOT"
 echo "pairs: $PAIRS × $BENCHTIME   GOMAXPROCS=1"
+echo "ncpu: $NCPU   idle load1 ≤ $LOAD_MAX"
 
 wait_idle
 

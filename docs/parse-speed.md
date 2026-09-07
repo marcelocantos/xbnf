@@ -17,10 +17,14 @@ make bench-stable SELF=1       # same binary both sides; must be SELF-OK
 ```
 
 That compiles two `engine` test binaries (worktree for `BASE`), waits until
-1-minute load is ≤ 2.5 and transient processes are below 40% CPU (always-on
-AV such as Bitdefender is warned, not waited out), then alternates old/new
-for 10 × 2 s with `GOMAXPROCS=1`. Pair ratios cancel common-mode drift. The
-script prints `TIME` / `MEM` / `VERDICT`:
+1-minute load is ≤ a quarter of the logical CPU count (`LOAD_FRAC=0.25`;
+`LOAD_MAX` is an absolute override) and transient processes are below 40% CPU
+(always-on AV such as Bitdefender is warned, not waited out), then alternates
+old/new for 10 × 2 s with `GOMAXPROCS=1`. Load average is a runnable-thread
+count (≈ busy cores), not a utilisation fraction: the old fixed 2.5 was ~2.5
+cores on any machine, which is 63% of a 4-core host and 16% of this 16-core
+one. Pair ratios cancel common-mode drift. The script prints `TIME` / `MEM` /
+`VERDICT`:
 
 | VERDICT | Meaning |
 |---|---|
@@ -145,8 +149,11 @@ One full-discipline run, idle load1=2.29, end load1=1.87. Valid (not NOISY):
 JSON allocation is unchanged. The DISCARD is the optimisation keep/discard label for a tie, not a reason to revert T29.
 
 Raw logs: `/tmp/xbnf-t31/corpus-gate-attempt1-noisy.txt`, `/tmp/xbnf-t31/corpus-gate-attempt2-noisy.txt`,
-`/tmp/xbnf-t31/json-gate.txt`. Repeat with `scripts/bench-json-stable.sh --base 9c47802 --bench corpus` when the host
-can hold load1 ≤ 2.5 for the whole interleaved corpus (about seven minutes here), then omit `--bench corpus` for JSON.
+`/tmp/xbnf-t31/json-gate.txt`. Those two corpus runs already passed the start idle bar at load1=2.44; they were
+`NOISY` because pair-ratio CV exceeded 4%, not because 2.5 was tight. The idle start bar is now 0.25 × ncpu
+(4.0 here) rather than a fixed 2.5 cores; that does not make a noisy pair-ratio run a speed result. Repeat with
+`scripts/bench-json-stable.sh --base 9c47802 --bench corpus` when pair ratios are stable, then omit `--bench corpus`
+for JSON.
 
 ## Corpus gate (🎯T25.2)
 
