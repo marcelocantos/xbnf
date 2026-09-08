@@ -46,8 +46,9 @@ Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`, `-from-wbnf`,
 `parse`, `eval`, `--explain`) plus packages `grammar` (IR), `syntax` (bootstrap
 parser), `engine` (GLL with a DFA fast path), `fromwbnf` (parse `.wbnf`
 into meaning and emit xbnf), and `eval` (corpus harness). `xbnf sandbox` hosts the cheat sheet;
-`POST /run` matches editable examples. Compile-time disambiguation (T6)
-and self-host (T7) are not this slice.
+`POST /run` matches editable examples. Compile-time disambiguation (🎯T6) and
+self-host (🎯T7) have landed. Frontier: 🎯T23 source positions, 🎯T26 tree-class
+oracles, 🎯T27 large corpora, 🎯T28 concurrent `Parse`.
 
 Locked decisions, work graph, and non-goals: [`docs/plan.md`](docs/plan.md).
 Language spec: [`docs/xbnf.xbnf`](docs/xbnf.xbnf).

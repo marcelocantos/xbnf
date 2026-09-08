@@ -19,8 +19,8 @@ The CLI supports `--version`, `--help`, `--help-agent`, `sandbox`
 `eval <manifest.json>` for the T22 corpus harness, and
 `--explain <grammar.xbnf>` to list DFA-promoted rules vs GLL forking.
 Sandbox `POST /run` parses xbnf with the bootstrap parser and matches
-input with that engine. Compile-time disambiguation (T6) and self-host
-(T7) are still open.
+input with that engine. Compile-time disambiguation (🎯T6) and self-host
+(🎯T7) have landed.
 
 ## Spec and plan
 
@@ -29,7 +29,7 @@ input with that engine. Compile-time disambiguation (T6) and self-host
 | `docs/cheatsheet.html` | Interactive language cheat sheet |
 | `docs/syntax.html` | Syntax reference with runnable examples |
 | `docs/xbnf.xbnf` | Language, defined in itself |
-| `docs/examples/*.xbnf` | Example grammars; `@col` and macros are later |
+| `docs/examples/*.xbnf` | Example grammars; `#macro` execution is later |
 | `docs/plan.md` | Locked decisions and work graph |
 | `docs/toward-a-universal-grammar.md` | Design origin (wbnf-era; see lineage note) |
 

@@ -7,8 +7,10 @@ xbnf succeeds [wbnf](https://github.com/arr-ai/wbnf) as a new product, not
 a compatible upgrade. Alternation is unordered. Ambiguity is a compile
 error unless the grammar says how to resolve it.
 
-**Status:** language spec, IR types, and a local sandbox for the cheat sheet.
-The parse engine is not written yet.
+**Status:** GLL+DFA engine, self-host of `docs/xbnf.xbnf`, CLI (`parse`,
+`--explain`, `sandbox`, `from-wbnf`, `eval`). Seven live language tracks
+are Failed=0 against present oracles. Open: source positions (🎯T23),
+tree-vs-oracle (🎯T26), larger corpora (🎯T27), concurrent `Parse` (🎯T28).
 
 ## Spec
 
