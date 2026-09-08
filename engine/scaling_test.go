@@ -261,7 +261,8 @@ func TestPooledWrapAcrossGrammars(t *testing.T) {
 }
 
 func nodesEqual(a, b Node) bool {
-	if a.Kind != b.Kind || a.Name != b.Name || a.Text != b.Text || len(a.Children) != len(b.Children) {
+	if a.Kind != b.Kind || a.Name != b.Name || a.Text != b.Text ||
+		a.Start != b.Start || a.End != b.End || len(a.Children) != len(b.Children) {
 		return false
 	}
 	for i := range a.Children {

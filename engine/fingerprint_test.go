@@ -11,7 +11,8 @@ func TestFingerprintPartialTree(t *testing.T) {
 	if res.OK || res.End != 1 || res.Error != "unconsumed input at 1:2 (byte 1)" {
 		t.Fatalf("unexpected failed parse: %+v", res)
 	}
-	if res.Tree.Kind != "rule" || res.Tree.Name != "s" || res.Tree.Text != "a" || len(res.Tree.Children) != 0 {
+	if res.Tree.Kind != "rule" || res.Tree.Name != "s" || res.Tree.Text != "a" ||
+		res.Tree.Start != 0 || res.Tree.End != 1 || len(res.Tree.Children) != 0 {
 		t.Fatalf("partial tree was not retained: %+v", res.Tree)
 	}
 	original := FingerprintResult(res)
@@ -39,6 +40,22 @@ func TestFingerprintPartialTree(t *testing.T) {
 				t.Fatalf("tree mutation changed result metadata: want %+v, got %+v", original, got)
 			}
 		})
+	}
+}
+
+func TestFingerprintIgnoresPositions(t *testing.T) {
+	c := compileSrc(t, "s -> \"a\";\n#wrap -> ();\n")
+	res := c.Parse("s", "a")
+	if !res.OK {
+		t.Fatal(res.Error)
+	}
+	original := FingerprintResult(res)
+	changed := *res
+	changed.Tree.Start = 99
+	changed.Tree.End = 99
+	got := FingerprintResult(&changed)
+	if got.SHA256 != original.SHA256 {
+		t.Fatal("positions must not affect the golden fingerprint")
 	}
 }
 

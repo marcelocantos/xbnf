@@ -25,6 +25,8 @@ type Fingerprint struct {
 // FingerprintResult hashes the tree in preorder: kind, name and text are
 // NUL-terminated, the child count is a uvarint. The encoding is injective for
 // strings without NUL, which grammar text cannot contain.
+// Start/End are not hashed: they are a function of the same spans that
+// produce Text (docs/tree-positions.md). Dedicated tests pin positions.
 // A failed parse's partial tree is included; a zero tree on failure means
 // there was no public tree and retains the empty fingerprint.
 func FingerprintResult(res *Result) Fingerprint {

@@ -275,6 +275,12 @@ vs master on the same machine): median **4.06 ms** / **2.35 MB** / 2 allocs
 `sym`; all step runs are sorted and binary-searched; tables grow at load
 1/4. Remaining B/op is the public `Node` tree.
 
+🎯T23 adds `Start`/`End` on that public `Node` (docs/tree-positions.md). This
+is a required layout change, not a speed hypothesis. Interleaved runs vs
+`0e69aa4` reproduce MEM LOSE (B/op 2.35→2.88 MB) and allocs 2→2. The time
+verdict varies with host load (NOISY or LOSE). Fields kept because 🎯T23
+mandates positions.
+
 ## History
 
 `nestedJSON` / `BenchmarkJSON64K` unless noted. Times are median of the
@@ -295,6 +301,7 @@ recorded run.
 | 2026-09-04 | T20++ | 11.0e6 | 2.35e6 | — | — | — | 3s×5: 10.88/11.04/10.91/11.76/11.67 ms, 3 allocs. Same-session 075a8d9 was 12.78/13.09/13.95/14.12/14.22 ms, 2.51 MB, 12 allocs. Kept: generational maps, slimmer steps, last-stepAt cache, flatten-all + radix large runs, pooled spines, packed sym, compile-time dfa/nid, ASCII decodeRune. Discarded: admits-before-U (noise). Left materialize as []Node API floor. |
 | 2026-09-05 | T20+++ | 13.6e6 | 2.35e6 | — | — | — | 3s×5: 13.55/14.13/13.61/16.12/12.84 ms, 3 allocs. Same-session Go map U was ~15.3 ms (this session was hotter than the 11.0 T20++ run). Kept: splitmix64 uSet/uMap for U, gssAt, stepAt (probe+place, not k&mask); packed uint64 reach. Discarded: position-indexed U lists (tie). Isolated microbench ~2× std map (`uSet` later folded into `uMap`; the benchmark is now `BenchmarkMapVsUMap`). Left materialize. |
 | 2026-09-05 | T20++++ | 16.6e6 | 2.35e6 | — | — | — | 3s×5: 19.34/17.41/16.03/16.64/16.54 ms, 3 allocs. Same-session a9c96f5 was 16.65/19.05/21.54/25.43/19.82 ms (hot). Kept: sym+reach as uMap, endAt max-right, always-sort + matchSteps, load 1/4, packSteps pre-size. Discarded: in-parse step regions (copy still needed; pre-size is enough). Left materialize. |
+| 2026-09-08 | T23 | — | 2.88e6 | — | — | — | vs `0e69aa4`: MEM LOSE 2.35→2.88 MB, allocs 2. Time verdict varies with load. Fields kept because 🎯T23 requires positions. |
 
 ## Probe harness (`genJSON`, 64 KB)
 

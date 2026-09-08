@@ -57,17 +57,18 @@ type builder struct {
 // memory traffic on the hottest loop in the builder.
 type inode struct {
 	kind, name string
-	// The node's text is input[lo:hi], except when lo == litText: a node
-	// interned from the DFA walker can carry text that is not a span of the
-	// input — a case-folded string literal keeps the grammar's spelling —
-	// and then hi indexes builder.lits.
+	// lo, hi are the public byte span [lo, hi). The node's text is
+	// input[lo:hi], except when lit >= 0: a node interned from the DFA
+	// walker can carry text that is not a span of the input — a case-folded
+	// string literal keeps the grammar's spelling — and then lit indexes
+	// builder.lits. The span is still the matched input.
 	lo, hi int32
+	lit    int32
 	k0, kn int32
 }
 
-// litText marks an inode whose text is in builder.lits rather than a span of
-// the input.
-const litText = -1
+// noLit marks an inode whose text is input[lo:hi].
+const noLit int32 = -1
 
 func newBuilder(p *gll) *builder {
 	n := len(p.input) + 1
@@ -92,31 +93,49 @@ func (b *builder) addNode(kind, name string, lo, hi int32, kids []int32) int32 {
 	k0 := int32(len(b.kids))
 	b.kids = append(b.kids, kids...)
 	id := int32(len(b.nodes))
-	b.nodes = append(b.nodes, inode{kind: kind, name: name, lo: lo, hi: hi, k0: k0, kn: int32(len(b.kids))})
+	b.nodes = append(b.nodes, inode{kind: kind, name: name, lo: lo, hi: hi, lit: noLit, k0: k0, kn: int32(len(b.kids))})
 	return id
 }
 
-// addLit is addNode for text the input does not contain verbatim.
-func (b *builder) addLit(kind, name, text string, kids []int32) int32 {
+// addLit is addNode for text the input does not contain verbatim. lo, hi are
+// still the matched input span.
+func (b *builder) addLit(kind, name, text string, lo, hi int32, kids []int32) int32 {
 	b.lits = append(b.lits, text)
-	return b.addNode(kind, name, litText, int32(len(b.lits)-1), kids)
+	k0 := int32(len(b.kids))
+	b.kids = append(b.kids, kids...)
+	id := int32(len(b.nodes))
+	b.nodes = append(b.nodes, inode{
+		kind: kind, name: name, lo: lo, hi: hi,
+		lit: int32(len(b.lits) - 1),
+		k0:  k0, kn: int32(len(b.kids)),
+	})
+	return id
 }
 
 // intern copies a Node tree the DFA walker produced into the arena. Child ids
 // accumulate on a shared scratch stack rather than one slice per node; the
 // scratch is separate from the derivation scratch, which is live in the caller
-// while this runs.
+// while this runs. Spans on n come from the walk, not from searching Text.
 func (b *builder) intern(n Node) int32 {
 	if len(n.Children) == 0 {
-		return b.addLit(n.Kind, n.Name, n.Text, nil)
+		return b.internBody(n, nil)
 	}
 	mark := len(b.p.iscratch)
 	for _, c := range n.Children {
 		b.p.iscratch = append(b.p.iscratch, b.intern(c))
 	}
-	id := b.addLit(n.Kind, n.Name, n.Text, b.p.iscratch[mark:])
+	id := b.internBody(n, b.p.iscratch[mark:])
 	b.p.iscratch = b.p.iscratch[:mark]
 	return id
+}
+
+func (b *builder) internBody(n Node, kids []int32) int32 {
+	lo, hi := int32(n.Start), int32(n.End)
+	in := b.p.input
+	if 0 <= n.Start && n.Start <= n.End && n.End <= len(in) && in[n.Start:n.End] == n.Text {
+		return b.addNode(n.Kind, n.Name, lo, hi, kids)
+	}
+	return b.addLit(n.Kind, n.Name, n.Text, lo, hi, kids)
 }
 
 // materialize copies the arena tree rooted at id into the one []Node the
@@ -148,12 +167,16 @@ func (b *builder) materialize(id int32) Node {
 			children = out[child0:len(q)]
 		}
 		text := ""
-		if in.lo >= 0 {
-			text = input[in.lo:in.hi]
+		if in.lit >= 0 {
+			text = b.lits[in.lit]
 		} else {
-			text = b.lits[in.hi]
+			text = input[in.lo:in.hi]
 		}
-		out[i] = Node{Kind: in.kind, Name: in.name, Text: text, Children: children}
+		out[i] = Node{
+			Kind: in.kind, Name: in.name, Text: text,
+			Start: int(in.lo), End: int(in.hi),
+			Children: children,
+		}
 	}
 	b.p.mqueue = q
 	return out[0]
@@ -689,10 +712,10 @@ func (b *builder) appendElem(kids []int32, e *elem, i, end int) []int32 {
 func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 	rule, ok := c.rules[name]
 	if !ok {
-		return Node{Kind: "leaf", Name: name, Text: input[l:r]}
+		return Node{Kind: "leaf", Name: name, Text: input[l:r], Start: l, End: r}
 	}
 	if _, isLeaf := rule.Body.(grammar.Leaf); isLeaf {
-		return Node{Kind: "leaf", Name: name, Text: input[l:r]}
+		return Node{Kind: "leaf", Name: name, Text: input[l:r], Start: l, End: r}
 	}
 	w := &c.tw
 	w.c = c
@@ -702,7 +725,7 @@ func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 	w.arena = w.arena[:0]
 	end, n, ok := w.term(rule.Body, l, false)
 	if !ok || end != r {
-		return Node{Kind: "leaf", Name: name, Text: input[l:r]}
+		return Node{Kind: "leaf", Name: name, Text: input[l:r], Start: l, End: r}
 	}
 	if n.Kind == "leaf" {
 		n.Name = name
@@ -711,6 +734,7 @@ func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 	n.Kind = "rule"
 	n.Name = name
 	n.Text = input[l:r]
+	n.Start, n.End = l, r
 	return n
 }
 
@@ -831,7 +855,7 @@ func (w *twalk) rule(name, label string, pos int, nowrap bool) (int, Node, bool)
 			if !ok || !hasLabel(labs, label) {
 				return pos, Node{}, false
 			}
-			return end, Node{Kind: "leaf", Name: name, Text: w.input[pos:end]}, true
+			return end, Node{Kind: "leaf", Name: name, Text: w.input[pos:end], Start: pos, End: end}, true
 		}
 	}
 	end, n, ok := w.term(r.Body, pos, nowrap)
@@ -845,6 +869,7 @@ func (w *twalk) rule(name, label string, pos int, nowrap bool) (int, Node, bool)
 	n.Kind = "rule"
 	n.Name = name
 	n.Text = w.input[pos:end]
+	n.Start, n.End = pos, end
 	return end, n, true
 }
 
@@ -856,7 +881,7 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 		if !ok {
 			return pos, Node{}, false
 		}
-		return end, Node{Kind: "leaf", Text: w.input[pos:end]}, true
+		return end, Node{Kind: "leaf", Text: w.input[pos:end], Start: pos, End: end}, true
 	case grammar.Ident:
 		return w.rule(x.Name, x.Label, pos, nowrap)
 	case grammar.Named:
@@ -871,15 +896,15 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 		if !ok {
 			return pos, Node{}, false
 		}
-		return end, Node{Kind: "string", Text: x.Text}, true
+		return end, Node{Kind: "string", Text: x.Text, Start: pos, End: end}, true
 	case grammar.CharClass, grammar.Escape, grammar.AnyChar:
 		end, ok := matchTerminal(x, w.input, pos)
 		if !ok {
 			return pos, Node{}, false
 		}
-		return end, Node{Kind: "char", Text: w.input[pos:end]}, true
+		return end, Node{Kind: "char", Text: w.input[pos:end], Start: pos, End: end}, true
 	case grammar.Empty, grammar.PosProp:
-		return pos, Node{Kind: "empty"}, true
+		return pos, Node{Kind: "empty", Start: pos, End: pos}, true
 	case grammar.Ref:
 		return pos, Node{}, false
 	case grammar.Seq:
@@ -894,7 +919,7 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 			w.push(n)
 			cur = end
 		}
-		return cur, Node{Kind: "seq", Children: w.commit(mark), Text: w.input[pos:cur]}, true
+		return cur, Node{Kind: "seq", Children: w.commit(mark), Text: w.input[pos:cur], Start: pos, End: cur}, true
 	case grammar.OrderedAlt:
 		for _, a := range x.Terms {
 			end, n, ok := w.term(a, pos, nowrap)
@@ -947,7 +972,7 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 			w.stack = w.stack[:mark]
 			return pos, Node{}, false
 		}
-		return cur, Node{Kind: "quant", Children: w.commit(mark), Text: w.input[pos:cur]}, true
+		return cur, Node{Kind: "quant", Children: w.commit(mark), Text: w.input[pos:cur], Start: pos, End: cur}, true
 	case grammar.Delim:
 		return w.delim(x, pos, nowrap)
 	case grammar.Scope:
@@ -959,19 +984,19 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 		if !ok {
 			return pos, Node{}, false
 		}
-		return pos, Node{Kind: "lookahead"}, true
+		return pos, Node{Kind: "lookahead", Start: pos, End: pos}, true
 	case grammar.NegLookahead:
 		_, _, ok := w.term(x.Term, pos, nowrap)
 		if ok {
 			return pos, Node{}, false
 		}
-		return pos, Node{Kind: "neg_lookahead"}, true
+		return pos, Node{Kind: "neg_lookahead", Start: pos, End: pos}, true
 	default:
 		end, ok := matchTerminal(t, w.input, pos)
 		if !ok {
 			return pos, Node{}, false
 		}
-		return end, Node{Kind: "term", Text: w.input[pos:end]}, true
+		return end, Node{Kind: "term", Text: w.input[pos:end], Start: pos, End: end}, true
 	}
 }
 
@@ -1016,5 +1041,5 @@ func (w *twalk) delim(d grammar.Delim, pos int, nowrap bool) (int, Node, bool) {
 		w.stack = w.stack[:mark]
 		return cur, only, true
 	}
-	return cur, Node{Kind: "delim", Children: w.commit(mark), Text: w.input[pos:cur]}, true
+	return cur, Node{Kind: "delim", Children: w.commit(mark), Text: w.input[pos:cur], Start: pos, End: cur}, true
 }

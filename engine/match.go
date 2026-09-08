@@ -24,10 +24,16 @@ type Result struct {
 // non-empty, are a subslice of one backing array shared by that tree. Treat
 // the tree as read-only: do not append to Children or retain a child slice
 // after discarding the Result.
+//
+// Start and End are the half-open byte span [Start, End) of this node in the
+// input that was parsed (docs/tree-positions.md). Leading #wrap is not in the
+// span. When Text is a verbatim input slice, Text == input[Start:End].
 type Node struct {
 	Kind     string `json:"kind"`
 	Name     string `json:"name,omitempty"`
 	Text     string `json:"text,omitempty"`
+	Start    int    `json:"start"`
+	End      int    `json:"end"`
 	Children []Node `json:"children,omitempty"`
 }
 
