@@ -40,7 +40,7 @@ preserve its ordered-choice semantics and is not a drop-in replacement.
 Do not add compatibility shims. `fromwbnf.Parse` reads `.wbnf` into an IR of
 what the grammar meant (macros kept, no cut-points, not executed).
 `fromwbnf.Convert` / `xbnf -from-wbnf` emit xbnf. Leftovers with no xbnf
-spelling are ConvertError kinds (unicode-property, regex-anchor, regex-flag,
+spelling are ConvertError kinds (unicode-property, regex-flag,
 lazy-quant, posix-class, malformed regex) — never silent; see 🎯T14.
 
 ## If you are implementing

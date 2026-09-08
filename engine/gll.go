@@ -1037,6 +1037,19 @@ func (p *gll) process(d task) {
 					return
 				}
 				end = j + len(want)
+			case grammar.ExtRef:
+				j := p.skip(i)
+				fn := p.c.extRefs[x.Name]
+				if fn == nil {
+					p.noteFail(j, "%%"+x.Name, pr.nt, false)
+					return
+				}
+				m, ok := fn(p.input, j)
+				if !ok || m < j || m > len(p.input) {
+					p.noteFail(j, "%%"+x.Name, pr.nt, false)
+					return
+				}
+				end = m
 			default:
 				j := p.skip(i)
 				m, ok := matchTerminal(e.term, p.input, j)

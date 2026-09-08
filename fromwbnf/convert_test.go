@@ -161,14 +161,12 @@ func TestConvertLeftoverKinds(t *testing.T) {
 	t.Parallel()
 	allowed := map[string]bool{
 		"unicode-property": true,
-		"regex-anchor":     true,
 		"regex-flag":       true,
 		"regex":            true,
 		"posix-class":      true,
 	}
 	snippets := []string{
 		`n -> \p{NotAUnicodeProperty};`,
-		`n -> \b;`,
 		`n -> /{(?u:x)};`,
 		`n -> \x;`,
 		`n -> [[:foo:]];`,

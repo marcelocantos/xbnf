@@ -39,13 +39,13 @@ func (e *ConvertError) Error() string {
 // Leftover kinds with no xbnf spelling (ConvertError, never silent):
 //
 //	unicode-property  unknown \p{…} / \P{…} (known scripts/categories/properties emit \p{Name})
-//	regex-anchor      \b \B  (\A \z \^ \$ are empty)
 //	regex-flag        flags other than i, m, s
 //	regex             malformed regex (unclosed group/class, dangling \, bad hex)
 //	posix-class       unknown POSIX names, or [:^class:] mixed with other class atoms
 //
 // Spelled: \Q…\E → string; lazy *? → greedy; (?i:) case-fold; (?m:) / (?s:);
-// known [[:digit:]] and [[:^digit:]] as a whole class; known \p{Greek}.
+// known [[:digit:]] and [[:^digit:]] as a whole class; known \p{Greek};
+// \b \B word boundaries (\A \z \^ \$ are empty).
 //
 // Convert turns parsed .wbnf meaning into xbnf source.
 func Convert(src []byte) (string, error) {

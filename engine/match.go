@@ -5,12 +5,6 @@
 // terminal layer for regular-fragment rules.
 package engine
 
-import (
-	"fmt"
-
-	"github.com/marcelocantos/xbnf/grammar"
-)
-
 // Result is the outcome of Parse.
 type Result struct {
 	OK     bool   `json:"ok"`
@@ -35,84 +29,4 @@ type Node struct {
 	Start    int    `json:"start"`
 	End      int    `json:"end"`
 	Children []Node `json:"children,omitempty"`
-}
-
-func rejectLater(stmts []grammar.Stmt) error {
-	var walkTerm func(grammar.Term) error
-	var walkStmts func([]grammar.Stmt) error
-	walkTerm = func(t grammar.Term) error {
-		switch x := t.(type) {
-		case grammar.Stack:
-			for _, l := range x.Levels {
-				if err := walkTerm(l); err != nil {
-					return err
-				}
-			}
-		case grammar.Alt:
-			for _, c := range x.Terms {
-				if err := walkTerm(c); err != nil {
-					return err
-				}
-			}
-		case grammar.OrderedAlt:
-			for _, c := range x.Terms {
-				if err := walkTerm(c); err != nil {
-					return err
-				}
-			}
-		case grammar.Seq:
-			for _, c := range x.Terms {
-				if err := walkTerm(c); err != nil {
-					return err
-				}
-			}
-		case grammar.Named:
-			return walkTerm(x.Term)
-		case grammar.Leaf:
-			return walkTerm(x.Term)
-		case grammar.Quant:
-			return walkTerm(x.Term)
-		case grammar.Delim:
-			if err := walkTerm(x.Term); err != nil {
-				return err
-			}
-			return walkTerm(x.Sep)
-		case grammar.Scope:
-			if err := walkStmts(x.Decls); err != nil {
-				return err
-			}
-			return walkTerm(x.Term)
-		case grammar.Lookahead:
-			return walkTerm(x.Term)
-		case grammar.NegLookahead:
-			return walkTerm(x.Term)
-		case grammar.CaseFold:
-			return walkTerm(x.Term)
-		case grammar.ExtRef:
-			return fmt.Errorf("first-slice runner: %%%% extref is not executed")
-		case grammar.MacroCall:
-			return fmt.Errorf("first-slice runner: macro call is not executed")
-		}
-		return nil
-	}
-	walkStmts = func(stmts []grammar.Stmt) error {
-		for _, st := range stmts {
-			switch s := st.(type) {
-			case grammar.Import:
-				return fmt.Errorf("first-slice runner: #import is not executed")
-			case grammar.Macro:
-				return fmt.Errorf("first-slice runner: #macro is not executed")
-			case grammar.Rule:
-				if err := walkTerm(s.Body); err != nil {
-					return err
-				}
-			case grammar.Wrap:
-				if err := walkTerm(s.Body); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	return walkStmts(stmts)
 }

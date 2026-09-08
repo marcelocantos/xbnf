@@ -55,6 +55,34 @@ func classMatchFold(c grammar.CharClass, r rune) bool {
 	return false
 }
 
+func wordBoundaryEscape(code string) (neg bool, ok bool) {
+	switch code {
+	case "b":
+		return false, true
+	case "B":
+		return true, true
+	}
+	return false, false
+}
+
+func asciiWord(r rune) bool {
+	return r == '_' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
+}
+
+// wordBoundaryAt is Go regexp \b: an ASCII word character on exactly one side.
+func wordBoundaryAt(input string, pos int) bool {
+	var left, right bool
+	if pos > 0 {
+		r, _ := utf8.DecodeLastRuneInString(input[:pos])
+		left = asciiWord(r)
+	}
+	if pos < len(input) {
+		r, _ := utf8.DecodeRuneInString(input[pos:])
+		right = asciiWord(r)
+	}
+	return left != right
+}
+
 func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 	switch x := t.(type) {
 	case grammar.String:
@@ -77,6 +105,13 @@ func matchTerminal(t grammar.Term, input string, pos int) (int, bool) {
 			return pos + n, true
 		}
 	case grammar.Escape:
+		if neg, ok := wordBoundaryEscape(x.Code); ok {
+			hit := wordBoundaryAt(input, pos)
+			if neg {
+				hit = !hit
+			}
+			return pos, hit
+		}
 		if pos >= len(input) {
 			return pos, false
 		}

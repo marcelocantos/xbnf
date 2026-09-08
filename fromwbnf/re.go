@@ -324,8 +324,7 @@ func (p *reParser) escape() grammar.Term {
 	case 'A', 'z':
 		return grammar.Empty{}
 	case 'b', 'B':
-		p.issue("regex-anchor", fmt.Sprintf(`\%c`, c))
-		return grammar.Empty{}
+		return grammar.Escape{Code: string(c)}
 	default:
 		return grammar.String{Text: string(c)}
 	}

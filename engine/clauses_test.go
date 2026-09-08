@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/marcelocantos/xbnf/engine"
@@ -55,16 +54,20 @@ func TestClausesRun(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse grammar: %v\n%s", err, c.Grammar)
 			}
-			res := engine.Parse(g, c.Start, c.Input)
-			if c.Slice == "later" {
-				if res.OK {
-					t.Fatalf("later clause %s silently succeeded", c.ID)
-				}
-				if !strings.Contains(res.Error, "first-slice") {
-					t.Fatalf("later clause %s: want first-slice skip, got %q", c.ID, res.Error)
-				}
-				return
+			opts := &engine.CompileOpts{
+				ExtRefs: map[string]engine.ExtRefFunc{
+					"bind": func(input string, pos int) (int, bool) {
+						if pos < len(input) && input[pos] == 'x' {
+							return pos + 1, true
+						}
+						return pos, false
+					},
+				},
+				ReadImport: func(path string) ([]byte, error) {
+					return []byte("extra -> \"unused\" ;\n"), nil
+				},
 			}
+			res := engine.ParseWith(g, c.Start, c.Input, opts)
 			if !res.OK {
 				t.Fatalf("%s: %s\ngrammar:\n%s\ninput: %q", c.ID, res.Error, c.Grammar, c.Input)
 			}

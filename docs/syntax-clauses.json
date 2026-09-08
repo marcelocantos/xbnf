@@ -54,7 +54,7 @@
     "group": "Structure",
     "title": "Pragma #import",
     "syntax": "#import \"path\" ;",
-    "blurb": "Include another grammar. Parsed into IR; the first-slice runner does not load the file.",
+    "blurb": "Include another grammar. Compile merges the imported rules.",
     "slice": "later",
     "grammar": "#import \"lib/json.xbnf\" ;\nstart -> \"ok\" ;\n",
     "input": "ok"
@@ -64,7 +64,7 @@
     "group": "Structure",
     "title": "Pragma #macro",
     "syntax": "#macro name(args) { term }",
-    "blurb": "Macro definition. Expansion is not first slice.",
+    "blurb": "Macro definition. Compile expands %!name(args).",
     "slice": "later",
     "grammar": "#macro hi() { \"hi\" } ;\nstart -> %!hi() ;\n",
     "input": "hi"
@@ -284,7 +284,7 @@
     "group": "Atoms",
     "title": "External reference",
     "syntax": "%%name",
-    "blurb": "Host-provided matcher. Not executed in the first-slice runner.",
+    "blurb": "Host-provided matcher. CompileOpts.ExtRefs is invoked at parse time.",
     "slice": "later",
     "grammar": "start -> %%bind ;\n",
     "input": "x"
@@ -294,7 +294,7 @@
     "group": "Atoms",
     "title": "Macro call",
     "syntax": "%!name(args)",
-    "blurb": "Expansion is not first slice.",
+    "blurb": "Compile expands the named #macro.",
     "slice": "later",
     "grammar": "#macro hi() { \"hi\" } ;\nstart -> %!hi() ;\n",
     "input": "hi"

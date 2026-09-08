@@ -174,10 +174,16 @@ func (c *Compiled) elemFirst(e elem, nt map[string]firstInfo) firstInfo {
 		switch x := e.term.(type) {
 		case grammar.Empty, grammar.PosProp:
 			return firstInfo{nullable: true}
+		case grammar.Escape:
+			if _, ok := wordBoundaryEscape(x.Code); ok {
+				return firstInfo{nullable: true}
+			}
 		case grammar.Ref:
 			// A capture (or default) can be empty or begin with any rune.
 			// Keep both possibilities: epsilon alone would incorrectly
 			// prune nonempty copies; a rune alone rejects empty copies at EOF.
+			return firstInfo{nullable: true, atoms: []firstAtom{{term: grammar.AnyChar{}}}}
+		case grammar.ExtRef:
 			return firstInfo{nullable: true, atoms: []firstAtom{{term: grammar.AnyChar{}}}}
 		case grammar.String:
 			if x.Text == "" {

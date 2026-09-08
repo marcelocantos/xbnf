@@ -137,15 +137,22 @@ type Compiled struct {
 	// transition caches it makes one Compiled single-parse-at-a-time.
 	tw       twalk
 	Warnings []string
+	extRefs  map[string]ExtRefFunc
 }
 
 func Compile(g *grammar.Grammar) (*Compiled, error) {
+	return CompileWith(g, nil)
+}
+
+func CompileWith(g *grammar.Grammar, opts *CompileOpts) (*Compiled, error) {
 	if g == nil || len(g.Stmts) == 0 {
 		return nil, fmt.Errorf("empty grammar")
 	}
-	if err := rejectLater(g.Stmts); err != nil {
+	prepared, err := prepareGrammar(g, opts)
+	if err != nil {
 		return nil, err
 	}
+	g = prepared
 	c := &compiler{
 		rules:   map[string]grammar.Rule{},
 		regular: map[string]bool{},
@@ -184,6 +191,7 @@ func Compile(g *grammar.Grammar) (*Compiled, error) {
 		wrap:     c.wrap,
 		rules:    c.rules,
 		Warnings: warns,
+		extRefs:  opts.extRefs(),
 	}
 	for _, name := range c.order {
 		if c.regular[name] {
@@ -387,7 +395,7 @@ func (c *Compiled) resolveElemNode(e *elem) {
 	case ekTerm:
 		e.treeName = e.name
 		switch e.term.(type) {
-		case grammar.Empty, grammar.PosProp:
+		case grammar.Empty, grammar.PosProp, grammar.ExtRef:
 			e.treeKind = ""
 		case grammar.Ref:
 			e.treeKind = nodeKindRef
@@ -454,7 +462,11 @@ func (c *Compiled) Parse(start, input string) *Result {
 }
 
 func Parse(g *grammar.Grammar, start, input string) *Result {
-	c, err := Compile(g)
+	return ParseWith(g, start, input, nil)
+}
+
+func ParseWith(g *grammar.Grammar, start, input string, opts *CompileOpts) *Result {
+	c, err := CompileWith(g, opts)
 	if err != nil {
 		return &Result{Error: err.Error()}
 	}
@@ -540,6 +552,10 @@ func (c *compiler) analyzeRegular() {
 			return r, true
 		case grammar.CaseFold:
 			return walk(x.Term)
+		case grammar.Escape:
+			if _, ok := wordBoundaryEscape(x.Code); ok {
+				return nil, true
+			}
 		}
 		return refs, bad
 	}
@@ -771,6 +787,49 @@ func (c *compiler) checkDefined() error {
 	return fmt.Errorf("undefined rule %s", strings.Join(missing, ", "))
 }
 
+func termHasWordBoundary(t grammar.Term) bool {
+	switch x := t.(type) {
+	case grammar.Escape:
+		_, ok := wordBoundaryEscape(x.Code)
+		return ok
+	case grammar.Seq:
+		for _, u := range x.Terms {
+			if termHasWordBoundary(u) {
+				return true
+			}
+		}
+	case grammar.Alt:
+		for _, u := range x.Terms {
+			if termHasWordBoundary(u) {
+				return true
+			}
+		}
+	case grammar.OrderedAlt:
+		for _, u := range x.Terms {
+			if termHasWordBoundary(u) {
+				return true
+			}
+		}
+	case grammar.Named:
+		return termHasWordBoundary(x.Term)
+	case grammar.Quant:
+		return termHasWordBoundary(x.Term)
+	case grammar.Leaf:
+		return termHasWordBoundary(x.Term)
+	case grammar.Lookahead:
+		return termHasWordBoundary(x.Term)
+	case grammar.NegLookahead:
+		return termHasWordBoundary(x.Term)
+	case grammar.CaseFold:
+		return termHasWordBoundary(x.Term)
+	case grammar.Delim:
+		return termHasWordBoundary(x.Term) || termHasWordBoundary(x.Sep)
+	case grammar.Scope:
+		return termHasWordBoundary(x.Term)
+	}
+	return false
+}
+
 func (c *compiler) flatten(t grammar.Term) []elem {
 	return c.flattenAt(t, false)
 }
@@ -858,6 +917,9 @@ func (c *compiler) flattenAt(t grammar.Term, fold bool) []elem {
 		if fold {
 			inner.Term = grammar.CaseFold{On: true, Term: x.Term}
 		}
+		if termHasWordBoundary(inner.Term) {
+			return c.flattenAt(inner.Term, fold)
+		}
 		return []elem{{kind: ekDFA, nt: c.leafDFA(inner)}}
 	case grammar.Quant:
 		return []elem{{kind: ekNT, nt: c.quantNT(c.flattenAt(x.Term, fold), x.Min, x.Max)}}
@@ -902,7 +964,7 @@ func (c *compiler) flattenAt(t grammar.Term, fold bool) []elem {
 		return []elem{{kind: ekNegLook, nt: h}}
 	case grammar.Empty:
 		return nil
-	case grammar.PosProp, grammar.Ref:
+	case grammar.PosProp, grammar.Ref, grammar.ExtRef:
 		return []elem{{kind: ekTerm, term: x}}
 	case grammar.String:
 		s := x
@@ -1017,17 +1079,23 @@ func (c *compiler) stackNT(st grammar.Stack) string {
 		names[i] = c.fresh("st")
 	}
 	for i, lev := range st.Levels {
-		tighter := ""
+		next := ""
 		if i+1 < len(names) {
-			tighter = names[i+1]
+			next = names[i+1]
 		}
-		body := rewriteSelf(lev, tighter)
+		// wbnf resolveStacks: @ at level i is level (i+1)%n, so the
+		// tightest level's @ is the stack start (a full expr), not ε.
+		self := next
+		if self == "" && len(names) > 0 {
+			self = names[0]
+		}
+		body := rewriteSelf(lev, self)
 		prev := c.stackTighter
-		c.stackTighter = tighter
+		c.stackTighter = next
 		c.emitRule(names[i], body)
 		c.stackTighter = prev
-		if tighter != "" {
-			c.addProd(names[i], []elem{{kind: ekNT, nt: tighter}})
+		if next != "" {
+			c.addProd(names[i], []elem{{kind: ekNT, nt: next}})
 			c.prods[len(c.prods)-1].fallback = true
 		}
 	}

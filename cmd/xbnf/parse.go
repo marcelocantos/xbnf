@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/marcelocantos/xbnf/engine"
 	"github.com/marcelocantos/xbnf/grammar"
@@ -27,7 +28,15 @@ func runParse(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	res := engine.Parse(g, "", string(in))
+	opts := &engine.CompileOpts{
+		ReadImport: func(p string) ([]byte, error) {
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(filepath.Dir(args[0]), p)
+			}
+			return os.ReadFile(p)
+		},
+	}
+	res := engine.ParseWith(g, "", string(in), opts)
 	if !res.OK {
 		fmt.Fprintln(os.Stderr, res.Error)
 		return 1
@@ -41,7 +50,14 @@ func runExplain(path string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	c, err := engine.Compile(g)
+	c, err := engine.CompileWith(g, &engine.CompileOpts{
+		ReadImport: func(p string) ([]byte, error) {
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(filepath.Dir(path), p)
+			}
+			return os.ReadFile(p)
+		},
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

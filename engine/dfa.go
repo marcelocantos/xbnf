@@ -84,7 +84,7 @@ func buildDFA(body grammar.Term, c *compiler) (*dfa, error) {
 	if o, ok := body.(grammar.OrderedAlt); ok {
 		d := &dfa{nfa: &nfa{states: []nfaState{{}}}, memo: map[string]*dfaState{}}
 		for _, t := range o.Terms {
-			d.ordered = append(d.ordered, compileOneDFA(t, c))
+			d.ordered = append(d.ordered, compileOneDFAAt(t, c, false))
 		}
 		return d, nil
 	}
@@ -100,7 +100,7 @@ func buildDFA(body grammar.Term, c *compiler) (*dfa, error) {
 		if allNamed {
 			for _, t := range a.Terms {
 				n := t.(grammar.Named)
-				d.alts = append(d.alts, labAlt{name: n.Name, d: compileOneDFA(n.Term, c)})
+				d.alts = append(d.alts, labAlt{name: n.Name, d: compileOneDFAAt(n.Term, c, false)})
 			}
 		}
 	}
@@ -108,8 +108,12 @@ func buildDFA(body grammar.Term, c *compiler) (*dfa, error) {
 }
 
 func compileOneDFA(body grammar.Term, c *compiler) *dfa {
+	return compileOneDFAAt(body, c, false)
+}
+
+func compileOneDFAAt(body grammar.Term, c *compiler, nowrap bool) *dfa {
 	n := &nfa{}
-	b := nfaB{n: n, c: c, seen: map[string]bool{}}
+	b := nfaB{n: n, c: c, seen: map[string]bool{}, nowrap: nowrap}
 	s, a := b.term(body)
 	n.states[a].acc = true
 	d := &dfa{nfa: n, memo: map[string]*dfaState{}}
@@ -193,7 +197,7 @@ func (b *nfaB) term(t grammar.Term) (int, int) {
 		a := b.n.st()
 		od := &dfa{nfa: &nfa{states: []nfaState{{}}}, memo: map[string]*dfaState{}}
 		for _, t := range x.Terms {
-			od.ordered = append(od.ordered, compileOneDFA(t, b.c))
+			od.ordered = append(od.ordered, compileOneDFAAt(t, b.c, b.nowrap))
 		}
 		h := b.c.fresh("oa")
 		if b.c.extraDFA == nil {
