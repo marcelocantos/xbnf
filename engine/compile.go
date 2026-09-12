@@ -34,7 +34,7 @@ type elem struct {
 	// appendElem does no type switch and no rule-table lookup. treeKind is ""
 	// when the element makes no node of its own: an Empty/PosProp terminal
 	// contributes nothing, and a structured regular body is walked instead.
-	treeKind string
+	treeKind Kind
 	treeName string
 }
 
@@ -257,7 +257,7 @@ const (
 // nonterminal id.
 type ntInfo struct {
 	nt    string // the nonterminal's name, for diagnostics
-	kind  string // Node.Kind of the wrapper this nonterminal builds
+	kind  Kind   // Node.Kind of the wrapper this nonterminal builds
 	name  string // Node.Name of that wrapper
 	class int
 }
@@ -287,13 +287,13 @@ func (c *Compiled) buildNTInfo() {
 		info := ntInfo{nt: nt, class: classifyNT(nt)}
 		switch info.class {
 		case ntClassRule:
-			info.kind, info.name = nodeKindRule, nt
+			info.kind, info.name = KindRule, nt
 		case ntClassQuant:
-			info.kind = nodeKindQuant
+			info.kind = KindQuant
 		case ntClassDelim:
-			info.kind = nodeKindDelim
+			info.kind = KindDelim
 		case ntClassSeq:
-			info.kind = nodeKindSeq
+			info.kind = KindSeq
 		}
 		c.ntInfo[id] = info
 	}
@@ -396,13 +396,13 @@ func (c *Compiled) resolveElemNode(e *elem) {
 		e.treeName = e.name
 		switch e.term.(type) {
 		case grammar.Empty, grammar.PosProp, grammar.ExtRef:
-			e.treeKind = ""
+			e.treeKind = KindNone
 		case grammar.Ref:
-			e.treeKind = nodeKindRef
+			e.treeKind = KindRef
 		case grammar.String:
-			e.treeKind = nodeKindString
+			e.treeKind = KindString
 		default:
-			e.treeKind = nodeKindChar
+			e.treeKind = KindChar
 		}
 	case ekDFA:
 		// dfaNode flattens a /leaf/ body — and an unknown name — to one text
@@ -410,12 +410,12 @@ func (c *Compiled) resolveElemNode(e *elem) {
 		// $lf element is a leaf too, but it is anonymous: it carries only the
 		// `name=` label its reference gave it.
 		if strings.HasPrefix(e.nt, leafDFAPrefix) {
-			e.treeKind, e.treeName = nodeKindLeaf, e.name
+			e.treeKind, e.treeName = KindLeaf, e.name
 			return
 		}
 		rule, ok := c.rules[e.nt]
 		if _, isLeaf := rule.Body.(grammar.Leaf); !ok || isLeaf {
-			e.treeKind, e.treeName = nodeKindLeaf, e.nt
+			e.treeKind, e.treeName = KindLeaf, e.nt
 			if e.name != "" {
 				e.treeName = e.name
 			}

@@ -45,7 +45,10 @@ ast/          committed parse tree
 Today: CLI (`--version`, `--help`, `--help-agent`, `sandbox`, `-from-wbnf`,
 `parse`, `eval`, `--explain`) plus packages `grammar` (IR), `syntax` (bootstrap
 parser), `engine` (GLL with a DFA fast path), `fromwbnf` (parse `.wbnf`
-into meaning and emit xbnf), and `eval` (corpus harness). `xbnf sandbox` hosts the cheat sheet;
+into meaning and emit xbnf), and `eval` (corpus harness). A parse result is
+an event stream (`Result.Events`: open/close/leaf/skip, lengths tiling the
+input); `Result.Tree()` decodes it and `Node.Text(input)` slices node text.
+See `docs/tree-stream.md`. `xbnf sandbox` hosts the cheat sheet;
 `POST /run` matches editable examples. Compile-time disambiguation (🎯T6) and
 self-host (🎯T7) have landed. Frontier: 🎯T23 source positions, 🎯T26 tree-class
 oracles, 🎯T27 large corpora, 🎯T28 concurrent `Parse`.

@@ -198,6 +198,32 @@ SPDX-License-Identifier: Apache-2.0
         renderToc($("#q").value);
       }
 
+      // The parse comes back as a preorder event stream whose leaf and skip
+      // lengths tile the input in bytes (docs/tree-stream.md). Render it as an
+      // indented listing with each leaf's text sliced out of the input.
+      function renderEvents(events, input) {
+        const bytes = new TextEncoder().encode(input);
+        const decoder = new TextDecoder();
+        const lines = [];
+        let depth = 0, cur = 0;
+        for (const e of events) {
+          const pad = "  ".repeat(Math.max(depth, 0));
+          const label = (e.kind || "") + (e.name ? " " + e.name : "");
+          if (e.op === "open") {
+            lines.push(pad + label);
+            depth++;
+          } else if (e.op === "close") {
+            depth--;
+          } else {
+            const len = e.len || 0;
+            const text = JSON.stringify(decoder.decode(bytes.subarray(cur, cur + len)));
+            lines.push(pad + (e.op === "skip" ? "· " : label + " ") + text);
+            cur += len;
+          }
+        }
+        return lines.join("\n");
+      }
+
       async function run() {
         const btn = $("#run");
         btn.disabled = true;
@@ -216,7 +242,7 @@ SPDX-License-Identifier: Apache-2.0
           const data = await res.json();
           if (data.ok) {
             $("#out").className = "ok";
-            $("#out").textContent = "match\n" + JSON.stringify(data.tree, null, 2);
+            $("#out").textContent = "match\n" + renderEvents(data.events || [], $("#input").value);
           } else {
             $("#out").className = "fail";
             $("#out").textContent = data.error || "failed";

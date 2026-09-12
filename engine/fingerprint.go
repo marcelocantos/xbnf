@@ -22,19 +22,19 @@ type Fingerprint struct {
 	SHA256 string `json:"sha256"`
 }
 
-// FingerprintResult hashes the tree in preorder: kind, name and text are
-// NUL-terminated, the child count is a uvarint. The encoding is injective for
-// strings without NUL, which grammar text cannot contain.
-// Start/End are not hashed: they are a function of the same spans that
-// produce Text (docs/tree-positions.md). Dedicated tests pin positions.
-// A failed parse's partial tree is included; a zero tree on failure means
-// there was no public tree and retains the empty fingerprint.
+// FingerprintResult hashes the decoded tree in preorder: kind, name and text
+// are NUL-terminated, the child count is a uvarint. The encoding is injective
+// for strings without NUL, which grammar text cannot contain. Text is
+// input[Start:End], so the hash is the one the tree carried before the event
+// stream (docs/tree-stream.md): a stream that decodes to the same tree over
+// the same input has the same fingerprint. A failed parse's partial tree is
+// included; a result with no events retains the empty fingerprint.
 func FingerprintResult(res *Result) Fingerprint {
 	h := sha256.New()
 	nodes := 0
-	tree := &res.Tree
-	if res.OK || tree.Kind != "" || tree.Name != "" || tree.Text != "" || len(tree.Children) != 0 {
-		nodes = hashNode(h, tree)
+	if len(res.Events) != 0 {
+		tree := res.Tree()
+		nodes = hashNode(h, &tree, res.Input)
 	}
 	return Fingerprint{
 		OK:     res.OK,
@@ -46,19 +46,19 @@ func FingerprintResult(res *Result) Fingerprint {
 	}
 }
 
-func hashNode(h hash.Hash, n *Node) int {
+func hashNode(h hash.Hash, n *Node, input string) int {
 	var buf [binary.MaxVarintLen64]byte
-	h.Write([]byte(n.Kind))
+	h.Write([]byte(n.Kind.String()))
 	h.Write(buf[:1])
 	h.Write([]byte(n.Name))
 	h.Write(buf[:1])
-	h.Write([]byte(n.Text))
+	h.Write([]byte(n.Text(input)))
 	h.Write(buf[:1])
 	k := binary.PutUvarint(buf[:], uint64(len(n.Children)))
 	h.Write(buf[:k])
 	count := 1
 	for i := range n.Children {
-		count += hashNode(h, &n.Children[i])
+		count += hashNode(h, &n.Children[i], input)
 	}
 	return count
 }

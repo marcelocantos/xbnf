@@ -123,7 +123,7 @@ func TestConvertLanguageOracle(t *testing.T) {
 			if wok {
 				accepted++
 				if res.OK {
-					checkPublicSpans(t, tc.file, in, res.Tree)
+					checkPublicSpans(t, tc.file, in, res.Tree())
 				}
 			} else {
 				rejected++
@@ -361,11 +361,7 @@ func checkPublicSpans(t *testing.T, file, input string, n engine.Node) {
 	walk = func(n engine.Node, plo, phi int) {
 		if n.Start < plo || n.End > phi || n.Start > n.End || n.Start < 0 || n.End > len(input) {
 			t.Fatalf("%s %s %q: span [%d,%d) outside [%d,%d)",
-				file, n.Kind, n.Text, n.Start, n.End, plo, phi)
-		}
-		if n.Kind != "string" && input[n.Start:n.End] != n.Text {
-			t.Fatalf("%s %s: text %q != input[%d:%d] %q",
-				file, n.Kind, n.Text, n.Start, n.End, input[n.Start:n.End])
+				file, n.Kind, n.Text(input), n.Start, n.End, plo, phi)
 		}
 		for _, c := range n.Children {
 			walk(c, n.Start, n.End)

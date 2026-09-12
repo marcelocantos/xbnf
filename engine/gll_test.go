@@ -111,8 +111,9 @@ func TestGLLUnorderedAlt(t *testing.T) {
 	if !r1.OK || !r2.OK {
 		t.Fatalf("unordered alt: %s / %s", r1.Error, r2.Error)
 	}
-	if r1.Tree.Text != r2.Tree.Text || r1.Tree.Text != "a" {
-		t.Fatalf("alt order changed parse: %q vs %q", r1.Tree.Text, r2.Tree.Text)
+	t1, t2 := r1.Tree().Text(r1.Input), r2.Tree().Text(r2.Input)
+	if t1 != t2 || t1 != "a" {
+		t.Fatalf("alt order changed parse: %q vs %q", t1, t2)
 	}
 }
 

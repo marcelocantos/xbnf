@@ -178,7 +178,7 @@ func TestPooledParseStable(t *testing.T) {
 	if !second.OK {
 		t.Fatal(second.Error)
 	}
-	if !nodesEqual(first.Tree, second.Tree) {
+	if !nodesEqual(first.Tree(), second.Tree()) {
 		t.Fatal("second Parse on a pooled GLL disagreed with the first tree")
 	}
 	other := c.Parse("json", `{"a": [true, false, null]}`)
@@ -189,7 +189,7 @@ func TestPooledParseStable(t *testing.T) {
 	if !again.OK {
 		t.Fatal(again.Error)
 	}
-	if !nodesEqual(first.Tree, again.Tree) {
+	if !nodesEqual(first.Tree(), again.Tree()) {
 		t.Fatal("Parse after a different input leaked into the original tree")
 	}
 }
@@ -261,7 +261,7 @@ func TestPooledWrapAcrossGrammars(t *testing.T) {
 }
 
 func nodesEqual(a, b Node) bool {
-	if a.Kind != b.Kind || a.Name != b.Name || a.Text != b.Text ||
+	if a.Kind != b.Kind || a.Name != b.Name ||
 		a.Start != b.Start || a.End != b.End || len(a.Children) != len(b.Children) {
 		return false
 	}

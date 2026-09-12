@@ -48,8 +48,8 @@ func TestScopedLocalRegularInCFG(t *testing.T) {
 	if !res.OK {
 		t.Fatalf("parse: %s", res.Error)
 	}
-	if !treeHasName(res.Tree, "NUM") {
-		t.Fatalf("tree missing NUM nodes: %+v", res.Tree)
+	if !treeHasName(res.Tree(), "NUM") {
+		t.Fatalf("tree missing NUM nodes: %+v", res.Tree())
 	}
 }
 

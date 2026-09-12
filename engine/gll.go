@@ -150,10 +150,9 @@ type gll struct {
 	pops         []gssPop
 	tnodes       []inode
 	tkids        []int32
-	tlits        []string // builder.lits: node text the input does not contain
 	kscratch     []int32
 	iscratch     []int32 // builder.intern's child-id stack, disjoint from kscratch
-	mqueue       []int32 // builder.materialize's breadth-first queue of arena ids
+	eframes      []eframe // builder.emit's walk stack
 	spineBuf     []kidSpan
 	spineOut     []int32
 	gen          uint32 // bumps each Parse; lookup maps are not cleared
@@ -249,7 +248,7 @@ func chartCells(p *gll) int {
 	n := cap(p.R) + cap(p.gss) + cap(p.edges) + cap(p.pops) + cap(p.steps)
 	n += cap(p.cells) + cap(p.wrapEnd) + cap(p.tnodes) + cap(p.tkids)
 	n += cap(p.bindings) + cap(p.captureDescs) + p.captureAt.cells()
-	n += cap(p.kscratch) + cap(p.spineBuf) + cap(p.spineOut) + cap(p.tlits)
+	n += cap(p.kscratch) + cap(p.spineBuf) + cap(p.spineOut)
 	n += p.uset.cells() + p.gssAt.cells() + p.sym.cells() + p.moreAt.cells() + cap(p.moreSlab) + cap(p.pickBuf)
 	return n
 }
@@ -360,7 +359,6 @@ func (p *gll) release() {
 	}
 	p.tnodes = p.tnodes[:0]
 	p.tkids = p.tkids[:0]
-	p.tlits = p.tlits[:0]
 	p.kscratch = p.kscratch[:0]
 	p.pickBuf = p.pickBuf[:0]
 	p.spineBuf = p.spineBuf[:0]
@@ -557,19 +555,26 @@ func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 		end, _, ok := c.dfa[start].match(input, pos)
 		if !ok {
 			msg := formatExpect(input, pos, []string{displayNT(start)}, start, true)
-			return &Result{Error: msg}, p
+			return &Result{Error: msg, Input: input}, p
 		}
-		tree := c.dfaNodeOwned(input, start, pos, end)
-		end = c.skipWrap(input, end)
-		if end != len(input) {
-			line, col := lineCol(input, end)
+		n := c.dfaNode(input, start, pos, end)
+		endw := c.skipWrap(input, end)
+		count, _ := countNodeEvents(&n, 0)
+		if endw > end {
+			count++
+		}
+		events, _ := appendNodeEvents(make([]Event, 0, count), &n, 0)
+		events = skipTo(events, end, endw)
+		if endw != len(input) {
+			line, col := lineCol(input, endw)
 			return &Result{
-				Error: fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, end),
-				End:   end,
-				Tree:  tree,
+				Error:  fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, endw),
+				End:    endw,
+				Events: events,
+				Input:  input,
 			}, p
 		}
-		return &Result{OK: true, End: end, Tree: tree}, p
+		return &Result{OK: true, End: endw, Events: events, Input: input}, p
 	}
 	p.rootAt(c.ntNID[start], pos)
 	p.fork(start, dummy, pos)
@@ -579,25 +584,27 @@ func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 		return &Result{Error: p.failMessage()}, p
 	}
 	b := newBuilder(p)
-	tree := b.root(start, pos, end)
 	endw := c.skipWrap(input, end)
+	events := b.root(start, pos, end, endw)
 	if endw != len(input) {
 		line, col := lineCol(input, endw)
 		return &Result{
 			Error:  fmt.Sprintf("unconsumed input at %d:%d (byte %d)", line, col, endw),
 			End:    endw,
 			Packed: b.packed,
-			Tree:   tree,
+			Events: events,
+			Input:  input,
 		}, p
 	}
 	if b.err != "" {
-		return &Result{Error: b.err, End: endw, Packed: b.packed, Tree: tree}, p
+		return &Result{Error: b.err, End: endw, Packed: b.packed, Events: events, Input: input}, p
 	}
 	return &Result{
 		OK:     true,
 		End:    endw,
 		Packed: b.packed,
-		Tree:   tree,
+		Events: events,
+		Input:  input,
 	}, p
 }
 

@@ -1,5 +1,11 @@
 # Parse-tree source positions
 
+**Superseded in part by [tree-stream.md](tree-stream.md) (🎯T34):** `Node`
+no longer has a `Text` field; its text is `input[Start:End]` via
+`Node.Text(input)`, and `Result.Tree()` decodes the spans below from the
+event stream. Case-folded string literals no longer report the grammar
+spelling. The span rules here still hold.
+
 🎯T23 records this design before the API change. Positions exist so callers
 who used wbnf byte offsets can migrate (🎯T32) and so every public node
 names the input it came from.

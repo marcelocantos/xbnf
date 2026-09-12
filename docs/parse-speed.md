@@ -273,7 +273,9 @@ vs master on the same machine): median **4.06 ms** / **2.35 MB** / 2 allocs
 `a9c96f5` was median **19.8 ms** on a hot machine (quiet T20++ was 11.0 ms).
 `sym` and `reach` are `uMap`; `endAt` tracks max right without iterating
 `sym`; all step runs are sorted and binary-searched; tables grow at load
-1/4. Remaining B/op is the public `Node` tree.
+1/4. Remaining B/op is the public output: since 🎯T34 the event stream
+(`Result.Events`, 24 bytes per event, 1.30 MB on this input), which
+`Result.Tree()` decodes on demand.
 
 🎯T23 adds `Start`/`End` on that public `Node` (docs/tree-positions.md). This
 is a required layout change, not a speed hypothesis. Interleaved runs vs
@@ -302,6 +304,7 @@ recorded run.
 | 2026-09-05 | T20+++ | 13.6e6 | 2.35e6 | — | — | — | 3s×5: 13.55/14.13/13.61/16.12/12.84 ms, 3 allocs. Same-session Go map U was ~15.3 ms (this session was hotter than the 11.0 T20++ run). Kept: splitmix64 uSet/uMap for U, gssAt, stepAt (probe+place, not k&mask); packed uint64 reach. Discarded: position-indexed U lists (tie). Isolated microbench ~2× std map (`uSet` later folded into `uMap`; the benchmark is now `BenchmarkMapVsUMap`). Left materialize. |
 | 2026-09-05 | T20++++ | 16.6e6 | 2.35e6 | — | — | — | 3s×5: 19.34/17.41/16.03/16.64/16.54 ms, 3 allocs. Same-session a9c96f5 was 16.65/19.05/21.54/25.43/19.82 ms (hot). Kept: sym+reach as uMap, endAt max-right, always-sort + matchSteps, load 1/4, packSteps pre-size. Discarded: in-parse step regions (copy still needed; pre-size is enough). Left materialize. |
 | 2026-09-08 | T23 | — | 2.88e6 | — | — | — | vs `0e69aa4`: MEM LOSE 2.35→2.88 MB, allocs 2. Time verdict varies with load. Fields kept because 🎯T23 requires positions. |
+| 2026-09-12 | T34 | — | 1.30e6 | — | — | — | vs `a9188b3`, 20 pairs: TIME WIN median 1.094 (18/20 new faster), MEM WIN 2.88→1.30 MB, allocs 2, VERDICT KEEP. Output is an event stream (docs/tree-stream.md): 24-byte events at exact count replace the 88-byte `Node` array; `Tree()` decodes on demand. A 10-pair run on a loaded host was TIME NOISY / MEM WIN. |
 
 ## Probe harness (`genJSON`, 64 KB)
 

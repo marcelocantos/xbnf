@@ -18,7 +18,7 @@ func sketch(n Node) string {
 	walk = func(n Node) {
 		name := n.Name
 		if name == "" {
-			name = n.Kind
+			name = n.Kind.String()
 		}
 		b.WriteString(name)
 		if len(n.Children) == 0 {
@@ -83,14 +83,14 @@ func TestUnitProdShortcutShapes(t *testing.T) {
 			if !res.OK {
 				t.Fatalf("%q rejected: %s", tc.in, res.Error)
 			}
-			if got := sketch(res.Tree); got != tc.want {
+			if got := sketch(res.Tree()); got != tc.want {
 				t.Errorf("tree\n got %s\nwant %s", got, tc.want)
 			}
 			if res.Packed != tc.packed {
 				t.Errorf("Packed = %d, want %d", res.Packed, tc.packed)
 			}
-			if again := c.Parse(tc.start, tc.in); sketch(again.Tree) != tc.want {
-				t.Errorf("second parse on the pooled gll differed: %s", sketch(again.Tree))
+			if again := c.Parse(tc.start, tc.in); sketch(again.Tree()) != tc.want {
+				t.Errorf("second parse on the pooled gll differed: %s", sketch(again.Tree()))
 			}
 		})
 	}

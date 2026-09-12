@@ -142,7 +142,7 @@ join -> (?="!") "!" ;
 								if res.OK != (len(want) != 0) {
 									problem = fmt.Sprintf("OK=%t, want %t; error=%q", res.OK, len(want) != 0, res.Error)
 								} else if res.OK {
-									got, copies := selectedBindingWitness(res.Tree)
+									got, copies := selectedBindingWitness(res.Tree(), res.Input)
 									matched := false
 									for _, w := range want {
 										matched = matched || (got.n == w.n && got.pad == w.pad &&
@@ -150,8 +150,8 @@ join -> (?="!") "!" ;
 									}
 									if copies != 1 || !matched {
 										problem = fmt.Sprintf("selected %d copies with %+v; valid derivations %+v", copies, got, want)
-									} else if res.End != len(in) || res.Tree.Text != in {
-										problem = fmt.Sprintf("incomplete public result: End=%d, tree text=%q", res.End, res.Tree.Text)
+									} else if res.End != len(in) || res.Tree().Text(res.Input) != in {
+										problem = fmt.Sprintf("incomplete public result: End=%d, tree text=%q", res.End, res.Tree().Text(res.Input))
 									}
 								}
 								if problem != "" {
@@ -228,10 +228,10 @@ Name -> `+strings.Join(alts, " | ")+` ;
 								refs := 0
 								for _, child := range node.Children {
 									if child.Name == "n" {
-										binding = child.Text
+										binding = child.Text(res.Input)
 									}
-									if child.Kind == "ref" {
-										ref = child.Text
+									if child.Kind == engine.KindRef {
+										ref = child.Text(res.Input)
 										refs++
 									}
 								}
@@ -244,7 +244,7 @@ Name -> `+strings.Join(alts, " | ")+` ;
 								walk(child)
 							}
 						}
-						walk(res.Tree)
+						walk(res.Tree())
 						if !slices.Equal(found, open) {
 							problem = fmt.Sprintf("selected binding scopes %q, want %q", found, open)
 						}
@@ -292,11 +292,11 @@ func TestBindingOracleCompletionContexts(t *testing.T) {
 					if assoc == "right" {
 						wantN, wantPad = wantPad, wantN
 					}
-					w, count := selectedBindingWitness(res.Tree)
+					w, count := selectedBindingWitness(res.Tree(), res.Input)
 					post := ""
-					for _, child := range res.Tree.Children {
+					for _, child := range res.Tree().Children {
 						if child.Name == "C" {
-							post = child.Text
+							post = child.Text(res.Input)
 						}
 					}
 					if !res.OK || count != 1 || w.n != wantN || w.pad != wantPad ||
@@ -307,7 +307,7 @@ func TestBindingOracleCompletionContexts(t *testing.T) {
 				}
 				// There is only one witness for aa!aa, even under #assoc=none.
 				res = c.Parse("copy", "aa!aa")
-				w, count := selectedBindingWitness(res.Tree)
+				w, count := selectedBindingWitness(res.Tree(), res.Input)
 				if !res.OK || count != 1 || w.n != "a" || w.pad != "a" ||
 					!slices.Equal(w.refs, []string{"a"}) || res.Packed != 0 {
 					t.Errorf("unique binding witness rejected or marked ambiguous: %+v", res)
@@ -367,7 +367,7 @@ B -> (?="a") "a" #prefer | (?="a") "aa" ;
 							continue
 						}
 						if res.OK {
-							got, count := selectedBindingWitness(res.Tree)
+							got, count := selectedBindingWitness(res.Tree(), res.Input)
 							matched := false
 							for _, w := range want {
 								matched = matched || (got.n == w.n && got.pad == w.pad && slices.Equal(got.refs, w.refs))
@@ -392,9 +392,9 @@ B -> (?="a") "a" #prefer | (?="a") "aa" ;
 		}
 		if res.OK {
 			var refs []string
-			for _, child := range res.Tree.Children {
-				if child.Kind == "ref" {
-					refs = append(refs, child.Text)
+			for _, child := range res.Tree().Children {
+				if child.Kind == engine.KindRef {
+					refs = append(refs, child.Text(res.Input))
 				}
 			}
 			if !slices.Equal(refs, []string{"x", "a"}) {
@@ -419,9 +419,9 @@ B -> (?="a") "a" #prefer | (?="a") "aa" ;
 			t.Errorf("%s on %q: OK=%t, want %t; error=%q", tc.ref, tc.input, res.OK, tc.ok, res.Error)
 		}
 		if res.OK {
-			if len(res.Tree.Children) != 1 || res.Tree.Children[0].Kind != "ref" ||
-				res.Tree.Children[0].Text != tc.input {
-				t.Errorf("%s on %q: default text missing from tree %+v", tc.ref, tc.input, res.Tree)
+			if len(res.Tree().Children) != 1 || res.Tree().Children[0].Kind != engine.KindRef ||
+				res.Tree().Children[0].Text(res.Input) != tc.input {
+				t.Errorf("%s on %q: default text missing from tree %+v", tc.ref, tc.input, res.Tree())
 			}
 		}
 	}
@@ -442,12 +442,12 @@ B -> (?="b") "b" #prefer | (?="b") "bb" ;
 				}
 				if res.OK {
 					var bindings, refs []string
-					for _, child := range res.Tree.Children {
+					for _, child := range res.Tree().Children {
 						if child.Name == "n" {
-							bindings = append(bindings, child.Text)
+							bindings = append(bindings, child.Text(res.Input))
 						}
-						if child.Kind == "ref" {
-							refs = append(refs, child.Text)
+						if child.Kind == engine.KindRef {
+							refs = append(refs, child.Text(res.Input))
 						}
 					}
 					if !slices.Equal(bindings, []string{first, second}) || !slices.Equal(refs, []string{first}) {
@@ -514,7 +514,7 @@ func TestBindingOracleNullableRecursiveCompletion(t *testing.T) {
 			}
 			c := compileBindingOracle(t, tc.src)
 			res := c.Parse("s", tc.input)
-			if !res.OK || res.End != len(tc.input) || res.Tree.Text != tc.input {
+			if !res.OK || res.End != len(tc.input) || res.Tree().Text(res.Input) != tc.input {
 				t.Fatalf("finite witness %q must parse: %+v", tc.input, res)
 			}
 			return
@@ -558,20 +558,20 @@ func compileBindingOracle(t *testing.T, src string) *engine.Compiled {
 
 // Read the public tree only. Each generated input contains exactly one copy;
 // recording its binding nodes and references identifies its selected derivation.
-func selectedBindingWitness(n engine.Node) (bindingOracleWitness, int) {
+func selectedBindingWitness(n engine.Node, input string) (bindingOracleWitness, int) {
 	if n.Name == "copy" {
 		var w bindingOracleWitness
 		for _, child := range n.Children {
 			switch child.Name {
 			case "n":
-				w.n = child.Text
+				w.n = child.Text(input)
 			case "B":
-				w.pad = child.Text
+				w.pad = child.Text(input)
 			case "m":
-				w.m = child.Text
+				w.m = child.Text(input)
 			}
-			if child.Kind == "ref" {
-				w.refs = append(w.refs, child.Text)
+			if child.Kind == engine.KindRef {
+				w.refs = append(w.refs, child.Text(input))
 			}
 		}
 		return w, 1
@@ -579,7 +579,7 @@ func selectedBindingWitness(n engine.Node) (bindingOracleWitness, int) {
 	var found bindingOracleWitness
 	count := 0
 	for _, child := range n.Children {
-		w, n := selectedBindingWitness(child)
+		w, n := selectedBindingWitness(child, input)
 		if n != 0 {
 			found = w
 			count += n

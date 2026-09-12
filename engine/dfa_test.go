@@ -214,10 +214,10 @@ func TestDelimLeafTree(t *testing.T) {
 	if !res.OK {
 		t.Fatalf("parse: %s", res.Error)
 	}
-	got := leafTexts(res.Tree)
+	got := leafTexts(res.Tree(), res.Input)
 	want := []string{"one", "two", "three"}
 	if len(got) != len(want) {
-		t.Fatalf("leaf texts %v, want %v (tree=%+v)", got, want, res.Tree)
+		t.Fatalf("leaf texts %v, want %v (tree=%+v)", got, want, res.Tree())
 	}
 	for i := range want {
 		if got[i] != want[i] {
@@ -226,13 +226,13 @@ func TestDelimLeafTree(t *testing.T) {
 	}
 }
 
-func leafTexts(n engine.Node) []string {
-	if n.Kind == "leaf" {
-		return []string{n.Text}
+func leafTexts(n engine.Node, input string) []string {
+	if n.Kind == engine.KindLeaf {
+		return []string{n.Text(input)}
 	}
 	var out []string
 	for _, c := range n.Children {
-		out = append(out, leafTexts(c)...)
+		out = append(out, leafTexts(c, input)...)
 	}
 	return out
 }

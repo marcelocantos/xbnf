@@ -13,7 +13,7 @@ import (
 
 // render writes a tree compactly: rules as name[...], lists as [...],
 // terminals as name:text or text.
-func render(n engine.Node) string {
+func render(res *engine.Result) string {
 	var b strings.Builder
 	var walk func(n engine.Node)
 	walk = func(n engine.Node) {
@@ -21,7 +21,7 @@ func render(n engine.Node) string {
 			if n.Name != "" {
 				b.WriteString(n.Name + ":")
 			}
-			b.WriteString(n.Text)
+			b.WriteString(n.Text(res.Input))
 			return
 		}
 		b.WriteString(n.Name)
@@ -34,7 +34,7 @@ func render(n engine.Node) string {
 		}
 		b.WriteByte(']')
 	}
-	walk(n)
+	walk(res.Tree())
 	return b.String()
 }
 
@@ -57,7 +57,7 @@ func wantTree(t *testing.T, gsrc, start, input, want string) *engine.Result {
 	if !res.OK {
 		t.Fatalf("%q: %s", input, res.Error)
 	}
-	if got := render(res.Tree); got != want {
+	if got := render(res); got != want {
 		t.Fatalf("%q:\n got %s\nwant %s", input, got, want)
 	}
 	return res
@@ -144,11 +144,11 @@ func TestSelfHostTreeShape(t *testing.T) {
 	if !res.OK {
 		t.Fatal(res.Error)
 	}
-	if res.Tree.Name != "grammar" || len(res.Tree.Children) != 1 {
-		t.Fatalf("want grammar[quant], got %s", render(res.Tree)[:80])
+	if res.Tree().Name != "grammar" || len(res.Tree().Children) != 1 {
+		t.Fatalf("want grammar[quant], got %s", render(res)[:80])
 	}
 	stmts := 0
-	for _, st := range res.Tree.Children[0].Children {
+	for _, st := range res.Tree().Children[0].Children {
 		if st.Name != "stmt" || len(st.Children) != 1 {
 			t.Fatalf("want stmt[...], got %+v", st)
 		}

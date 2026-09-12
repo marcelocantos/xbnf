@@ -54,23 +54,23 @@ q -> ("a" | "a" q) #longest ;
 	if res.Packed != 2 {
 		t.Errorf("Packed = %d, want 2: one for top's two productions, one for x's two splits", res.Packed)
 	}
-	if findNode(res.Tree, "b") != nil {
+	if findNode(res.Tree(), "b") != nil {
 		t.Error("top derived through b; the production declared first wins")
 	}
-	if findNode(res.Tree, "a") == nil {
+	if findNode(res.Tree(), "a") == nil {
 		t.Error("top should derive through a")
 	}
-	x := findNode(res.Tree, "x")
+	x := findNode(res.Tree(), "x")
 	if x == nil {
 		t.Fatal("no x node in the tree")
 	}
 	if len(x.Children) != 2 {
 		t.Fatalf("x should have p and q, got %d children", len(x.Children))
 	}
-	if got := x.Children[0].Text; got != "aa" {
+	if got := x.Children[0].Text(res.Input); got != "aa" {
 		t.Errorf("p spans %q, want \"aa\": the later start must win element 1", got)
 	}
-	if got := x.Children[1].Text; got != "a" {
+	if got := x.Children[1].Text(res.Input); got != "a" {
 		t.Errorf("q spans %q, want \"a\"", got)
 	}
 }

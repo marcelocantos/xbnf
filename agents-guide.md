@@ -19,7 +19,11 @@ The CLI supports `--version`, `--help`, `--help-agent`, `sandbox`
 `eval <manifest.json>` for the T22 corpus harness, and
 `--explain <grammar.xbnf>` to list DFA-promoted rules vs GLL forking.
 Sandbox `POST /run` parses xbnf with the bootstrap parser and matches
-input with that engine. Compile-time disambiguation (🎯T6) and self-host
+input with that engine. A parse result carries the tree as an event stream
+(`events`: `open`/`close`/`leaf`/`skip`; `leaf` and `skip` lengths tile the
+input up to `end`, so `#wrap` text is visible as `skip`). In Go,
+`Result.Tree()` decodes it into `engine.Node` and `Node.Text(input)` slices
+a node's text; see `docs/tree-stream.md`. Compile-time disambiguation (🎯T6) and self-host
 (🎯T7) have landed.
 
 ## Spec and plan
