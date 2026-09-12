@@ -83,43 +83,6 @@ SPDX-License-Identifier: Apache-2.0
     }
     #run:disabled { opacity: 0.5; }
     .hint { color: var(--muted); font-size: 0.85rem; }
-    #out {
-      margin-top: 0.8rem; padding: 0.8rem 0.9rem; border-radius: 0.35rem;
-      background: var(--bg-2); white-space: pre-wrap; font-size: 0.85rem;
-      min-height: 4rem; overflow-x: auto; --indent: 1.1rem;
-    }
-    #out.ok { border-left: 3px solid var(--ok); }
-    #out.fail { border-left: 3px solid var(--fail); }
-    /* Result viewer: one table row per node, matched text in its own column. */
-    .status { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; align-items: baseline; white-space: normal; }
-    .status .verdict { font-weight: 650; }
-    .status .count { color: var(--muted); }
-    .status .error { color: var(--fail); width: 100%; white-space: pre-wrap; }
-    .status button {
-      margin-left: auto; border: 1px solid var(--line); border-radius: 0.3rem;
-      background: transparent; color: var(--muted); font: inherit; font-size: 0.78rem;
-      padding: 0.1rem 0.45rem; cursor: pointer;
-    }
-    table.tree {
-      border-collapse: collapse; width: 100%; margin-top: 0.55rem;
-      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.82rem;
-      table-layout: auto; white-space: normal;
-    }
-    table.tree td { padding: 0.12rem 0.5rem; vertical-align: top; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
-    table.tree tr:first-child td { border-top: 0; }
-    td.n { white-space: nowrap; }
-    /* The snippet column takes the width the tree leaves, but never less than
-       a readable minimum: a deep tree scrolls #out instead of crushing it. */
-    td.t { white-space: pre-wrap; word-break: break-all; width: 100%; min-width: 14ch; }
-    .tg { display: inline-block; width: 1.1rem; color: var(--muted); }
-    tr.interior td.n { cursor: pointer; }
-    tr.interior:hover td.n { color: var(--accent); }
-    .kind { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 0.4rem; }
-    .name { font-weight: 650; }
-    tr.skip td, tr.interior td.t { color: var(--muted); }
-    .ws { color: var(--muted); opacity: 0.75; }
-    tr[hidden] { display: none; }
-    pre.raw { margin: 0.55rem 0 0; white-space: pre; overflow-x: auto; font-size: 0.78rem; }
     .badge {
       display: inline-block; font-size: 0.72rem; font-weight: 650;
       letter-spacing: 0.04em; text-transform: uppercase;
@@ -135,11 +98,11 @@ SPDX-License-Identifier: Apache-2.0
       }
       nav.toc h2 { width: 100%; }
       main { padding: 1rem; }
-      #out { --indent: 0.7rem; }
       .top-tools { width: 100%; }
       #q { width: 100%; }
     }
   </style>
+  <link rel="stylesheet" href="tree-view.css">
 </head>
 <body>
   <header class="top">
@@ -168,9 +131,10 @@ SPDX-License-Identifier: Apache-2.0
         <button type="button" id="run">Run</button>
         <span class="hint">Ctrl/⌘ Enter</span>
       </div>
-      <div id="out">Load a clause, then Run.</div>
+      <div id="out" class="tree-out">Load a clause, then Run.</div>
     </main>
   </div>
+  <script src="tree-view.js"></script>
   <script>
     (function () {
       const $ = (s) => document.querySelector(s);
@@ -225,182 +189,15 @@ SPDX-License-Identifier: Apache-2.0
         $("#input").value = c.input;
         $("#slice-note").hidden = c.slice !== "later";
         $("#out").textContent = "Ready. Run to match input against the grammar.";
-        $("#out").className = "";
+        $("#out").className = "tree-out";
         renderToc($("#q").value);
-      }
-
-      // The parse comes back as a preorder event stream whose leaf and skip
-      // lengths tile the input in bytes (docs/tree-stream.md). decodeEvents
-      // turns it into rows: one per open, leaf and skip event, each with its
-      // depth, byte span and, for leaves and skips, its text.
-      function decodeEvents(events, input) {
-        const bytes = new TextEncoder().encode(input);
-        const decoder = new TextDecoder();
-        const slice = (a, b) => decoder.decode(bytes.subarray(a, b));
-        const rows = [];
-        const open = [];
-        let cur = 0;
-        for (const e of events) {
-          if (e.op === "close") {
-            const r = open.pop();
-            if (r) r.end = cur;
-            continue;
-          }
-          const row = { op: e.op, kind: e.kind || "", name: e.name || "", depth: open.length, start: cur, end: cur, text: null };
-          rows.push(row);
-          if (e.op === "open") {
-            open.push(row);
-          } else {
-            cur += e.len || 0;
-            row.end = cur;
-            row.text = slice(row.start, cur);
-          }
-        }
-        while (open.length) open.pop().end = cur;
-        for (const r of rows) if (r.op === "open") r.text = slice(r.start, r.end);
-        return rows;
-      }
-
-      // Whitespace made visible: a space, tab or newline inside a snippet is
-      // easy to miss, and skip rows are nothing else.
-      function snippet(text) {
-        const frag = document.createDocumentFragment();
-        const glyphs = { " ": "\u2423", "\t": "\u21e5", "\n": "\u23ce", "\r": "\u240d" };
-        let run = "";
-        const flush = () => { if (run) { frag.appendChild(document.createTextNode(run)); run = ""; } };
-        for (const ch of text) {
-          if (glyphs[ch]) {
-            flush();
-            const g = document.createElement("span");
-            g.className = "ws";
-            g.textContent = glyphs[ch];
-            frag.appendChild(g);
-            if (ch === "\n") frag.appendChild(document.createTextNode("\n"));
-          } else {
-            run += ch;
-          }
-        }
-        flush();
-        return frag;
-      }
-
-      function renderResult(data, input) {
-        const out = $("#out");
-        out.textContent = "";
-        out.className = data.ok ? "ok" : "fail";
-        const rows = decodeEvents(data.events || [], input);
-
-        const status = document.createElement("div");
-        status.className = "status";
-        const verdict = document.createElement("span");
-        verdict.className = "verdict";
-        verdict.textContent = data.ok ? "match" : "no match";
-        status.appendChild(verdict);
-        const count = document.createElement("span");
-        count.className = "count";
-        const nodes = rows.filter((r) => r.op !== "skip").length;
-        count.textContent = nodes + (nodes === 1 ? " node" : " nodes") + (data.packed ? ", packed " + data.packed : "");
-        status.appendChild(count);
-        const rawBtn = document.createElement("button");
-        rawBtn.type = "button";
-        rawBtn.textContent = "events JSON";
-        status.appendChild(rawBtn);
-        if (!data.ok) {
-          const err = document.createElement("div");
-          err.className = "error";
-          err.textContent = data.error || "failed";
-          status.appendChild(err);
-        }
-        out.appendChild(status);
-
-        const table = document.createElement("table");
-        table.className = "tree";
-        const tbody = document.createElement("tbody");
-        rows.forEach(function (r, i) {
-          const tr = document.createElement("tr");
-          tr.dataset.depth = r.depth;
-          tr.className = r.op === "open" ? "interior" : r.op === "skip" ? "skip" : "leaf";
-          const n = document.createElement("td");
-          n.className = "n";
-          n.style.paddingLeft = "calc(0.5rem + " + r.depth + " * var(--indent))";
-          const tg = document.createElement("span");
-          tg.className = "tg";
-          tg.textContent = r.op === "open" ? "\u25be" : "";
-          n.appendChild(tg);
-          if (r.op === "skip") {
-            n.appendChild(document.createTextNode("\u00b7"));
-          } else {
-            const kind = document.createElement("span");
-            kind.className = "kind";
-            kind.textContent = r.kind;
-            n.appendChild(kind);
-            if (r.name) {
-              const name = document.createElement("span");
-              name.className = "name";
-              name.textContent = r.name;
-              n.appendChild(name);
-            }
-          }
-          const t = document.createElement("td");
-          t.className = "t";
-          if (r.op === "open") {
-            t.textContent = r.start + "\u2013" + r.end;
-          } else {
-            t.appendChild(snippet(r.text));
-          }
-          tr.appendChild(n);
-          tr.appendChild(t);
-          if (r.op === "open") {
-            tr.addEventListener("click", function () { toggle(i); });
-          }
-          tbody.appendChild(tr);
-        });
-        table.appendChild(tbody);
-        out.appendChild(table);
-
-        const collapsed = new Set();
-        function toggle(i) {
-          if (collapsed.has(i)) collapsed.delete(i); else collapsed.add(i);
-          const trs = tbody.children;
-          let hideDepth = -1;
-          rows.forEach(function (r, j) {
-            const tr = trs[j];
-            if (hideDepth >= 0 && r.depth > hideDepth) {
-              tr.hidden = true;
-              return;
-            }
-            hideDepth = -1;
-            tr.hidden = false;
-            if (r.op !== "open") return;
-            const isCollapsed = collapsed.has(j);
-            tr.querySelector(".tg").textContent = isCollapsed ? "\u25b8" : "\u25be";
-            const t = tr.querySelector(".t");
-            t.textContent = "";
-            if (isCollapsed) {
-              t.appendChild(snippet(r.text));
-              hideDepth = r.depth;
-            } else {
-              t.textContent = r.start + "\u2013" + r.end;
-            }
-          });
-        }
-
-        const raw = document.createElement("pre");
-        raw.className = "raw";
-        raw.hidden = true;
-        raw.textContent = (data.events || []).map((e) => JSON.stringify(e)).join("\n");
-        out.appendChild(raw);
-        rawBtn.addEventListener("click", function () {
-          raw.hidden = !raw.hidden;
-          rawBtn.textContent = raw.hidden ? "events JSON" : "hide JSON";
-        });
       }
 
       async function run() {
         const btn = $("#run");
         btn.disabled = true;
         $("#out").textContent = "Running…";
-        $("#out").className = "";
+        $("#out").className = "tree-out";
         try {
           const res = await fetch("/run", {
             method: "POST",
@@ -412,9 +209,9 @@ SPDX-License-Identifier: Apache-2.0
             })
           });
           const data = await res.json();
-          renderResult(data, $("#input").value);
+          xbnfTree.renderResult($("#out"), data, $("#input").value);
         } catch (e) {
-          $("#out").className = "fail";
+          $("#out").className = "tree-out fail";
           $("#out").textContent = String(e);
         }
         btn.disabled = false;

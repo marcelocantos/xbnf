@@ -14,7 +14,7 @@ tree-vs-oracle (🎯T26), larger corpora (🎯T27), concurrent `Parse` (🎯T28)
 
 ## Spec
 
-- [`docs/cheatsheet.html`](docs/cheatsheet.html) — interactive language cheat sheet
+- [`docs/cheatsheet.html`](docs/cheatsheet.html) — interactive language cheat sheet with runnable worked examples
 - [`docs/syntax.html`](docs/syntax.html) — full syntax reference with runnable examples
 - [`docs/xbnf.xbnf`](docs/xbnf.xbnf) — the language, defined in itself
 - [`docs/examples/`](docs/examples/) — JSON, calc, and larger sketches

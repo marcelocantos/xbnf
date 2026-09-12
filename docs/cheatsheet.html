@@ -19,6 +19,7 @@ SPDX-License-Identifier: Apache-2.0
       --accent: #a33b22;
       --ok: #2c5e4a;
       --later: #5c4d7a;
+      --fail: #8b2e1f;
       --code-bg: #e7dfcf;
       --shadow: 0 0 0 1px var(--line);
       --rail: 13.5rem;
@@ -33,6 +34,7 @@ SPDX-License-Identifier: Apache-2.0
       --accent: #e07a5f;
       --ok: #7dba9a;
       --later: #c2b3e0;
+      --fail: #e07a5f;
       --code-bg: #241f1a;
     }
     * { box-sizing: border-box; }
@@ -166,6 +168,22 @@ SPDX-License-Identifier: Apache-2.0
     }
     .tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
+    #examples label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.8rem 0 0.3rem; }
+    #examples textarea {
+      width: 100%; min-height: 8rem; padding: 0.6rem 0.7rem;
+      border: 1px solid var(--line); border-radius: 0.35rem;
+      background: var(--code-bg); color: inherit; resize: vertical;
+      font: 0.86rem/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+    #ex-input { min-height: 4.5rem; }
+    #examples .row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.7rem; }
+    #ex-run {
+      background: var(--ink); color: var(--bg); border: 0;
+      padding: 0.4rem 0.9rem; border-radius: 0.35rem; font: inherit; cursor: pointer;
+    }
+    #ex-run:disabled { opacity: 0.5; }
+    #examples .hint { color: var(--muted); font-size: 0.85rem; }
+
     .empty { display: none; padding: 1.2rem; color: var(--muted); }
     body.is-empty .empty { display: block; }
     body.is-empty main section { display: none; }
@@ -186,6 +204,7 @@ SPDX-License-Identifier: Apache-2.0
       td, th { overflow-wrap: anywhere; }
     }
   </style>
+  <link rel="stylesheet" href="tree-view.css">
 </head>
 <body>
   <header class="top">
@@ -488,55 +507,31 @@ member:","?     // JSON-style optional list, no trailing comma</pre></div>
 
       <section id="examples">
         <h2>Examples</h2>
-        <div class="tabs" role="tablist" aria-label="Worked examples">
+        <p class="muted item" data-slice="core" data-q="examples json calc ident xbnf run tree">
+          Complete grammars, not one-off clauses. Edit and Run — same tree viewer as the
+          <a href="syntax.html">syntax page</a>.
+        </p>
+        <div class="tabs item" role="tablist" aria-label="Worked examples" data-slice="any" data-q="json calc ident xbnf python">
           <button type="button" role="tab" aria-selected="true" data-ex="json">JSON</button>
           <button type="button" role="tab" aria-selected="false" data-ex="calc">calc stack</button>
           <button type="button" role="tab" aria-selected="false" data-ex="ident">IDENT terminal</button>
+          <button type="button" role="tab" aria-selected="false" data-ex="xbnf">xbnf itself</button>
           <button type="button" role="tab" aria-selected="false" data-ex="python" data-slice-tab="later">@col <span class="badge later">later</span></button>
         </div>
-
-        <div class="panel item" data-ex-panel="json" data-slice="core" data-q="json object array member wrap">
-          <p class="muted">First-slice complete grammar. From <a href="examples/json.xbnf"><code>docs/examples/json.xbnf</code></a>.</p>
-          <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">json   -&gt; value ;
-value  -&gt; object | array | STR | NUMBER | "true" | "false" | "null" ;
-object -&gt; "{" member:","? "}" ;
-member -&gt; STR ":" value ;
-array  -&gt; "[" value:","? "]" ;
-
-NUMBER -&gt; /{ #wrap -&gt; () ;
-    "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)? ;
-}/ ;
-
-#wrap -&gt; \s* ;</pre></div>
-        </div>
-
-        <div class="panel item" data-ex-panel="calc" hidden data-slice="core" data-q="calc expr assoc left recursion">
-          <p class="muted">Precedence stack. From <a href="examples/calc.xbnf"><code>docs/examples/calc.xbnf</code></a>.</p>
-          <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">expr -&gt; "let" IDENT "=" @ ";" @
-      &gt; @:op="?" @:op=":"
-      &gt; @:op=("+" | "-")    #assoc=left
-      &gt; @:op=("*" | "/" | "%")  #assoc=left
-      &gt; op=("-" | "!" | "~") @
-      &gt; @ "(" expr:","? ")"
-      | NUMBER
-      | IDENT ;</pre></div>
-        </div>
-
-        <div class="panel item" data-ex-panel="ident" hidden data-slice="core" data-q="IDENT /term/ leaf token">
-          <p class="muted">Typical token: collapse xbnf, not a regex dialect. Wrap-off when several character-level terms sit next to each other.</p>
-          <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">IDENT -&gt; /{ #wrap -&gt; () ;
-    [A-Za-z_] [A-Za-z0-9_]* ;
-}/ ;</pre></div>
-        </div>
-
-        <div class="panel item" data-ex-panel="python" hidden data-slice="later" data-q="@col python indent off-side">
-          <p class="muted">Designed, not first slice. From <a href="examples/python-subset.xbnf"><code>docs/examples/python-subset.xbnf</code></a>.</p>
-          <div class="code-wrap"><button type="button" class="copy">Copy</button>
-<pre class="xbnf">file  -&gt; (stmt @col(=0))* ;
-block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
+        <p id="ex-blurb" class="muted item" data-slice="any" data-q="json calc ident xbnf"></p>
+        <p id="ex-later" hidden>
+          <span class="badge later">later</span> First-slice runner will skip this construct by name.
+        </p>
+        <div class="item" data-slice="any" data-q="json calc ident xbnf run grammar input">
+          <label for="ex-grammar">Grammar</label>
+          <textarea id="ex-grammar" spellcheck="false"></textarea>
+          <label for="ex-input">Input</label>
+          <textarea id="ex-input" spellcheck="false"></textarea>
+          <div class="row">
+            <button type="button" id="ex-run">Run</button>
+            <span class="hint">Ctrl/⌘ Enter</span>
+          </div>
+          <div id="ex-out" class="tree-out">Load an example, then Run.</div>
         </div>
       </section>
 
@@ -574,6 +569,7 @@ block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
     </main>
   </div>
 
+  <script src="tree-view.js"></script>
   <script>
     (function () {
       const $ = (s, r) => (r || document).querySelector(s);
@@ -650,7 +646,7 @@ block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
           total++;
           const s = el.getAttribute("data-slice") || "core";
           const blob = ((el.getAttribute("data-q") || "") + " " + el.textContent).toLowerCase();
-          const okSlice = slice === "all" || s === slice;
+          const okSlice = slice === "all" || s === "any" || s === slice;
           const okQ = !query || blob.indexOf(query) >= 0;
           const vis = okSlice && okQ;
           el.hidden = !vis;
@@ -683,17 +679,81 @@ block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
         });
       });
 
+      let examples = [];
+      let currentEx = null;
+      const grammarCache = {};
+
+      function selectExample(id) {
+        const ex = examples.find(function (x) { return x.id === id; }) || examples[0];
+        if (!ex) return;
+        currentEx = ex;
+        $$(".tabs button[data-ex]").forEach(function (b) {
+          b.setAttribute("aria-selected", String(b.getAttribute("data-ex") === ex.id));
+        });
+        $("#ex-blurb").textContent = ex.blurb || "";
+        const later = $("#ex-later");
+        if (later) later.hidden = ex.slice !== "later";
+        $("#ex-input").value = ex.input || "";
+        $("#ex-out").textContent = "Ready. Run to match input against the grammar.";
+        $("#ex-out").className = "tree-out";
+        if (ex.grammar) {
+          $("#ex-grammar").value = ex.grammar;
+          return Promise.resolve();
+        }
+        if (ex.file && grammarCache[ex.file]) {
+          $("#ex-grammar").value = grammarCache[ex.file];
+          return Promise.resolve();
+        }
+        if (!ex.file) {
+          $("#ex-grammar").value = "";
+          return Promise.resolve();
+        }
+        $("#ex-grammar").value = "Loading " + ex.file + "…";
+        return fetch(ex.file)
+          .then(function (r) {
+            if (!r.ok) throw new Error(r.status + " " + ex.file);
+            return r.text();
+          })
+          .then(function (src) {
+            grammarCache[ex.file] = src;
+            if (currentEx && currentEx.file === ex.file) $("#ex-grammar").value = src;
+          })
+          .catch(function (e) {
+            $("#ex-grammar").value = "";
+            $("#ex-out").className = "tree-out fail";
+            $("#ex-out").textContent = String(e);
+          });
+      }
+
+      async function runExample() {
+        const btn = $("#ex-run");
+        btn.disabled = true;
+        $("#ex-out").textContent = "Running…";
+        $("#ex-out").className = "tree-out";
+        try {
+          const res = await fetch("/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              grammar: $("#ex-grammar").value,
+              input: $("#ex-input").value
+            })
+          });
+          const data = await res.json();
+          xbnfTree.renderResult($("#ex-out"), data, $("#ex-input").value);
+        } catch (e) {
+          $("#ex-out").className = "tree-out fail";
+          $("#ex-out").textContent = String(e);
+        }
+        btn.disabled = false;
+      }
+
       $$(".tabs button[data-ex]").forEach(function (btn) {
         btn.addEventListener("click", function () {
-          const id = btn.getAttribute("data-ex");
-          $$(".tabs button[data-ex]").forEach(function (b) {
-            b.setAttribute("aria-selected", String(b === btn));
-          });
-          $$("[data-ex-panel]").forEach(function (p) {
-            p.hidden = p.getAttribute("data-ex-panel") !== id;
-          });
+          selectExample(btn.getAttribute("data-ex"));
         });
       });
+      $("#ex-run").addEventListener("click", runExample);
 
       $$(".copy").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -715,7 +775,12 @@ block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
       });
 
       document.addEventListener("keydown", function (e) {
-        if (e.key === "/" && document.activeElement !== q && !e.metaKey && !e.ctrlKey) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          e.preventDefault();
+          runExample();
+          return;
+        }
+        if (e.key === "/" && document.activeElement !== q && document.activeElement.tagName !== "TEXTAREA" && !e.metaKey && !e.ctrlKey) {
           e.preventDefault();
           q.focus();
           q.select();
@@ -744,6 +809,18 @@ block -&gt; NEWLINE (stmt @col(&gt;0)){1,} ;</pre></div>
       }
 
       apply();
+
+      fetch("examples.json")
+        .then(function (r) { return r.json(); })
+        .then(function (xs) {
+          examples = xs;
+          const selected = document.querySelector(".tabs button[data-ex][aria-selected='true']");
+          return selectExample(selected ? selected.getAttribute("data-ex") : "json");
+        })
+        .catch(function (e) {
+          $("#ex-out").className = "tree-out fail";
+          $("#ex-out").textContent = "Failed to load examples: " + e;
+        });
     })();
   </script>
 </body>

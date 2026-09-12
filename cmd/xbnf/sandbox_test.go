@@ -87,7 +87,9 @@ func TestSandboxServesCheatSheet(t *testing.T) {
 		"xbnf language cheat sheet",
 		"id=\"sigils\"",
 		"First slice",
-		"member:\",\"?",
+		"id=\"ex-run\"",
+		"tree-view.js",
+		"/run",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("cheatsheet missing %q", want)
@@ -164,7 +166,7 @@ func TestSandboxSyntaxPage(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("syntax status: %d", res.StatusCode)
 	}
-	if !strings.Contains(body, "Syntax reference") || !strings.Contains(body, "/run") {
+	if !strings.Contains(body, "Syntax reference") || !strings.Contains(body, "/run") || !strings.Contains(body, "tree-view.js") {
 		t.Fatalf("syntax page missing runner: %q", body[:min(200, len(body))])
 	}
 	res, body = sandboxGet(t, base+"/docs/syntax-clauses.json")
@@ -173,6 +175,20 @@ func TestSandboxSyntaxPage(t *testing.T) {
 	}
 	if !strings.Contains(body, `"id": "rule"`) {
 		t.Fatalf("clauses missing rule: %s", body[:min(120, len(body))])
+	}
+}
+
+func TestSandboxExamplesJSON(t *testing.T) {
+	t.Parallel()
+	base := startSandbox(t)
+	res, body := sandboxGet(t, base+"/docs/examples.json")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("examples.json status: %d", res.StatusCode)
+	}
+	for _, want := range []string{`"id": "json"`, `"id": "calc"`, `"id": "xbnf"`, `"file": "examples/json.xbnf"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("examples.json missing %q: %s", want, body[:min(200, len(body))])
+		}
 	}
 }
 

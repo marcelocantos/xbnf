@@ -34,7 +34,7 @@ a node's text; see `docs/tree-stream.md`. Compile-time disambiguation (🎯T6) a
 
 | File | Role |
 |---|---|
-| `docs/cheatsheet.html` | Interactive language cheat sheet |
+| `docs/cheatsheet.html` | Interactive language cheat sheet; Examples tabs run full grammars via `POST /run` |
 | `docs/syntax.html` | Syntax reference with runnable examples |
 | `docs/xbnf.xbnf` | Language, defined in itself |
 | `docs/examples/*.xbnf` | Example grammars; `#macro` execution is later |

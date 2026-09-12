@@ -1,0 +1,42 @@
+[
+  {
+    "id": "json",
+    "title": "JSON",
+    "blurb": "First-slice complete grammar. Nested object and array, wrap between tokens, a multibyte string.",
+    "slice": "core",
+    "file": "examples/json.xbnf",
+    "input": "{\n  \"a\": [true, false, null],\n  \"b\": {\"n\": -1.5e+2, \"s\": \"café\"}\n}"
+  },
+  {
+    "id": "calc",
+    "title": "calc stack",
+    "blurb": "Precedence stack: let-binding, call, unary minus, * tighter than +.",
+    "slice": "core",
+    "file": "examples/calc.xbnf",
+    "input": "let x = 1+2*3; f(x, -4) + (2-3)"
+  },
+  {
+    "id": "ident",
+    "title": "IDENT terminal",
+    "blurb": "Typical token: collapse xbnf, not a regex dialect. Wrap-off when several character-level terms sit next to each other.",
+    "slice": "core",
+    "grammar": "IDENT -> /{ #wrap -> () ;\n    [A-Za-z_] [A-Za-z0-9_]* ;\n}/ ;\n",
+    "input": "foo_bar"
+  },
+  {
+    "id": "xbnf",
+    "title": "xbnf itself",
+    "blurb": "The language defined in itself. Input is a small grammar; the tree is the spec eating its own cooking.",
+    "slice": "core",
+    "file": "xbnf.xbnf",
+    "input": "expr -> @:op=(\"+\" | \"-\")  #assoc=left\n      > NUMBER ;\nNUMBER -> /[0-9]+/ ;\n#wrap -> \\s* ;\n"
+  },
+  {
+    "id": "python",
+    "title": "@col",
+    "blurb": "Designed, not first slice. Off-side rule via @col; the grammar does not compile yet.",
+    "slice": "later",
+    "file": "examples/python-subset.xbnf",
+    "input": "x = 1\n"
+  }
+]
