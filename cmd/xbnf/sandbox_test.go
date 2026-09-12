@@ -71,7 +71,7 @@ func TestSandboxServesCheatSheet(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET / (follow redirect) status: %d", res.StatusCode)
 	}
-	if !strings.Contains(body, "Syntax reference") {
+	if !strings.Contains(body, "Syntax reference") || !strings.Contains(body, "Language corpora") {
 		t.Fatalf("GET / missing hub: %q", body)
 	}
 
@@ -178,6 +178,48 @@ func TestSandboxSyntaxPage(t *testing.T) {
 	}
 }
 
+func TestSandboxLanguagesPage(t *testing.T) {
+	t.Parallel()
+	base := startSandbox(t)
+	res, body := sandboxGet(t, base+"/docs/languages.html")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("languages status: %d", res.StatusCode)
+	}
+	for _, want := range []string{
+		"Language corpora",
+		"tree-view.js",
+		"/run",
+		"/eval/",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("languages page missing %q", want)
+		}
+	}
+	res, body = sandboxGet(t, base+"/docs/languages.json")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("languages.json status: %d", res.StatusCode)
+	}
+	for _, want := range []string{`"id": "sql"`, `"id": "python"`, `"id": "xml"`, `"dir": "commonmark"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("languages.json missing %q: %s", want, body[:min(200, len(body))])
+		}
+	}
+	res, body = sandboxGet(t, base+"/eval/sql/grammar.xbnf")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("eval sql grammar status: %d", res.StatusCode)
+	}
+	if !strings.Contains(body, "query") {
+		t.Fatalf("eval sql grammar missing start rule")
+	}
+	res, body = sandboxGet(t, base+"/eval/python/corpus/this.py")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("eval python corpus status: %d", res.StatusCode)
+	}
+	if !strings.Contains(body, "Gur Mra") {
+		t.Fatalf("eval python corpus unexpected: %q", body[:min(80, len(body))])
+	}
+}
+
 func TestSandboxExamplesJSON(t *testing.T) {
 	t.Parallel()
 	base := startSandbox(t)
@@ -201,6 +243,13 @@ func TestSandboxRun(t *testing.T) {
 	}
 	if !strings.Contains(body, `"ok":true`) {
 		t.Fatalf("run: %s", body)
+	}
+	body, err = jsonPOST(t, base+"/run", `{"grammar":"query -> \"hi\" ;\n","input":"hi","start":"query"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("run start: %s", body)
 	}
 }
 

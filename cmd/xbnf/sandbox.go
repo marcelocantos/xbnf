@@ -25,8 +25,13 @@ func newSandboxMux() (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	eval, err := fs.Sub(xbnf.EvalData, "eval/testdata")
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/docs/", http.StripPrefix("/docs/", http.FileServer(http.FS(sub))))
+	mux.Handle("/eval/", http.StripPrefix("/eval/", http.FileServer(http.FS(eval))))
 	mux.HandleFunc("/run", handleRun)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {

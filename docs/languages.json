@@ -1,0 +1,44 @@
+[
+  {
+    "id": "sql",
+    "title": "SQL",
+    "dir": "sql",
+    "file": "corpus/select_distinct.sql"
+  },
+  {
+    "id": "xml",
+    "title": "XML",
+    "dir": "xml",
+    "file": "corpus/xmltest-valid-sa-001.xml"
+  },
+  {
+    "id": "go",
+    "title": "Go",
+    "dir": "go",
+    "file": "corpus/once.go"
+  },
+  {
+    "id": "python",
+    "title": "Python",
+    "dir": "python",
+    "file": "corpus/this.py"
+  },
+  {
+    "id": "yaml",
+    "title": "YAML",
+    "dir": "yaml",
+    "file": "corpus/26DV/in.yaml"
+  },
+  {
+    "id": "javascript",
+    "title": "JavaScript",
+    "dir": "javascript",
+    "file": "corpus/S12.3_A1.js"
+  },
+  {
+    "id": "commonmark",
+    "title": "CommonMark",
+    "dir": "commonmark",
+    "file": "corpus/README.md"
+  }
+]

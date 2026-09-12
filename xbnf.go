@@ -15,3 +15,8 @@ var AgentGuide string
 //
 //go:embed docs
 var Docs embed.FS
+
+// EvalData is the T22 language grammars and pinned corpora, served at /eval/.
+//
+//go:embed eval/testdata
+var EvalData embed.FS

@@ -1,0 +1,308 @@
+<!--
+Copyright 2026 Marcelo Cantos
+SPDX-License-Identifier: Apache-2.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>xbnf language corpora</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe6; --bg-2: #ebe4d4; --ink: #1b1814; --muted: #6b6358;
+      --line: #d5cbb8; --accent: #a33b22; --ok: #2c5e4a; --later: #5c4d7a;
+      --code-bg: #e7dfcf; --fail: #8b2e1f;
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #141210; --bg-2: #1c1915; --ink: #ece6da; --muted: #a3998c;
+      --line: #3b342c; --accent: #e07a5f; --ok: #7dba9a; --later: #c2b3e0;
+      --code-bg: #241f1a; --fail: #e07a5f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    a { color: var(--accent); }
+    code, textarea, pre, select { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+    .top {
+      position: sticky; top: 0; z-index: 5;
+      display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center;
+      padding: 0.7rem 1.1rem;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; gap: 0.7rem; align-items: baseline; text-decoration: none; color: inherit; }
+    .brand strong { font-size: 1.15rem; }
+    .brand span { color: var(--muted); font-size: 0.9rem; }
+    nav.pages { display: flex; gap: 0.8rem; font-size: 0.9rem; }
+    .top-tools { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
+    .icon-btn {
+      border: 1px solid var(--line); border-radius: 0.35rem;
+      background: transparent; color: inherit; font: inherit;
+      padding: 0.35rem 0.55rem; cursor: pointer;
+    }
+    main { padding: 1.25rem 1.4rem 4rem; max-width: 58rem; }
+    h1 { font-size: 1.5rem; letter-spacing: -0.03em; margin: 0 0 0.4rem; }
+    .lead { color: var(--muted); max-width: 46rem; }
+    .tabs { display: flex; gap: 0.3rem; flex-wrap: wrap; margin: 1rem 0 0.6rem; }
+    .tabs button {
+      border: 1px solid var(--line); background: transparent; color: inherit;
+      font: inherit; padding: 0.3rem 0.65rem; border-radius: 999px; cursor: pointer;
+    }
+    .tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.8rem 0 0.3rem; }
+    textarea, select {
+      width: 100%; padding: 0.6rem 0.7rem;
+      border: 1px solid var(--line); border-radius: 0.35rem;
+      background: var(--code-bg); color: inherit;
+    }
+    textarea { min-height: 10rem; resize: vertical; }
+    #input { min-height: 8rem; }
+    select { font: inherit; }
+    .row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.7rem; flex-wrap: wrap; }
+    #run {
+      background: var(--ink); color: var(--bg); border: 0;
+      padding: 0.4rem 0.9rem; border-radius: 0.35rem; font: inherit; cursor: pointer;
+    }
+    #run:disabled { opacity: 0.5; }
+    .hint { color: var(--muted); font-size: 0.85rem; }
+    .expect {
+      font-size: 0.78rem; font-weight: 650; letter-spacing: 0.04em;
+      text-transform: uppercase; padding: 0.05rem 0.4rem; border-radius: 999px;
+      border: 1px solid var(--line); color: var(--muted);
+    }
+    .expect.accept { color: var(--ok); }
+    .expect.reject { color: var(--fail); }
+    @media (max-width: 820px) {
+      main { padding: 1rem; }
+      .top-tools { width: 100%; }
+    }
+  </style>
+  <link rel="stylesheet" href="tree-view.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="index.html"><strong>xbnf</strong><span>sandbox</span></a>
+    <nav class="pages">
+      <a href="cheatsheet.html">Cheat sheet</a>
+      <a href="syntax.html">Syntax</a>
+      <a href="languages.html" aria-current="page">Languages</a>
+    </nav>
+    <div class="top-tools">
+      <button type="button" class="icon-btn" id="theme">Theme</button>
+    </div>
+  </header>
+  <main>
+    <h1>Language corpora</h1>
+    <p class="lead">
+      The seven live T22 grammars, loaded from <code>eval/testdata</code>.
+      Pick a language and a pinned corpus file, then Run.
+    </p>
+    <div class="tabs" id="tabs" role="tablist" aria-label="Languages"></div>
+    <p class="lead" id="blurb"></p>
+    <p class="hint" id="source"></p>
+    <label for="file">Corpus file</label>
+    <select id="file"></select>
+    <label for="grammar">Grammar</label>
+    <textarea id="grammar" spellcheck="false"></textarea>
+    <label for="input">Input</label>
+    <textarea id="input" spellcheck="false"></textarea>
+    <div class="row">
+      <button type="button" id="run">Run</button>
+      <span class="hint">Ctrl/⌘ Enter</span>
+      <span class="expect" id="expect" hidden></span>
+      <span class="hint" id="start"></span>
+    </div>
+    <div id="out" class="tree-out">Pick a language, then Run.</div>
+  </main>
+  <script src="tree-view.js"></script>
+  <script>
+    (function () {
+      const $ = (s) => document.querySelector(s);
+      const html = document.documentElement;
+      const saved = localStorage.getItem("xbnf-theme");
+      if (saved) html.setAttribute("data-theme", saved);
+      else if (matchMedia("(prefers-color-scheme: dark)").matches) html.setAttribute("data-theme", "dark");
+      $("#theme").addEventListener("click", function () {
+        const next = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        html.setAttribute("data-theme", next);
+        localStorage.setItem("xbnf-theme", next);
+      });
+
+      let languages = [];
+      let current = null;
+      let manifest = null;
+      const grammarCache = {};
+      const inputCache = {};
+
+      function evalURL(dir, rel) {
+        return "/eval/" + dir + "/" + rel.replace(/^\.\//, "");
+      }
+
+      function renderTabs() {
+        const tabs = $("#tabs");
+        tabs.textContent = "";
+        languages.forEach(function (lang) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.setAttribute("role", "tab");
+          btn.setAttribute("data-lang", lang.id);
+          btn.setAttribute("aria-selected", String(current && current.id === lang.id));
+          btn.textContent = lang.title;
+          btn.addEventListener("click", function () { show(lang.id); });
+          tabs.appendChild(btn);
+        });
+      }
+
+      function fillFiles(man, selected) {
+        const sel = $("#file");
+        sel.textContent = "";
+        (man.files || []).forEach(function (f) {
+          const opt = document.createElement("option");
+          opt.value = f.path;
+          opt.textContent = f.path + " (" + (f.expect || "accept") + ")";
+          sel.appendChild(opt);
+        });
+        if (selected && (man.files || []).some(function (f) { return f.path === selected; })) {
+          sel.value = selected;
+        } else if (sel.options.length) {
+          sel.selectedIndex = 0;
+        }
+      }
+
+      function currentFile() {
+        const path = $("#file").value;
+        return (manifest && manifest.files || []).find(function (f) { return f.path === path; }) || null;
+      }
+
+      function updateExpect() {
+        const f = currentFile();
+        const el = $("#expect");
+        if (!f) {
+          el.hidden = true;
+          return;
+        }
+        el.hidden = false;
+        el.className = "expect " + (f.expect || "accept");
+        el.textContent = f.expect || "accept";
+        el.title = f.reason || "";
+      }
+
+      function loadText(url, cache) {
+        if (cache[url]) return Promise.resolve(cache[url]);
+        return fetch(url).then(function (r) {
+          if (!r.ok) throw new Error(r.status + " " + url);
+          return r.text();
+        }).then(function (t) {
+          cache[url] = t;
+          return t;
+        });
+      }
+
+      function show(id) {
+        const lang = languages.find(function (x) { return x.id === id; }) || languages[0];
+        if (!lang) return;
+        current = lang;
+        location.hash = lang.id;
+        renderTabs();
+        $("#out").textContent = "Loading " + lang.title + "…";
+        $("#out").className = "tree-out";
+        return fetch(evalURL(lang.dir, "manifest.json"))
+          .then(function (r) {
+            if (!r.ok) throw new Error("manifest " + r.status);
+            return r.json();
+          })
+          .then(function (man) {
+            manifest = man;
+            $("#blurb").textContent = man.coverage || man.dialect || "";
+            const src = man.source || {};
+            $("#source").textContent = (src.name || "") + (src.revision ? " @ " + src.revision : "");
+            $("#start").textContent = man.start ? "start " + man.start : "";
+            fillFiles(man, lang.file);
+            updateExpect();
+            const gURL = evalURL(lang.dir, man.grammar || "grammar.xbnf");
+            const iURL = evalURL(lang.dir, $("#file").value);
+            return Promise.all([loadText(gURL, grammarCache), loadText(iURL, inputCache)]);
+          })
+          .then(function (pair) {
+            $("#grammar").value = pair[0];
+            $("#input").value = pair[1];
+            $("#out").textContent = "Ready. Run to match input against the grammar.";
+          })
+          .catch(function (e) {
+            $("#out").className = "tree-out fail";
+            $("#out").textContent = String(e);
+          });
+      }
+
+      function loadSelectedFile() {
+        if (!current || !manifest) return;
+        updateExpect();
+        const iURL = evalURL(current.dir, $("#file").value);
+        $("#input").value = "Loading…";
+        return loadText(iURL, inputCache)
+          .then(function (t) { $("#input").value = t; })
+          .catch(function (e) {
+            $("#input").value = "";
+            $("#out").className = "tree-out fail";
+            $("#out").textContent = String(e);
+          });
+      }
+
+      async function run() {
+        const btn = $("#run");
+        btn.disabled = true;
+        $("#out").textContent = "Running…";
+        $("#out").className = "tree-out";
+        try {
+          const res = await fetch("/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              grammar: $("#grammar").value,
+              input: $("#input").value,
+              start: manifest && manifest.start || ""
+            })
+          });
+          const data = await res.json();
+          xbnfTree.renderResult($("#out"), data, $("#input").value);
+        } catch (e) {
+          $("#out").className = "tree-out fail";
+          $("#out").textContent = String(e);
+        }
+        btn.disabled = false;
+      }
+
+      $("#run").addEventListener("click", run);
+      $("#file").addEventListener("change", loadSelectedFile);
+      document.addEventListener("keydown", function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          e.preventDefault();
+          run();
+        }
+      });
+      window.addEventListener("hashchange", function () {
+        const id = location.hash.slice(1);
+        if (id && (!current || current.id !== id)) show(id);
+      });
+
+      fetch("languages.json")
+        .then(function (r) { return r.json(); })
+        .then(function (xs) {
+          languages = xs;
+          const id = location.hash.slice(1);
+          return show(id);
+        })
+        .catch(function (e) {
+          $("#out").className = "tree-out fail";
+          $("#out").textContent = "Failed to load languages: " + e;
+        });
+    })();
+  </script>
+</body>
+</html>

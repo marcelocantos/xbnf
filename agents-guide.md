@@ -13,7 +13,7 @@ they declare a disambiguator (`#prefer`, `#avoid`, `#assoc`, `#priority`,
 
 The engine is GLL with a DFA terminal layer for regular-fragment rules.
 The CLI supports `--version`, `--help`, `--help-agent`, `sandbox`
-(also `-sandbox`) to host the cheat sheet and a syntax reference,
+(also `-sandbox`) to host the cheat sheet, syntax reference, and language corpora,
 `from-wbnf` (also `-from-wbnf`) to emit xbnf for an old wbnf grammar,
 `parse [-json] <grammar.xbnf> <input>` to parse with the GLL+DFA engine
 and print the parse (an indented listing, one node per line with leaf text
@@ -36,6 +36,7 @@ a node's text; see `docs/tree-stream.md`. Compile-time disambiguation (🎯T6) a
 |---|---|
 | `docs/cheatsheet.html` | Interactive language cheat sheet; Examples tabs run full grammars via `POST /run` |
 | `docs/syntax.html` | Syntax reference with runnable examples |
+| `docs/languages.html` | T22 language grammars on pinned `eval/testdata` corpus files |
 | `docs/xbnf.xbnf` | Language, defined in itself |
 | `docs/examples/*.xbnf` | Example grammars; `#macro` execution is later |
 | `docs/plan.md` | Locked decisions and work graph |

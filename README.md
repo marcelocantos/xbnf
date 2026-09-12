@@ -16,6 +16,7 @@ tree-vs-oracle (🎯T26), larger corpora (🎯T27), concurrent `Parse` (🎯T28)
 
 - [`docs/cheatsheet.html`](docs/cheatsheet.html) — interactive language cheat sheet with runnable worked examples
 - [`docs/syntax.html`](docs/syntax.html) — full syntax reference with runnable examples
+- [`docs/languages.html`](docs/languages.html) — T22 language grammars on their pinned corpus files
 - [`docs/xbnf.xbnf`](docs/xbnf.xbnf) — the language, defined in itself
 - [`docs/examples/`](docs/examples/) — JSON, calc, and larger sketches
 - [`docs/plan.md`](docs/plan.md) — locked decisions and work graph
