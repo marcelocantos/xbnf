@@ -15,7 +15,11 @@ The engine is GLL with a DFA terminal layer for regular-fragment rules.
 The CLI supports `--version`, `--help`, `--help-agent`, `sandbox`
 (also `-sandbox`) to host the cheat sheet and a syntax reference,
 `from-wbnf` (also `-from-wbnf`) to emit xbnf for an old wbnf grammar,
-`parse <grammar.xbnf> <input>` to parse with the GLL+DFA engine,
+`parse [-json] <grammar.xbnf> <input>` to parse with the GLL+DFA engine
+and print the parse (an indented listing, one node per line with leaf text
+quoted and wrap shown as `·`; `-json` prints the `engine.Result` with its
+event stream instead; a failed parse prints what it recognised, then the
+error on stderr, exit 1),
 `eval <manifest.json>` for the T22 corpus harness, and
 `--explain <grammar.xbnf>` to list DFA-promoted rules vs GLL forking.
 Sandbox `POST /run` parses xbnf with the bootstrap parser and matches

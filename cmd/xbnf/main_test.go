@@ -114,6 +114,50 @@ func TestRunParseOK(t *testing.T) {
 	}
 }
 
+func TestRunParseListing(t *testing.T) {
+	dir := t.TempDir()
+	g := filepath.Join(dir, "g.xbnf")
+	in := filepath.Join(dir, "in.txt")
+	src := "s -> \"a\" n ;\nn -> /[0-9]+/ ;\n#wrap -> \\s* ;\n"
+	if err := os.WriteFile(g, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(in, []byte(" a  42\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr := capture(t, []string{"parse", g, in})
+	if code != 0 || stderr != "" {
+		t.Fatalf("parse exit %d stderr %q", code, stderr)
+	}
+	const want = "· \" \"\nrule s\n  string \"a\"\n  · \"  \"\n  leaf n \"42\"\n· \"\\n\"\n"
+	if stdout != want {
+		t.Fatalf("listing:\n got %q\nwant %q", stdout, want)
+	}
+
+	code, stdout, stderr = capture(t, []string{"parse", "-json", g, in})
+	if code != 0 || stderr != "" {
+		t.Fatalf("parse -json exit %d stderr %q", code, stderr)
+	}
+	const wantJSON = `{"ok":true,"end":7,"events":[{"op":"skip","len":1},{"op":"open","kind":"rule","name":"s"},` +
+		`{"op":"leaf","kind":"string","len":1},{"op":"skip","len":2},{"op":"leaf","kind":"leaf","len":2,"name":"n"},` +
+		`{"op":"close"},{"op":"skip","len":1}]}` + "\n"
+	if stdout != wantJSON {
+		t.Fatalf("json:\n got %s\nwant %s", stdout, wantJSON)
+	}
+
+	// A failed parse lists what it recognised and reports the error.
+	if err := os.WriteFile(in, []byte("a 42 x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = capture(t, []string{"parse", g, in})
+	if code != 1 || !strings.Contains(stderr, "unconsumed input") {
+		t.Fatalf("failed parse exit %d stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "leaf n \"42\"") {
+		t.Fatalf("failed parse listing missing partial tree: %q", stdout)
+	}
+}
+
 func TestRunParseFail(t *testing.T) {
 	g, _, bad := parseFixture(t)
 	code, _, stderr := capture(t, []string{"parse", g, bad})

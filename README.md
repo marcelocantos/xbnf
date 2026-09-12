@@ -38,7 +38,8 @@ xbnf --version
 xbnf --help-agent
 xbnf sandbox          # http://127.0.0.1:7373/docs/index.html
 xbnf -from-wbnf old.wbnf > old.xbnf
-xbnf parse docs/examples/json.xbnf input.json
+xbnf parse docs/examples/json.xbnf input.json        # indented listing
+xbnf parse -json docs/examples/json.xbnf input.json  # event stream
 xbnf eval eval/testdata/json-smoke/manifest.json
 xbnf eval eval/testdata/sql/manifest.json
 xbnf --explain docs/examples/json.xbnf

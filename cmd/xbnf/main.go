@@ -42,7 +42,7 @@ func run(args []string) int {
 		fmt.Fprintf(out, "  xbnf -sandbox [-bind %s] [-port %d]\n", sandboxBindDefault, sandboxPortDefault)
 		fmt.Fprintf(out, "  xbnf from-wbnf file.wbnf\n")
 		fmt.Fprintf(out, "  xbnf -from-wbnf file.wbnf\n")
-		fmt.Fprintf(out, "  xbnf parse grammar.xbnf input\n")
+		fmt.Fprintf(out, "  xbnf parse [-json] grammar.xbnf input\n")
 		fmt.Fprintf(out, "  xbnf eval [-o report.json] [-self] manifest.json\n")
 		fmt.Fprintf(out, "  xbnf --explain grammar.xbnf\n\n")
 		fs.PrintDefaults()
