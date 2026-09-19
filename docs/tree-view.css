@@ -26,21 +26,32 @@ SPDX-License-Identifier: Apache-2.0
 .status .verdict { font-weight: 650; }
 .status .count { color: var(--muted); }
 .status .error { color: var(--fail); width: 100%; white-space: pre-wrap; }
-.status button {
-  margin-left: auto;
+.view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.55rem;
+  white-space: normal;
+}
+.view-tabs button {
   border: 1px solid var(--line);
-  border-radius: 0.3rem;
+  border-radius: 999px;
   background: transparent;
-  color: var(--muted);
+  color: inherit;
   font: inherit;
   font-size: 0.78rem;
-  padding: 0.1rem 0.45rem;
+  padding: 0.15rem 0.65rem;
   cursor: pointer;
+}
+.view-tabs button[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
 }
 table.tree {
   border-collapse: collapse;
   width: 100%;
-  margin-top: 0.55rem;
+  margin-top: 0.45rem;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.82rem;
   table-layout: auto;
@@ -70,7 +81,8 @@ tr.interior:hover td.n { color: var(--accent); }
 tr.skip td, tr.interior td.t { color: var(--muted); }
 .ws { color: var(--muted); opacity: 0.75; }
 .tree-out tr[hidden] { display: none; }
-pre.raw { margin: 0.55rem 0 0; white-space: pre; overflow-x: auto; font-size: 0.78rem; }
+.tree-out table[hidden], .tree-out pre[hidden] { display: none; }
+pre.raw { margin: 0.45rem 0 0; white-space: pre; overflow-x: auto; font-size: 0.78rem; }
 @media (max-width: 820px) {
   .tree-out { --indent: 0.7rem; }
 }
