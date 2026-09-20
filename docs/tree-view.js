@@ -37,11 +37,13 @@
     return rows;
   }
 
-  // Whitespace made visible: a space, tab or newline inside a snippet is
-  // easy to miss, and skip rows are nothing else.
-  function snippet(text) {
+  // Tabs, newlines and CR are always marked. Spaces become ␣ only on skip
+  // rows and on snippets that are nothing but whitespace — a long string
+  // literal should still read as text, not a wall of open boxes.
+  function snippet(text, glyphSpace) {
     const frag = document.createDocumentFragment();
-    const glyphs = { " ": "\u2423", "\t": "\u21e5", "\n": "\u23ce", "\r": "\u240d" };
+    const glyphs = { "\t": "\u21e5", "\n": "\u23ce", "\r": "\u240d" };
+    if (glyphSpace) glyphs[" "] = "\u2423";
     let run = "";
     const flush = () => { if (run) { frag.appendChild(document.createTextNode(run)); run = ""; } };
     for (const ch of text) {
@@ -174,7 +176,7 @@
       if (r.op === "open") {
         t.textContent = r.start + "\u2013" + r.end;
       } else {
-        t.appendChild(snippet(r.text));
+        t.appendChild(snippet(r.text, r.op === "skip" || !/[^\s]/.test(r.text)));
       }
       tr.appendChild(n);
       tr.appendChild(t);
@@ -204,7 +206,7 @@
         const cell = tr.querySelector(".t");
         cell.textContent = "";
         if (isCollapsed) {
-          cell.appendChild(snippet(r.text));
+          cell.appendChild(snippet(r.text, false));
           hideDepth = r.depth;
         } else {
           cell.textContent = r.start + "\u2013" + r.end;
