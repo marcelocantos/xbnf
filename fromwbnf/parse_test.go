@@ -13,7 +13,7 @@ import (
 	"github.com/marcelocantos/xbnf/fromwbnf"
 )
 
-func testdata(t *testing.T, name string) []byte {
+func testdata(t testing.TB, name string) []byte {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
