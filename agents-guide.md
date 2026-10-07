@@ -55,7 +55,12 @@ pinning test (🎯T28).
 
 [wbnf](https://github.com/arr-ai/wbnf) is a PEG backtracker. xbnf does not
 preserve its ordered-choice semantics and is not a drop-in replacement.
-Do not add compatibility shims. `fromwbnf.Parse` reads `.wbnf` into an IR of
+Do not add compatibility shims. Two wbnf behaviours are reproduced on
+purpose because grammars depend on them: a trailing `@` that wraps a
+precedence stack's tightest level back to its loosest is greedy
+(`let x = 1; x + x` binds the whole tail; `docs/plan.md` decision 3), and
+regex alternation inside a leaf converts to unordered `|`, since Go's
+regexp backtracks into an alternation when the rest of the pattern fails. `fromwbnf.Parse` reads `.wbnf` into an IR of
 what the grammar meant (macros kept, no cut-points, not executed).
 `fromwbnf.Convert` / `xbnf -from-wbnf` emit xbnf. Leftovers with no xbnf
 spelling are ConvertError kinds (unicode-property, regex-flag,

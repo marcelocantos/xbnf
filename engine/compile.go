@@ -44,8 +44,17 @@ type prod struct {
 	rhs  []elem
 	dirs prodDirs
 	// fallback marks the synthetic `level ::= tighter` alternative of a
-	// precedence stack. It loses to any other derivation of the same span.
+	// precedence stack. It loses to any other derivation of the same span
+	// unless it is greedy.
 	fallback bool
+	// greedy marks a fallback whose tighter level can end in a self-reference
+	// that wraps around to the stack's loosest level (the tightest level's
+	// `@`, as in `"let" pattern "=" @ ";" @`). wbnf parses that `@` as a
+	// PEG call that consumes everything it can, so the tighter derivation
+	// wins over the level's own operators for the same span: `let x = 1;
+	// x + x` is `let x = 1; (x + x)`, never `(let x = 1; x) + x`. A greedy
+	// fallback therefore beats the level's other productions in pick.
+	greedy bool
 	// firstBase is where this production's slots start in Compiled.slotFirst:
 	// slot (pid, ip) is slotFirst[prods[pid].firstBase+ip]. It fits in the
 	// padding after fallback, so prod is no larger for it.
@@ -233,6 +242,7 @@ func CompileWith(g *grammar.Grammar, opts *CompileOpts) (*Compiled, error) {
 	}
 	bindDFAOwner(out)
 	out.computeFirst()
+	out.markGreedyFallbacks(c.stackFallbacks)
 	out.buildNTInfo()
 	out.resolveElems()
 	out.markCaptureSlots()
@@ -487,6 +497,14 @@ type compiler struct {
 	// a level. An infix @:sep whose term rewrote to this ident must consume
 	// a separator; the zero-operator case is the level's fallback.
 	stackTighter string
+	// stackFallbacks records every fallback production with the loosest
+	// level of its stack, for markGreedyFallbacks once FIRST sets exist.
+	stackFallbacks []stackFallback
+}
+
+type stackFallback struct {
+	pid int
+	top string
 }
 
 func (c *compiler) analyzeRegular() {
@@ -1094,9 +1112,17 @@ func (c *compiler) stackNT(st grammar.Stack) string {
 		c.stackTighter = next
 		c.emitRule(names[i], body)
 		c.stackTighter = prev
-		if next != "" {
+		// The fallback `level ::= tighter` exists for the infix lowering,
+		// `@:op` as `term sep list`, whose body needs an operator. A level
+		// whose body can itself be a bare `@` (`C* @ C*`, `unop* @`,
+		// `@ postfix?`) derives the tighter level through that body, and
+		// a fallback there would only duplicate it: the same span with
+		// the comments and empty quantifiers attached one level down,
+		// which PEG, parsing the body's prefix greedily, never produces.
+		if next != "" && !canBeBareSelf(lev) {
 			c.addProd(names[i], []elem{{kind: ekNT, nt: next}})
 			c.prods[len(c.prods)-1].fallback = true
+			c.stackFallbacks = append(c.stackFallbacks, stackFallback{pid: len(c.prods) - 1, top: names[0]})
 		}
 	}
 	if len(names) == 0 {
@@ -1105,6 +1131,138 @@ func (c *compiler) stackNT(st grammar.Stack) string {
 		return h
 	}
 	return names[0]
+}
+
+// canBeBareSelf reports whether a stack level's body can derive exactly one
+// `@` with everything else empty. It is conservative about emptiness: only
+// forms that are empty by construction count, so a wrong answer adds a
+// redundant fallback rather than losing a derivation.
+func canBeBareSelf(t grammar.Term) bool {
+	switch x := t.(type) {
+	case grammar.Self:
+		return true
+	case grammar.Named:
+		return canBeBareSelf(x.Term)
+	case grammar.Leaf:
+		return canBeBareSelf(x.Term)
+	case grammar.CaseFold:
+		return canBeBareSelf(x.Term)
+	case grammar.Scope:
+		return canBeBareSelf(x.Term)
+	case grammar.Quant:
+		return x.Min <= 1 && canBeBareSelf(x.Term)
+	case grammar.Alt:
+		for _, u := range x.Terms {
+			if canBeBareSelf(u) {
+				return true
+			}
+		}
+	case grammar.OrderedAlt:
+		for _, u := range x.Terms {
+			if canBeBareSelf(u) {
+				return true
+			}
+		}
+	case grammar.Delim:
+		if _, self := x.Term.(grammar.Self); self && !x.Leading && !x.Trailing {
+			return false // the infix lowering: at least one separator
+		}
+		return canBeBareSelf(x.Term)
+	case grammar.Seq:
+		for i, u := range x.Terms {
+			if !canBeBareSelf(u) {
+				continue
+			}
+			rest := true
+			for j, v := range x.Terms {
+				if j != i && !surelyNullable(v) {
+					rest = false
+					break
+				}
+			}
+			if rest {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// surelyNullable reports whether t matches the empty string by construction.
+// Rule references answer false even when the rule is nullable.
+func surelyNullable(t grammar.Term) bool {
+	switch x := t.(type) {
+	case grammar.Empty, grammar.PosProp, grammar.Lookahead, grammar.NegLookahead:
+		return true
+	case grammar.String:
+		return x.Text == ""
+	case grammar.Quant:
+		return x.Min == 0 || surelyNullable(x.Term)
+	case grammar.Named:
+		return surelyNullable(x.Term)
+	case grammar.Leaf:
+		return surelyNullable(x.Term)
+	case grammar.CaseFold:
+		return surelyNullable(x.Term)
+	case grammar.Scope:
+		return surelyNullable(x.Term)
+	case grammar.Seq:
+		for _, u := range x.Terms {
+			if !surelyNullable(u) {
+				return false
+			}
+		}
+		return true
+	case grammar.Alt:
+		for _, u := range x.Terms {
+			if surelyNullable(u) {
+				return true
+			}
+		}
+	case grammar.OrderedAlt:
+		for _, u := range x.Terms {
+			if surelyNullable(u) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// markGreedyFallbacks sets prod.greedy on every stack fallback whose tighter
+// level can end in a self-reference to the stack's loosest level. The walk
+// starts at the last element of each production and moves left while the
+// remainder is nullable, so `"let" pattern "=" @ ";" @ C*` counts (C* can
+// be empty) and `"(" @ ")"` does not.
+func (c *Compiled) markGreedyFallbacks(fbs []stackFallback) {
+	for _, fb := range fbs {
+		tighter := c.prods[fb.pid].rhs[0].nt
+		c.prods[fb.pid].greedy = c.wrapsToTop(tighter, fb.top, map[string]bool{})
+	}
+}
+
+func (c *Compiled) wrapsToTop(nt, top string, visiting map[string]bool) bool {
+	if visiting[nt] {
+		return false
+	}
+	visiting[nt] = true
+	defer delete(visiting, nt)
+	for _, pid := range c.ntProds[nt] {
+		pr := c.prods[pid]
+		for ip := len(pr.rhs) - 1; ip >= 0; ip-- {
+			if !c.slotFirst[int(pr.firstBase)+ip+1].nullable {
+				break
+			}
+			e := pr.rhs[ip]
+			if e.kind != ekNT {
+				continue
+			}
+			if e.nt == top || c.wrapsToTop(e.nt, top, visiting) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func rewriteSelf(t grammar.Term, tighter string) grammar.Term {

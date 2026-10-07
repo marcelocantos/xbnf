@@ -59,3 +59,45 @@ func TestPickPriorityPreferAvoidFallback(t *testing.T) {
 		})
 	}
 }
+
+// TestPickGreedyFallback pins the greedy stack fallback: it beats a plain
+// production for the same span, loses to #prefer and to a higher priority,
+// and ties with another greedy fallback as any plain tie would.
+func TestPickGreedyFallback(t *testing.T) {
+	t.Parallel()
+	prods := []prod{
+		0: {dirs: prodDirs{priority: 0}},
+		1: {dirs: prodDirs{priority: 0, prefer: true}},
+		2: {dirs: prodDirs{priority: 1}},
+		3: {dirs: prodDirs{priority: 0}, fallback: true, greedy: true},
+		4: {dirs: prodDirs{priority: 0}, fallback: true},
+	}
+	c := &Compiled{prods: prods}
+	tests := []struct {
+		name   string
+		pids   []int
+		want   int
+		packed int
+	}{
+		{"greedy fallback beats plain", []int{0, 3}, 3, 0},
+		{"prefer beats greedy fallback", []int{1, 3}, 1, 0},
+		{"priority beats greedy fallback", []int{2, 3}, 2, 0},
+		{"greedy fallback beats a plain fallback", []int{3, 4}, 3, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := &builder{p: &gll{c: c}}
+			comps := make([]int, len(tc.pids))
+			for i, pid := range tc.pids {
+				comps[i] = packComp(pid, 0)
+			}
+			if got := compPID(b.pick(comps, 0, 0)); got != tc.want {
+				t.Fatalf("pick(%v) = %d, want %d", tc.pids, got, tc.want)
+			}
+			if b.packed != tc.packed {
+				t.Fatalf("pick(%v) packed = %d, want %d", tc.pids, b.packed, tc.packed)
+			}
+		})
+	}
+}

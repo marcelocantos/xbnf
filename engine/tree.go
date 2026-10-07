@@ -302,7 +302,8 @@ func (b *builder) where(pos int) string {
 
 // pickAt chooses among the productions that all span the same input, and
 // returns the winner with the evidence cell of its completion. Priority is
-// compared first, then #prefer / #avoid. Stack fallbacks lose to anything.
+// compared first, then #prefer, then a greedy stack fallback (see
+// prod.greedy), then #avoid. Other stack fallbacks lose to anything.
 //
 // pickAt and pick share one scratch slice (b.p.pickBuf) across every
 // ambiguous span in the parse: compsAt appends the extra completions onto it
@@ -358,6 +359,9 @@ func (b *builder) pick(comps []int, l, r int) int {
 	cands, _ = filter(cands, func(c int) bool { return prods[compPID(c)].dirs.priority == best })
 	if pref, ok := filter(cands, func(c int) bool { return prods[compPID(c)].dirs.prefer }); ok {
 		cands = pref
+	} else if greedy, ok := filter(cands, func(c int) bool { return prods[compPID(c)].greedy }); ok {
+		// PEG tail: the tighter level's wrap-around `@` consumed the rest.
+		cands = greedy
 	} else if keep, ok := filter(cands, func(c int) bool {
 		return !prods[compPID(c)].dirs.avoid && !prods[compPID(c)].fallback
 	}); ok {

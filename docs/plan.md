@@ -27,7 +27,13 @@ preserve ordered-choice semantics.
 
 3. **Disambiguation vocabulary** (first-class syntax, `#` sigil):
    `#prefer` / `#avoid`, `#assoc=left|right|none`, `#priority`, `#longest`
-   (default for regular-fragment rules).
+   (default for regular-fragment rules). One rule needs no directive: in a
+   precedence stack whose tightest level refers back to the loosest with a
+   trailing `@` (`"let" pat "=" @ ";" @`), a span that derives both as that
+   form and as a looser level's operator belongs to the form, because the
+   trailing `@` is greedy, as it is in PEG. `let x = 1; x + x` is
+   `let x = 1; (x + x)`. The engine marks such stack fallbacks greedy at
+   compile time (`markGreedyFallbacks`); nothing else about `|` changes.
 
 4. **No lexer concept.** There are only rules. Regularity is detected;
    `#lex` is an optional strictness lock, not the optimisation switch.
