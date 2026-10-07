@@ -313,3 +313,31 @@ func wrap(t *testing.T, g *grammar.Grammar) *grammar.Wrap {
 	}
 	return nil
 }
+
+// TestConvertRegexAltBacktracks pins regex alternation inside a leaf as
+// unordered `|`. Go's regexp backtracks into `(<|<>)` when the following
+// `\)` fails, so wbnf accepts "(<>)"; PEG `|>` would commit to `<` and
+// reject it.
+func TestConvertRegexAltBacktracks(t *testing.T) {
+	t.Parallel()
+	src, err := fromwbnf.Convert([]byte(`s -> /{\((?:<|<>)\)};`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(src, "|>") {
+		t.Fatalf("ordered choice inside a leaf:\n%s", src)
+	}
+	g, err := syntax.Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("xbnf parse: %v\n%s", err, src)
+	}
+	c, err := engine.Compile(g)
+	if err != nil {
+		t.Fatalf("compile: %v\n%s", err, src)
+	}
+	for in, want := range map[string]bool{"(<)": true, "(<>)": true, "(>)": false, "(<>>)": false} {
+		if res := c.Parse("s", in); res.OK != want {
+			t.Errorf("%q: OK=%v (%s), want %v", in, res.OK, res.Error, want)
+		}
+	}
+}

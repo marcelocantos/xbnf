@@ -294,6 +294,8 @@ func TestConvertArraiOracle(t *testing.T) {
 		`(x:1)`,
 		`rec`,
 		`1 if 2 else 3`,
+		`{1} (<>) {2}`,
+		`{1} (<>=) {2}`,
 		``,
 		`+`,
 		`let x =`,

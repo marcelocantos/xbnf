@@ -56,7 +56,13 @@ func (p *reParser) alt() grammar.Term {
 	for p.eat('|') {
 		terms = append(terms, p.concat())
 	}
-	return grammar.OrderedAlt{Terms: terms}
+	// Go's regexp backtracks into an alternation when the rest of the
+	// pattern fails, so `\((<|<>)\)` still matches "(<>)". PEG `|>`
+	// commits to the first branch that matches locally and would reject
+	// it. Unordered `|` inside a leaf keeps the regexp's language; the
+	// leaf DFA takes the longest match where the regexp took the
+	// leftmost-first one.
+	return grammar.Alt{Terms: terms}
 }
 
 func (p *reParser) concat() grammar.Term {
