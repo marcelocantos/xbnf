@@ -42,6 +42,15 @@ a node's text; see `docs/tree-stream.md`. Compile-time disambiguation (🎯T6) a
 | `docs/plan.md` | Locked decisions and work graph |
 | `docs/toward-a-universal-grammar.md` | Design origin (wbnf-era; see lineage note) |
 
+## Concurrency
+
+A `Compiled` is safe for concurrent use: `Parse` may be called from any
+number of goroutines on one `Compiled`, and each `Result` is independent.
+After `CompileWith` the only state that still changes is the DFA
+transition caches, which fill lazily under a mutex and atomic pointers;
+every other scratch lives on the per-parse chart. `make race` runs the
+pinning test (🎯T28).
+
 ## Relation to wbnf
 
 [wbnf](https://github.com/arr-ai/wbnf) is a PEG backtracker. xbnf does not

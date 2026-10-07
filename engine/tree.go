@@ -189,7 +189,7 @@ func (b *builder) root(start string, pos, end, endw int) []Event {
 	defer b.keepArena()
 	c := b.p.c
 	if c.IsDFA(start) {
-		return b.emit(b.intern(c.dfaNode(b.p.input, start, b.p.skip(pos), end)), endw)
+		return b.emit(b.intern(c.dfaNode(&b.p.tw, b.p.input, start, b.p.skip(pos), end)), endw)
 	}
 	nid, ok := c.ntNID[start]
 	if !ok {
@@ -670,7 +670,7 @@ func (b *builder) rhsNodesInto(dst []int32, rhs []elem, pos []int, from int) []i
 func (b *builder) appendElem(kids []int32, e *elem, i, end int) []int32 {
 	if e.kind == ekDFA {
 		// A regular rule with structure: recover it by walking the body.
-		n := b.p.c.dfaNode(b.p.input, e.nt, b.p.skip(i), end)
+		n := b.p.c.dfaNode(&b.p.tw, b.p.input, e.nt, b.p.skip(i), end)
 		if e.name != "" {
 			n.Name = e.name
 		}
@@ -697,9 +697,10 @@ func (b *builder) appendElem(kids []int32, e *elem, i, end int) []int32 {
 // node degrades to the matched text.
 //
 // The Children of the result borrow the walker's arena and stay valid only
-// until the next dfaNode call on this Compiled. Every caller here interns
-// the node immediately; one that keeps it must use dfaNodeOwned.
-func (c *Compiled) dfaNode(input, name string, l, r int) Node {
+// until the next dfaNode call with that walker. Every caller here interns
+// the node immediately. The walker is the parse's own (gll.tw), so parses
+// on one Compiled do not share it.
+func (c *Compiled) dfaNode(w *twalk, input, name string, l, r int) Node {
 	rule, ok := c.rules[name]
 	if !ok {
 		return Node{Kind: KindLeaf, Name: name, Start: l, End: r}
@@ -707,7 +708,6 @@ func (c *Compiled) dfaNode(input, name string, l, r int) Node {
 	if _, isLeaf := rule.Body.(grammar.Leaf); isLeaf {
 		return Node{Kind: KindLeaf, Name: name, Start: l, End: r}
 	}
-	w := &c.tw
 	w.c = c
 	w.input = input
 	w.busy = w.busy[:0]

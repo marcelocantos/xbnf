@@ -156,6 +156,7 @@ type gll struct {
 	spineBuf     []kidSpan
 	spineOut     []int32
 	gen          uint32 // bumps each Parse; lookup maps are not cleared
+	tw           twalk  // dfaNode's scratch walker, one per chart
 }
 
 func packFam(nid, l, r int) (uint64, bool) {
@@ -557,7 +558,7 @@ func (c *Compiled) runOn(p *gll, start, input string) (*Result, *gll) {
 			msg := formatExpect(input, pos, []string{displayNT(start)}, start, true)
 			return &Result{Error: msg, Input: input}, p
 		}
-		n := c.dfaNode(input, start, pos, end)
+		n := c.dfaNode(&p.tw, input, start, pos, end)
 		endw := c.skipWrap(input, end)
 		count, _ := countNodeEvents(&n, 0)
 		if endw > end {

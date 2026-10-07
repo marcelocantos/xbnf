@@ -4,6 +4,8 @@
 package engine
 
 import (
+	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/marcelocantos/xbnf/grammar"
@@ -34,9 +36,12 @@ func (n *nfa) st() int {
 }
 
 type dfa struct {
-	nfa     *nfa
-	start   intset
-	start0  *dfaState // memoised state(start)
+	nfa    *nfa
+	start  intset
+	start0 atomic.Pointer[dfaState] // memoised state(start)
+	// memo and every dfaState.trans are guarded by mu. They fill lazily
+	// during matching, and one Compiled serves parses on many goroutines.
+	mu      sync.Mutex
 	memo    map[string]*dfaState
 	alts    []labAlt
 	ordered []*dfa // |> : first matching alt wins
@@ -61,8 +66,8 @@ type dfaState struct {
 	// ascii is the transition table for r < asciiRange, filled on demand.
 	// nil means "not computed yet"; dead means "no transition", the same
 	// miss caching trans uses.
-	ascii  [asciiRange]*dfaState
-	trans  map[rune]*dfaState // r >= asciiRange only; created on first miss
+	ascii  [asciiRange]atomic.Pointer[dfaState]
+	trans  map[rune]*dfaState // r >= asciiRange only; created on first miss; guarded by dfa.mu
 	acc    bool
 	labels []string
 }
@@ -436,6 +441,8 @@ func (b *nfaB) eps(s intset) intset {
 
 func (d *dfa) state(set intset) *dfaState {
 	k := set.key()
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if st, ok := d.memo[k]; ok {
 		return st
 	}
@@ -505,7 +512,7 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 		n := 1
 		var nx *dfaState
 		if c := input[cur]; c < asciiRange {
-			nx = st.ascii[c]
+			nx = st.ascii[c].Load()
 			if nx == nil {
 				nx = d.fillASCII(st, rune(c))
 			}
@@ -531,16 +538,18 @@ func (d *dfa) match(input string, pos int) (end int, labels []string, ok bool) {
 }
 
 func (d *dfa) initial() *dfaState {
-	if d.start0 == nil {
-		d.start0 = d.state(d.start)
+	if st := d.start0.Load(); st != nil {
+		return st
 	}
-	return d.start0
+	st := d.state(d.start)
+	d.start0.Store(st)
+	return st
 }
 
 // step returns the state after consuming r from st, or nil. Misses are cached.
 func (d *dfa) step(st *dfaState, r rune) *dfaState {
 	if uint32(r) < asciiRange {
-		nx := st.ascii[r]
+		nx := st.ascii[r].Load()
 		if nx == nil {
 			nx = d.fillASCII(st, r)
 		}
@@ -549,16 +558,20 @@ func (d *dfa) step(st *dfaState, r rune) *dfaState {
 		}
 		return nx
 	}
+	d.mu.Lock()
 	nx := st.trans[r]
+	d.mu.Unlock()
 	if nx == nil {
 		nx = dead
 		if mv := d.move(st.set, r); len(mv) > 0 {
 			nx = d.state(mv)
 		}
+		d.mu.Lock()
 		if st.trans == nil {
 			st.trans = map[rune]*dfaState{}
 		}
 		st.trans[r] = nx
+		d.mu.Unlock()
 	}
 	if nx == dead {
 		return nil
@@ -573,7 +586,10 @@ func (d *dfa) fillASCII(st *dfaState, r rune) *dfaState {
 	if mv := d.move(st.set, r); len(mv) > 0 {
 		nx = d.state(mv)
 	}
-	st.ascii[r] = nx
+	// Two goroutines filling the same slot compute the same state, since
+	// state dedups through memo under mu, so a plain store would do; the
+	// atomic keeps the race detector and the memory model honest.
+	st.ascii[r].Store(nx)
 	return nx
 }
 

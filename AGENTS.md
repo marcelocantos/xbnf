@@ -14,6 +14,7 @@ merged to master
 make          # bin/xbnf
 make test
 make vet
+make race     # 🎯T28: concurrent Parse under -race
 make bullseye # standing invariants for /cv
 make eval-corpus # T22.1 standing JSON smoke harness
 make eval-languages # T22 SQL XML Go Python YAML JS CommonMark (C++ historical)

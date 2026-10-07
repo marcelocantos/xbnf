@@ -133,11 +133,8 @@ type Compiled struct {
 	// treeCycle marks nonterminals that may participate in a tree cycle
 	// without input progress. It is nil when the zero-growth graph is acyclic.
 	treeCycle []bool
-	// tw is the scratch tree walker reused by dfaNode. Like the DFA
-	// transition caches it makes one Compiled single-parse-at-a-time.
-	tw       twalk
-	Warnings []string
-	extRefs  map[string]ExtRefFunc
+	Warnings  []string
+	extRefs   map[string]ExtRefFunc
 }
 
 func Compile(g *grammar.Grammar) (*Compiled, error) {

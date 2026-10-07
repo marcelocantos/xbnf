@@ -6,7 +6,7 @@ export GOWORK := off
 
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all build test vet clean smoke sandbox bullseye bench-json bench-stable bench-corpus eval-corpus eval-languages golden-update
+.PHONY: all build test vet race clean smoke sandbox bullseye bench-json bench-stable bench-corpus eval-corpus eval-languages golden-update
 
 all: build
 
@@ -20,6 +20,10 @@ test:
 
 vet:
 	go vet ./...
+
+# 🎯T28: concurrent Parse on one Compiled, under the race detector.
+race:
+	go test -race ./engine -run 'TestConcurrentParse' -count=1
 
 clean:
 	rm -rf bin/
@@ -67,6 +71,7 @@ bullseye:
 	@set -e; \
 	go vet ./... && echo "✓ vet"; \
 	go test ./... >/dev/null && echo "✓ tests"; \
+	go test -race ./engine -run 'TestConcurrentParse' -count=1 >/dev/null && echo "✓ race"; \
 	go build ./... && echo "✓ build"; \
 	dirty=$$(git status --porcelain | grep -vE 'bullseye\.yaml$$' || true); \
 	if [ -z "$$dirty" ]; then echo "✓ working tree clean"; \
