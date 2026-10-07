@@ -235,6 +235,12 @@ func (c *Compiled) computeFirst() {
 			}
 		}
 	}
+	c.ntFirstN = make([]firstInfo, len(c.ntNID))
+	for name, id := range c.ntNID {
+		f := nt[name]
+		f.buildASCII()
+		c.ntFirstN[id] = f
+	}
 	slots := 0
 	for i := range c.prods {
 		c.prods[i].firstBase = int32(slots)

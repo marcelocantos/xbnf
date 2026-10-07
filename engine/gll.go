@@ -151,12 +151,20 @@ type gll struct {
 	tnodes       []inode
 	tkids        []int32
 	kscratch     []int32
-	iscratch     []int32 // builder.intern's child-id stack, disjoint from kscratch
+	iscratch     []int32  // builder.intern's child-id stack, disjoint from kscratch
 	eframes      []eframe // builder.emit's walk stack
 	spineBuf     []kidSpan
 	spineOut     []int32
 	gen          uint32 // bumps each Parse; lookup maps are not cleared
 	tw           twalk  // dfaNode's scratch walker, one per chart
+	// look memoises succeeds: nid<<32|pos → whether the lookahead
+	// nonterminal matches there. A lookahead runs without capture context,
+	// so its answer depends only on the nonterminal and the position, and
+	// nested lookahead charts share the parent's table. Before this memo,
+	// a bottom stack level of n ordered alternatives (`a |> b |> …` lowers
+	// alternative k to `(?!a) … (?!a_{k-1}) a_k`) ran a fresh nested parse
+	// per lookahead per position, and each nested parse ran its own.
+	look map[uint64]bool
 }
 
 func packFam(nid, l, r int) (uint64, bool) {
@@ -310,6 +318,11 @@ func (p *gll) bind(c *Compiled, input, start string) {
 	}
 	p.bindingAt = nil
 	p.compBindings = nil
+	if p.look == nil {
+		p.look = map[uint64]bool{}
+	} else {
+		clear(p.look)
+	}
 	p.edges = keepDummy(p.edges, n/2+1)
 	p.pops = keepDummy(p.pops, n/2+1)
 	p.moreSlab = keepDummy(p.moreSlab, n/16)
@@ -1299,15 +1312,37 @@ func (p *gll) succeeds(nt string, i int) bool {
 		_, _, ok := p.c.dfa[nt].match(p.input, i)
 		return ok
 	}
+	nid := p.c.ntNID[nt]
+	// FIRST pre-check, as admits does for a slot: most ordered-choice
+	// lookaheads fail on their first byte, and a nested chart costs
+	// input-proportional tables to bind.
+	if f := &p.c.ntFirstN[nid]; !f.nullable {
+		j := p.skip(i)
+		if j >= len(p.input) {
+			return false
+		}
+		if b := p.input[j]; f.asciiOK && b < utf8.RuneSelf {
+			if !f.admitsASCII(b) {
+				return false
+			}
+		} else if r, _ := decodeRune(p.input, j); !f.admits(r) {
+			return false
+		}
+	}
+	key := uint64(nid)<<32 | uint64(i)
+	if ok, seen := p.look[key]; seen {
+		return ok
+	}
 	q := newGLL(p.c, p.input, nt)
-	saved := q.wrapEnd
-	q.wrapEnd = p.wrapEnd
+	saved, savedLook := q.wrapEnd, q.look
+	q.wrapEnd, q.look = p.wrapEnd, p.look
 	dummy, _ := q.gssNode(dummyNID, i)
-	q.rootAt(q.c.ntNID[nt], i)
+	q.rootAt(nid, i)
 	q.fork(nt, dummy, i)
 	q.drain()
-	ok := q.maxRight(q.c.ntNID[nt], i) >= 0
-	q.wrapEnd = saved
+	ok := q.maxRight(nid, i) >= 0
+	q.wrapEnd, q.look = saved, savedLook
 	q.release()
+	p.look[key] = ok
 	return ok
 }

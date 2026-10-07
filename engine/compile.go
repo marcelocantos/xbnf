@@ -110,6 +110,9 @@ type Compiled struct {
 	// the hottest path in the parser and a slice of slices costs a second
 	// bounds check and a pointer chase into a separately allocated row.
 	slotFirst []firstInfo
+	// ntFirstN[nid] is the FIRST set of a whole nonterminal, for the
+	// lookahead pre-check in succeeds.
+	ntFirstN []firstInfo
 	// unitProd[pid] marks a production whose whole right-hand side is one
 	// nonterminal. Neither of its two slots matches anything, so fork and
 	// pop run them in place instead of scheduling a descriptor for each.
