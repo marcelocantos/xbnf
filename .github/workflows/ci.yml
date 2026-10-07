@@ -14,6 +14,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      # CommonMark fixtures are class tree: leftover-text is not success. Without
+      # cmark, TestLanguageManifests records unverified and fails the T25.1 lock.
+      - name: Install CommonMark oracle
+        run: sudo apt-get update && sudo apt-get install -y cmark
       - name: Build
         run: go build ./...
       - name: Vet
