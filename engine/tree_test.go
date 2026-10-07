@@ -119,10 +119,12 @@ func TestTreeQuantDelimNamed(t *testing.T) {
 	const regular = "s -> \"[\" item:\",\" \"]\" xs=\"z\"* ;\nitem -> k=IDENT (\"=\" v=IDENT)? ;\nIDENT -> /[a-z]+/ ;\n#wrap -> \\s* ;"
 	const recursive = "s -> \"[\" item:\",\" \"]\" xs=\"z\"* ;\nitem -> k=IDENT (\"=\" v=IDENT)? | \"(\" item \")\" ;\nIDENT -> /[a-z]+/ ;\n#wrap -> \\s* ;"
 	for _, src := range []string{regular, recursive} {
-		wantTree(t, src, "s", "[a, b=c] z z", "s[[ [item[k:a] , item[k:b [= v:c]]] ] [xs:z xs:z]]")
-		wantTree(t, src, "s", "[a]", "s[[ item[k:a] ]]")
+		// k=IDENT nests: the capture is a node around the rule's leaf, so
+		// neither name is lost.
+		wantTree(t, src, "s", "[a, b=c] z z", "s[[ [item[k[IDENT:a]] , item[k[IDENT:b] [= v[IDENT:c]]]] ] [xs:z xs:z]]")
+		wantTree(t, src, "s", "[a]", "s[[ item[k[IDENT:a]] ]]")
 	}
-	wantTree(t, recursive, "s", "[(a)]", "s[[ item[( item[k:a] )] ]]")
+	wantTree(t, recursive, "s", "[(a)]", "s[[ item[( item[k[IDENT:a]] )] ]]")
 }
 
 func TestTreeMatchesRecognizer(t *testing.T) {

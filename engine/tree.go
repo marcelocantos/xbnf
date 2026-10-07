@@ -663,7 +663,11 @@ func (b *builder) rhsNodesInto(dst []int32, rhs []elem, pos []int, from int) []i
 			continue // Empty / PosProp and the lookaheads make no node
 		}
 		lo, hi := b.span(pos[ip], pos[ip+1])
-		dst = append(dst, b.addNode(e.treeKind, e.treeName, lo, hi, nil))
+		id := b.addNode(e.treeKind, e.treeName, lo, hi, nil)
+		if e.wrapName != "" {
+			id = b.addNode(KindSeq, e.wrapName, lo, hi, []int32{id})
+		}
+		dst = append(dst, id)
 	}
 	return dst
 }
@@ -675,18 +679,29 @@ func (b *builder) appendElem(kids []int32, e *elem, i, end int) []int32 {
 	if e.kind == ekDFA {
 		// A regular rule with structure: recover it by walking the body.
 		n := b.p.c.dfaNode(&b.p.tw, b.p.input, e.nt, b.p.skip(i), end)
+		id := b.intern(n)
 		if e.name != "" {
-			n.Name = e.name
+			lo, hi := b.span(i, end)
+			id = b.addNode(KindSeq, e.name, lo, hi, []int32{id})
 		}
-		return append(kids, b.intern(n))
+		return append(kids, id)
 	}
 	start := len(kids)
 	kids = b.deriveInto(kids, e.nid, i, end)
 	if e.name != "" {
+		// A `name=` label names the one anonymous node it captured, and
+		// otherwise becomes a seq node of its own around what it captured:
+		// several nodes, or one that already carries a rule or capture name
+		// (`t=expr`, `tail_op=(safe_tail=… |> tail)`). Renaming the latter
+		// would lose the inner name, which consumers dispatch on.
+		// A captured stack reference (`value=@`) always nests: the level it
+		// captured is an expression of the stack's rule, whatever node it
+		// collapsed to, as it is in wbnf's tree.
 		added := kids[start:]
-		if len(added) == 1 {
+		stackRef := e.nid >= 0 && b.p.c.ntInfo[e.nid].class == ntClassSeq
+		if len(added) == 1 && !stackRef && b.nodes[added[0]].name == "" {
 			b.nodes[added[0]].name = e.name
-		} else if len(added) > 1 {
+		} else if len(added) >= 1 {
 			lo, hi := b.span(i, end)
 			id := b.addNode(KindSeq, e.name, lo, hi, added)
 			kids = append(kids[:start], id)
@@ -862,6 +877,13 @@ func (w *twalk) term(t grammar.Term, pos int, nowrap bool) (int, Node, bool) {
 		end, n, ok := w.term(x.Term, pos, nowrap)
 		if !ok {
 			return pos, Node{}, false
+		}
+		if n.Name != "" {
+			// As appendElem: a capture of a node that already carries a
+			// rule or capture name becomes a seq node around it.
+			mark := len(w.stack)
+			w.push(n)
+			return end, Node{Kind: KindSeq, Name: x.Name, Children: w.commit(mark), Start: n.Start, End: n.End}, true
 		}
 		n.Name = x.Name
 		return end, n, true

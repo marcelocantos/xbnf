@@ -56,7 +56,8 @@ const (
 	// KindRule is a named rule with children.
 	KindRule
 	// KindQuant is a repetition; KindDelim a delimited list; KindSeq a sequence
-	// that needed a node of its own (a named capture of several elements).
+	// that needed a node of its own: a named capture of several elements, or
+	// of one element that already carries a rule or capture name.
 	KindQuant
 	KindDelim
 	KindSeq

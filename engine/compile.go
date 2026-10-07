@@ -36,6 +36,10 @@ type elem struct {
 	// contributes nothing, and a structured regular body is walked instead.
 	treeKind Kind
 	treeName string
+	// wrapName is a `name=` label that must become a node of its own around
+	// this element's leaf, because the leaf already carries the name of a
+	// rule (`std=IDENT`). Renaming would lose the rule.
+	wrapName string
 }
 
 type prod struct {
@@ -404,9 +408,16 @@ func (c *Compiled) resolveElemNode(e *elem) {
 	switch e.kind {
 	case ekTerm:
 		e.treeName = e.name
-		switch e.term.(type) {
-		case grammar.Empty, grammar.PosProp, grammar.ExtRef:
+		switch x := e.term.(type) {
+		case grammar.Empty, grammar.PosProp:
 			e.treeKind = KindNone
+		case grammar.ExtRef:
+			// The host hook's span is a leaf named by its capture, or by
+			// the reference itself, so a consumer can find it.
+			e.treeKind = KindLeaf
+			if e.name == "" {
+				e.treeName = x.Name
+			}
 		case grammar.Ref:
 			e.treeKind = KindRef
 		case grammar.String:
@@ -427,7 +438,7 @@ func (c *Compiled) resolveElemNode(e *elem) {
 		if _, isLeaf := rule.Body.(grammar.Leaf); !ok || isLeaf {
 			e.treeKind, e.treeName = KindLeaf, e.nt
 			if e.name != "" {
-				e.treeName = e.name
+				e.wrapName = e.name
 			}
 		}
 	}

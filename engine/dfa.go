@@ -453,12 +453,13 @@ func (d *dfa) state(set intset) *dfaState {
 		if ns.acc {
 			st.acc = true
 		}
+		// A label marks the end of a named term; it says nothing about
+		// acceptance. A label on an alternative's branch end reaches the
+		// accept state through ε and is in the same set, so it needs no
+		// help; a label in the middle of a sequence (`dot="." IDENT`) must
+		// not make the prefix accept.
 		for _, l := range ns.labels {
 			labs[l] = true
-		}
-		// Named labels live on accept of alt branch; treat any labelled state in the set as live.
-		if len(ns.labels) > 0 {
-			st.acc = true
 		}
 	}
 	for l := range labs {
