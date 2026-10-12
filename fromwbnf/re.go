@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/marcelocantos/xbnf/grammar"
 )
@@ -571,78 +570,4 @@ func rangeElems(tab *unicode.RangeTable) []grammar.ClassElem {
 
 func caseFold(t grammar.Term) grammar.Term {
 	return grammar.CaseFold{On: true, Term: t}
-}
-
-func foldString(s string) grammar.Term {
-	var parts []grammar.Term
-	for _, r := range s {
-		fs := foldsOf(r)
-		if len(fs) == 1 {
-			parts = append(parts, grammar.String{Text: string(r)})
-			continue
-		}
-		el := make([]grammar.ClassElem, len(fs))
-		for i, f := range fs {
-			el[i] = grammar.ClassElem{Lo: string(f)}
-		}
-		parts = append(parts, grammar.CharClass{Elems: el})
-	}
-	if len(parts) == 0 {
-		return grammar.Empty{}
-	}
-	if len(parts) == 1 {
-		return parts[0]
-	}
-	return grammar.Seq{Terms: parts}
-}
-
-func foldClass(c grammar.CharClass) grammar.CharClass {
-	var elems []grammar.ClassElem
-	seen := map[string]bool{}
-	add := func(lo, hi string) {
-		key := lo + "\x00" + hi
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		e := grammar.ClassElem{Lo: lo}
-		if hi != "" && hi != lo {
-			e.Hi = hi
-		}
-		elems = append(elems, e)
-	}
-	for _, e := range c.Elems {
-		add(e.Lo, e.Hi)
-		r, _ := utf8.DecodeRuneInString(e.Lo)
-		for _, f := range foldsOf(r) {
-			if f != r {
-				add(string(f), "")
-			}
-		}
-		if e.Hi == "" {
-			continue
-		}
-		h, _ := utf8.DecodeRuneInString(e.Hi)
-		for _, f := range foldsOf(h) {
-			if f != h {
-				add(string(f), "")
-			}
-		}
-		if r == 'a' && h == 'z' {
-			add("A", "Z")
-		}
-		if r == 'A' && h == 'Z' {
-			add("a", "z")
-		}
-	}
-	c.Elems = elems
-	return c
-}
-
-func foldsOf(r rune) []rune {
-	out := []rune{r}
-	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
-		out = append(out, f)
-	}
-	return out
 }
