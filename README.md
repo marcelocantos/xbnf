@@ -9,8 +9,8 @@ error unless the grammar says how to resolve it.
 
 **Status:** GLL+DFA engine, self-host of `docs/xbnf.xbnf`, CLI (`parse`,
 `--explain`, `sandbox`, `from-wbnf`, `eval`). Seven live language tracks
-are Failed=0 against present oracles. Open: source positions (🎯T23),
-tree-vs-oracle (🎯T26), larger corpora (🎯T27), concurrent `Parse` (🎯T28).
+are Failed=0 against present oracles. Source positions (🎯T23) and concurrent
+`Parse` (🎯T28) have landed. Open: tree-vs-oracle (🎯T26), larger corpora (🎯T27).
 
 ## Spec
 
