@@ -6,12 +6,13 @@ export GOWORK := off
 
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all build test vet race clean smoke sandbox bullseye bench-json bench-stable bench-corpus eval-corpus eval-languages golden-update
+.PHONY: all build bin/xbnf test vet race clean smoke sandbox bullseye bench-json bench-stable bench-corpus eval-corpus eval-languages golden-update
 
 all: build
 
 build: bin/xbnf
 
+# Phony: go build is incremental, and a stale bin/xbnf must not satisfy `make`.
 bin/xbnf:
 	go build $(LDFLAGS) -o bin/xbnf ./cmd/xbnf
 
