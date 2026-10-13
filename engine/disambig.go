@@ -139,10 +139,7 @@ func escClassOverlap(esc string, c grammar.CharClass) bool {
 			return true
 		}
 	}
-	if c.Negated {
-		return true
-	}
-	return false
+	return c.Negated
 }
 
 func classOverlap(a, b grammar.CharClass) bool {

@@ -432,9 +432,7 @@ func (b *nfaB) eps(s intset) intset {
 		}
 		seen[x] = true
 		out = append(out, x)
-		for _, e := range b.n.states[x].eps {
-			stack = append(stack, e)
-		}
+		stack = append(stack, b.n.states[x].eps...)
 	}
 	return out
 }
