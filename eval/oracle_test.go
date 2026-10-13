@@ -5,6 +5,7 @@ package eval
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +35,20 @@ func TestCmdOracleEcho(t *testing.T) {
 	ok, err = o.Recognize([]byte("unused"))
 	if err != nil || ok {
 		t.Fatalf("false: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestCmdOracleCannotRun(t *testing.T) {
+	o, limit := LookOracle([]string{"sh", "-c", "echo no module >&2; exit 125"}, "sh", "exit 125")
+	if limit != "" || o == nil {
+		t.Fatalf("sh: %s", limit)
+	}
+	ok, err := o.Recognize([]byte("unused"))
+	if err == nil || ok {
+		t.Fatalf("exit 125 must be an oracle error, not a verdict: ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(err.Error(), "no module") {
+		t.Fatalf("error should carry the oracle's stderr: %v", err)
 	}
 }
 

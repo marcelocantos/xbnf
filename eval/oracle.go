@@ -13,13 +13,20 @@ import (
 )
 
 // CmdOracle runs an external recognizer with the fixture on stdin.
-// Exit 0 is accept; any other exit is reject. A missing binary is an error
-// so Evaluate can record an oracle limit instead of inventing results.
+// Exit 0 is accept; any other exit is reject, except ExitCannotRun. A
+// missing binary is an error so Evaluate can record an oracle limit instead
+// of inventing results.
 type CmdOracle struct {
 	Argv []string
 	N    string
 	W    string
 }
+
+// ExitCannotRun is the exit status an oracle script uses when it cannot judge
+// the input at all (for example, PyYAML is not importable). Recognize reports
+// it as an error, so the fixture fails as oracle-error rather than being
+// counted as a reject and mislabelled oracle-disagree.
+const ExitCannotRun = 125
 
 func (o CmdOracle) Name() string { return o.N }
 func (o CmdOracle) Work() string { return o.W }
@@ -36,10 +43,10 @@ func (o CmdOracle) Recognize(input []byte) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if _, ok := err.(*exec.ExitError); ok {
+	if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() != ExitCannotRun {
 		return false, nil
 	}
-	return false, fmt.Errorf("%s: %w (%s)", o.Argv[0], err, stderr.String())
+	return false, fmt.Errorf("%s: %w (%s)", o.Argv[0], err, strings.TrimSpace(stderr.String()))
 }
 
 // resolveOracleCmd makes relative script arguments findable from a language
