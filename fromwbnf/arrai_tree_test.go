@@ -228,7 +228,7 @@ func isStackLevel(kids []item) bool {
 
 // parseBoth parses input with both engines and returns the two adapted
 // trees, or the engine that rejected it.
-func (e *arraiEngines) parseBoth(input string) (wbnf, xbnf string, werr error, xres *engine.Result) {
+func (e *arraiEngines) parseBoth(input string) (wbnf, xbnf string, xres *engine.Result, werr error) {
 	sc := wparser.NewScanner(input)
 	wnode, werr := e.w.ParseWithExternals(wparser.Rule(arraiStack), sc, e.exts)
 	if werr == nil && sc.String() != "" {
@@ -241,7 +241,7 @@ func (e *arraiEngines) parseBoth(input string) (wbnf, xbnf string, werr error, x
 	if xres.OK && xres.End == len(input) {
 		xbnf = renderItems(projectXbnf(xres.Tree(), input))
 	}
-	return wbnf, xbnf, werr, xres
+	return wbnf, xbnf, xres, werr
 }
 
 // TestConvertArraiTree is the tree-level arr.ai oracle (🎯T26 for this
@@ -279,7 +279,7 @@ func TestConvertArraiTree(t *testing.T) {
 	}
 	for _, in := range probes {
 		t.Run(in, func(t *testing.T) {
-			w, x, werr, xres := e.parseBoth(in)
+			w, x, xres, werr := e.parseBoth(in)
 			if werr != nil {
 				t.Fatalf("wbnf rejected: %v", werr)
 			}
@@ -301,7 +301,7 @@ func TestConvertArraiTree(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			w, x, werr, xres := e.parseBoth(string(src))
+			w, x, xres, werr := e.parseBoth(string(src))
 			if werr != nil {
 				t.Fatalf("wbnf rejected: %v", werr)
 			}
