@@ -4,6 +4,10 @@ LDFLAGS := -ldflags "-X github.com/marcelocantos/xbnf.Version=$(VERSION)"
 # Parent directory has a go.work that does not include this module.
 export GOWORK := off
 
+# Oracles run python3 (YAML oracle needs PyYAML). Prefer the ~/.py interpreter
+# when present so the gate does not depend on the caller's PATH; CI is unaffected.
+export PATH := $(if $(wildcard $(HOME)/.py/bin/python3),$(HOME)/.py/bin:,)$(PATH)
+
 MAKEFLAGS += -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 .PHONY: all build bin/xbnf test vet race clean smoke sandbox bullseye bench-json bench-stable bench-corpus eval-corpus eval-languages golden-update

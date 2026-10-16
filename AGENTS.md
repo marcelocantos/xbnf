@@ -22,6 +22,10 @@ make eval-languages # T22 SQL XML Go Python YAML JS CommonMark (C++ historical)
 
 Never pass `-j` to make; `MAKEFLAGS` is set in the Makefile.
 
+The Python and YAML oracles run `python3`; the YAML oracle needs PyYAML.
+The Makefile puts `~/.py/bin` first on `PATH` when it exists, so the gate
+uses that interpreter. Elsewhere, install PyYAML for the `python3` on `PATH`.
+
 ```sh
 make test
 go test ./cmd/xbnf/ -run TestName   # set GOWORK=off; a parent go.work does not include this module
