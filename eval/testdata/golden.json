@@ -186,6 +186,14 @@
     "nodes": 2823,
     "sha256": "cc83548c855b69489b321da01d31fb4b34f6b9dc7231911ceca1b232fccbd769"
   },
+  "sql/corpus/reject_unbalanced_paren.sql": {
+    "ok": false,
+    "end": 67,
+    "packed": 0,
+    "error": "unconsumed input at 2:8 (byte 67)",
+    "nodes": 6,
+    "sha256": "e38d36030d6156502a7b913197a524e17b01f518ec0ad5605bb8e6bb74c6b116"
+  },
   "sql/corpus/select.sql": {
     "ok": true,
     "end": 8129,

@@ -51,6 +51,13 @@
       "expect": "accept",
       "class": "syntax",
       "reason": "postgres regress input; valid at REL_16_6"
+    },
+    {
+      "path": "corpus/reject_unbalanced_paren.sql",
+      "sha256": "11209750e3f31d9af40c5de4222445700234f008eacdc24891f7bc1cc9366fdd",
+      "expect": "reject",
+      "class": "syntax",
+      "reason": "hand-written syntax error (unbalanced parenthesis); pg_query rejects"
     }
   ]
 }
