@@ -193,15 +193,36 @@ SPDX-License-Identifier: Apache-2.0
         el.title = f.reason || "";
       }
 
+      // raw holds the base64 bytes of a loaded corpus file that is not valid
+      // UTF-8, and the lossy text shown for it. Run sends those bytes as
+      // input_b64 while the textarea is unedited, so /run judges the file the
+      // way xbnf eval does instead of a U+FFFD-substituted string.
+      let raw = null;
+
       function loadText(url, cache) {
         if (cache[url]) return Promise.resolve(cache[url]);
         return fetch(url).then(function (r) {
           if (!r.ok) throw new Error(r.status + " " + url);
-          return r.text();
-        }).then(function (t) {
-          cache[url] = t;
-          return t;
+          return r.arrayBuffer();
+        }).then(function (buf) {
+          const bytes = new Uint8Array(buf);
+          let t, b64 = null;
+          try {
+            t = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+          } catch (e) {
+            t = new TextDecoder("utf-8").decode(bytes);
+            let bin = "";
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            b64 = btoa(bin);
+          }
+          cache[url] = { text: t, b64: b64 };
+          return cache[url];
         });
+      }
+
+      function setInput(f) {
+        $("#input").value = f.text;
+        raw = f.b64 ? f : null;
       }
 
       function show(id) {
@@ -230,8 +251,8 @@ SPDX-License-Identifier: Apache-2.0
             return Promise.all([loadText(gURL, grammarCache), loadText(iURL, inputCache)]);
           })
           .then(function (pair) {
-            $("#grammar").value = pair[0];
-            $("#input").value = pair[1];
+            $("#grammar").value = pair[0].text;
+            setInput(pair[1]);
             $("#out").textContent = "Ready. Run to match input against the grammar.";
           })
           .catch(function (e) {
@@ -245,8 +266,9 @@ SPDX-License-Identifier: Apache-2.0
         updateExpect();
         const iURL = evalURL(current.dir, $("#file").value);
         $("#input").value = "Loading…";
+        raw = null;
         return loadText(iURL, inputCache)
-          .then(function (t) { $("#input").value = t; })
+          .then(setInput)
           .catch(function (e) {
             $("#input").value = "";
             $("#out").className = "tree-out fail";
@@ -266,6 +288,7 @@ SPDX-License-Identifier: Apache-2.0
             body: JSON.stringify({
               grammar: $("#grammar").value,
               input: $("#input").value,
+              input_b64: raw && raw.text === $("#input").value ? raw.b64 : "",
               start: manifest && manifest.start || ""
             })
           });

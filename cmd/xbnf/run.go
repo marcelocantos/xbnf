@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -18,6 +19,9 @@ type runRequest struct {
 	Grammar string `json:"grammar"`
 	Input   string `json:"input"`
 	Start   string `json:"start"`
+	// InputB64, when set, replaces Input with raw bytes, so corpus files that
+	// are not valid UTF-8 reach the engine unchanged (as in xbnf eval).
+	InputB64 string `json:"input_b64"`
 }
 
 func handleRun(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +39,14 @@ func handleRun(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		http.Error(w, "json", http.StatusBadRequest)
 		return
+	}
+	if req.InputB64 != "" {
+		b, err := base64.StdEncoding.DecodeString(req.InputB64)
+		if err != nil {
+			http.Error(w, "input_b64", http.StatusBadRequest)
+			return
+		}
+		req.Input = string(b)
 	}
 	g, err := syntax.Parse([]byte(req.Grammar))
 	w.Header().Set("Content-Type", "application/json")

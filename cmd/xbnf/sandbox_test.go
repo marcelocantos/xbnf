@@ -251,6 +251,15 @@ func TestSandboxRun(t *testing.T) {
 	if !strings.Contains(body, `"ok":true`) {
 		t.Fatalf("run start: %s", body)
 	}
+	// input_b64 carries raw bytes: latin-1 "\xf6" must be judged as invalid
+	// UTF-8, the same as xbnf eval, not as a decoded U+FFFD string.
+	body, err = jsonPOST(t, base+"/run", `{"grammar":"start -> /{.*}/ ;\n","input_b64":"9g=="}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "invalid UTF-8") {
+		t.Fatalf("run input_b64: %s", body)
+	}
 }
 
 func startSandbox(t *testing.T) string {
